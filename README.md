@@ -1,4 +1,4 @@
-# Mens Juris — Setup Guide
+# Mens Juris — Setup Guide 
 
 ## What this system does
 - Per-user login with email and password

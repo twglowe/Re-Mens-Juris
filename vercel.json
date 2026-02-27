@@ -1,0 +1,17 @@
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/public/index.html" }
+  ],
+  "functions": {
+    "api/upload.js":    { "maxDuration": 300 },
+    "api/analyse.js":   { "maxDuration": 120 },
+    "api/tools.js":     { "maxDuration": 300 },
+    "api/matters.js":   { "maxDuration": 30  },
+    "api/documents.js": { "maxDuration": 30  },
+    "api/auth.js":      { "maxDuration": 30  },
+    "api/sharing.js":   { "maxDuration": 30  },
+    "api/history.js":   { "maxDuration": 30  },
+    "api/export.js":    { "maxDuration": 30  }
+  }
+}

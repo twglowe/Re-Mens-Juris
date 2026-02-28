@@ -1,7 +1,6 @@
-{
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+"routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ],
   "functions": {
     "api/upload.js":    { "maxDuration": 300 },
@@ -13,5 +12,4 @@
     "api/sharing.js":   { "maxDuration": 30  },
     "api/history.js":   { "maxDuration": 30  },
     "api/export.js":    { "maxDuration": 30  }
-  }
-}
+  

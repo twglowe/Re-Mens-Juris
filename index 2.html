@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Ex Libris Juris — Legal Analysis</title>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#0f2744;--navy-mid:#1a3a5c;--blue:#1d6fa4;--blue-light:#2689c8;
+  --blue-pale:#e8f4fd;--blue-faint:#f4f9fd;--white:#fff;--off-white:#f2f7fc;
+  --border:#c5ddf0;--border-strong:#90c0e0;
+  --text-dark:#0a1e36;--text-mid:#1e3d5c;--text-light:#4a6a84;--text-faint:#7a9ab4;
+  --error:#c0392b;--success:#27ae60;--warning:#e67e22;
+}
+html,body{height:100%;background:var(--off-white);color:var(--text-dark);font-family:'Source Sans 3',sans-serif;font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+.login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--navy);padding:1.5rem}
+.login-box{background:var(--white);border-radius:14px;padding:2.75rem 2.25rem;width:100%;max-width:400px;box-shadow:0 30px 90px rgba(0,0,0,.45)}
+.login-logo{font-family:'Libre Baskerville',serif;font-size:2rem;font-weight:700;color:var(--navy);text-align:center;margin-bottom:.25rem}
+.login-sub{text-align:center;font-size:.9rem;color:var(--text-faint);font-style:italic;margin-bottom:2rem}
+.f-label{display:block;font-size:.82rem;font-weight:700;color:var(--text-mid);letter-spacing:.06em;text-transform:uppercase;margin-bottom:.4rem}
+.f-input{width:100%;padding:.85rem 1.1rem;border:2px solid var(--border);border-radius:8px;font-family:'Source Sans 3',sans-serif;font-size:1.05rem;color:var(--text-dark);margin-bottom:1.1rem;outline:none;transition:border-color .2s;background:var(--off-white)}
+.f-input:focus{border-color:var(--blue-light);background:#fff}
+.remember-row{display:flex;align-items:center;gap:.5rem;margin-bottom:1.25rem}
+.remember-row input{width:18px;height:18px;accent-color:var(--blue);cursor:pointer}
+.remember-row span{font-size:.9rem;color:var(--text-mid);font-weight:500;cursor:pointer}
+.btn-login{width:100%;padding:.95rem;background:var(--navy);border:none;border-radius:8px;color:#fff;font-family:'Libre Baskerville',serif;font-size:1.1rem;font-weight:700;cursor:pointer;transition:background .2s}
+.btn-login:hover{background:var(--blue-light)}
+.login-err{padding:.7rem .9rem;background:#fdf0f0;border:1.5px solid #f0b0b0;border-radius:6px;font-size:.9rem;font-weight:500;color:var(--error);margin-bottom:1rem;display:none}
+.app{height:100vh;display:none;flex-direction:column;overflow:hidden}
+header{background:var(--navy);padding:0 1.5rem;flex-shrink:0;box-shadow:0 2px 16px rgba(15,39,68,.5)}
+.hdr{display:flex;align-items:center;justify-content:space-between;height:62px;gap:1rem}
+.logo{font-family:'Libre Baskerville',serif;font-size:1.35rem;font-weight:700;color:#fff;flex-shrink:0}
+.logo em{color:#9acce8;font-style:italic;font-size:.78rem;font-weight:400;margin-left:.5rem}
+.hdr-right{display:flex;align-items:center;gap:.85rem}
+.jur-tabs{display:flex;border:1.5px solid rgba(255,255,255,.22);border-radius:6px;overflow:hidden}
+.jur-tab{padding:.32rem .9rem;border:none;border-right:1px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.55);font-size:.82rem;font-weight:600;cursor:pointer;transition:all .2s;font-family:'Source Sans 3',sans-serif}
+.jur-tab:last-child{border-right:none}
+.jur-tab.active{background:var(--blue-light);color:#fff}
+.jur-tab:hover:not(.active){background:rgba(255,255,255,.12);color:#fff}
+.user-pill{display:flex;align-items:center;gap:.45rem;padding:.3rem .75rem;border:1.5px solid rgba(255,255,255,.2);border-radius:20px;color:rgba(255,255,255,.75);font-size:.8rem;font-weight:600;cursor:pointer;transition:all .2s}
+.user-pill:hover{background:rgba(255,255,255,.12);color:#fff}
+.main-layout{flex:1;display:flex;overflow:hidden}
+.left-panel{width:278px;flex-shrink:0;background:var(--white);border-right:2px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.panel-head{padding:.85rem 1.1rem;background:var(--navy-mid);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.panel-head-title{font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.7)}
+.btn-add{padding:.3rem .75rem;background:var(--blue-light);border:none;border-radius:5px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer}
+.btn-add:hover{background:#1a7ab8}
+.matters-scroll{flex:1;overflow-y:auto;padding:.6rem}
+.matter-item{padding:.7rem .9rem;border-radius:7px;cursor:pointer;margin-bottom:.35rem;border:1.5px solid transparent;transition:all .18s;position:relative}
+.matter-item:hover{background:var(--blue-faint);border-color:var(--border)}
+.matter-item.active{background:var(--blue-pale);border-color:var(--blue-light)}
+.matter-name{font-size:.95rem;font-weight:700;color:var(--text-dark);margin-bottom:.12rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:1.8rem}
+.matter-meta{font-size:.72rem;color:var(--text-faint);display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+.badge{font-size:.65rem;padding:.1rem .42rem;border-radius:3px;font-weight:700;letter-spacing:.03em}
+.badge-jur{background:var(--blue-pale);border:1px solid var(--border);color:var(--blue)}
+.badge-shared{background:#e8f8f0;border:1px solid #a8dfc0;color:var(--success)}
+.matter-actions{position:absolute;right:.45rem;top:50%;transform:translateY(-50%);opacity:0;transition:opacity .2s}
+.matter-item:hover .matter-actions{opacity:1}
+.btn-icon{background:none;border:none;font-size:.9rem;cursor:pointer;padding:.18rem .35rem;border-radius:3px;color:var(--text-faint)}
+.btn-icon:hover{background:rgba(0,0,0,.07)}
+.empty-state{padding:2.5rem 1.25rem;text-align:center;color:var(--text-faint);font-size:.9rem;font-style:italic;line-height:1.8}
+.centre-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.chat-toolbar{padding:.6rem 1.1rem;background:var(--white);border-bottom:2px solid var(--border);display:flex;align-items:center;gap:.65rem;flex-shrink:0;flex-wrap:wrap}
+.chat-matter-title{font-family:'Libre Baskerville',serif;font-size:1.08rem;font-weight:700;color:var(--navy);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-matter-title.empty{font-style:italic;color:var(--text-faint);font-weight:400;font-family:'Source Sans 3',sans-serif;font-size:.95rem}
+.toolbar-controls{display:flex;gap:.38rem;flex-shrink:0;align-items:center}
+select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:5px;background:var(--white);color:var(--text-mid);font-size:.8rem;font-weight:600;font-family:'Source Sans 3',sans-serif;cursor:pointer}
+.btn-t{padding:.3rem .72rem;border:1.5px solid var(--border);border-radius:5px;background:transparent;color:var(--text-mid);font-size:.8rem;font-weight:600;cursor:pointer;transition:all .18s;white-space:nowrap}
+.btn-t:hover{background:var(--blue-pale);border-color:var(--blue-light);color:var(--blue)}
+.btn-t.active{background:var(--navy);border-color:var(--navy);color:#fff}
+.tools-bar{padding:.5rem 1.1rem;background:var(--blue-faint);border-bottom:1.5px solid var(--border);display:flex;gap:.4rem;overflow-x:auto;flex-shrink:0;align-items:center}
+.tools-label{font-size:.72rem;font-weight:700;color:var(--text-light);letter-spacing:.06em;text-transform:uppercase;flex-shrink:0;margin-right:.2rem}
+.tool-btn{padding:.3rem .78rem;border:1.5px solid var(--border-strong);border-radius:20px;background:var(--white);color:var(--text-mid);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .18s;white-space:nowrap;flex-shrink:0}
+.tool-btn:hover{background:var(--blue-pale);border-color:var(--blue-light);color:var(--blue)}
+.history-panel{border-top:2px solid var(--border);background:var(--off-white);flex-shrink:0;max-height:0;overflow:hidden;transition:max-height .3s ease}
+.history-panel.open{max-height:240px;overflow-y:auto}
+.history-list{padding:.5rem}
+.history-item{padding:.55rem .85rem;border-radius:6px;border:1.5px solid var(--border);margin-bottom:.3rem;background:var(--white);cursor:pointer;transition:all .18s}
+.history-item:hover{background:var(--blue-pale);border-color:var(--blue-light)}
+.history-q{font-size:.85rem;font-weight:600;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.history-meta{font-size:.7rem;color:var(--text-faint);margin-top:.1rem}
+.messages-area{flex:1;overflow-y:auto;padding:1.35rem;display:flex;flex-direction:column;gap:1.15rem}
+.welcome-state{display:flex;flex-direction:column;align-items:center;justify-content:center;max-height:200px;text-align:center;padding:1.5rem;margin:auto}
+.welcome-icon{font-size:2.5rem;opacity:.1;margin-bottom:.75rem}
+.welcome-title{font-family:'Libre Baskerville',serif;font-size:1.1rem;font-weight:700;color:var(--text-light);margin-bottom:.4rem}
+.welcome-sub{font-size:.88rem;line-height:1.65;color:var(--text-faint)}
+.msg{display:flex;flex-direction:column;gap:.25rem;animation:slideIn .25s ease}
+@keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.msg-user{align-items:flex-end}
+.msg-assistant{align-items:flex-start}
+.msg-bubble{padding:.95rem 1.2rem;line-height:1.8;font-size:1.02rem}
+.msg-user .msg-bubble{background:var(--navy);color:#fff;border-radius:10px 10px 3px 10px;max-width:82%;font-weight:500}
+.msg-assistant .msg-bubble{background:#fff;border:2px solid var(--border);border-radius:3px 10px 10px 10px;max-width:100%;color:var(--text-dark)}
+.msg-tool .msg-bubble{background:#f0f8f0;border:2px solid #b0d8b0;border-radius:3px 10px 10px 10px;max-width:100%}
+.msg-meta{font-size:.72rem;color:var(--text-faint);padding:0 .25rem;display:flex;gap:.6rem;align-items:center}
+.btn-dl{padding:.15rem .55rem;border:1px solid var(--border);border-radius:3px;background:var(--white);color:var(--text-light);font-size:.7rem;font-weight:600;cursor:pointer;transition:all .18s}
+.btn-dl:hover{background:var(--blue-pale);border-color:var(--blue);color:var(--blue)}
+.msg-bubble h2{font-family:'Libre Baskerville',serif;font-size:1.1rem;font-weight:700;color:var(--navy);border-bottom:2px solid var(--blue-pale);padding-bottom:.3rem;margin:1.3rem 0 .6rem}
+.msg-bubble h2:first-child{margin-top:0}
+.msg-bubble h3{font-family:'Libre Baskerville',serif;font-size:1rem;font-weight:700;color:var(--navy-mid);margin:1rem 0 .4rem}
+.msg-bubble h4{font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-light);margin:.9rem 0 .3rem}
+.msg-bubble p{margin-bottom:.7rem;font-size:1.02rem;line-height:1.8}
+.msg-bubble p:last-child{margin-bottom:0}
+.msg-bubble ul,.msg-bubble ol{padding-left:1.5rem;margin-bottom:.7rem}
+.msg-bubble li{font-size:1rem;line-height:1.75;margin-bottom:.2rem}
+.msg-bubble strong{font-weight:700;color:var(--navy)}
+.msg-bubble em{font-style:italic;color:var(--blue)}
+.msg-bubble blockquote{border-left:3px solid var(--blue-light);padding:.4rem 1rem;margin:.75rem 0;color:var(--text-mid);font-style:italic;background:var(--blue-faint);border-radius:0 4px 4px 0}
+.msg-bubble .caution{margin-top:1.2rem;padding:.7rem 1rem;background:#fff8e1;border:1.5px solid #f0c040;border-radius:6px;font-size:.88rem;color:#7a6020;font-weight:500}
+.strength-row{display:flex;align-items:flex-start;gap:.75rem;padding:.65rem .85rem;border-radius:6px;margin-bottom:.5rem;border:1px solid}
+.strength-row.g5{background:#f0faf0;border-color:#5cb85c}
+.strength-row.g4{background:#f4faf0;border-color:#8cc84b}
+.strength-row.g3{background:#fffbf0;border-color:#f0a030}
+.strength-row.g2{background:#fff8f0;border-color:#e07030}
+.strength-row.g1{background:#fff0f0;border-color:#d04040}
+.sdot{width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:3px}
+.g5 .sdot{background:#5cb85c}.g4 .sdot{background:#8cc84b}.g3 .sdot{background:#f0a030}.g2 .sdot{background:#e07030}.g1 .sdot{background:#d04040}
+.slabel{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.2rem}
+.g5 .slabel{color:#3a7a3a}.g4 .slabel{color:#5a7a2a}.g3 .slabel{color:#8a6010}.g2 .slabel{color:#9a4a10}.g1 .slabel{color:#8a2020}
+.typing-bubble{padding:.95rem 1.2rem;background:#fff;border:2px solid var(--border);border-radius:3px 10px 10px 10px;display:flex;gap:5px;align-items:center;width:fit-content}
+.typing-bubble span{width:8px;height:8px;background:var(--blue-light);border-radius:50%;animation:bounce 1.2s infinite}
+.typing-bubble span:nth-child(2){animation-delay:.2s}
+.typing-bubble span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+.input-area{padding:.85rem 1.1rem;border-top:2px solid var(--border);background:var(--white);flex-shrink:0}
+.input-row{display:flex;gap:.6rem;align-items:flex-end}
+textarea#chatInput{flex:1;background:var(--off-white);border:2px solid var(--border);border-radius:9px;color:var(--text-dark);font-family:'Source Sans 3',sans-serif;font-size:1.02rem;font-weight:500;line-height:1.55;padding:.75rem 1rem;resize:none;min-height:50px;max-height:160px;outline:none;transition:border-color .2s}
+textarea#chatInput:focus{border-color:var(--blue-light);background:#fff}
+textarea#chatInput::placeholder{color:var(--text-faint);font-weight:400}
+.btn-send{width:50px;height:50px;background:var(--navy);border:none;border-radius:9px;color:#fff;font-size:1.2rem;cursor:pointer;transition:all .2s;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.btn-send:hover{background:var(--blue-light)}
+.btn-send:disabled{opacity:.3;cursor:not-allowed}
+.input-hint{font-size:.7rem;color:var(--text-faint);margin-top:.35rem;font-weight:500}
+.right-panel{width:258px;flex-shrink:0;background:var(--white);border-left:2px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.upload-progress{margin:.55rem .85rem 0;padding:.5rem .8rem;background:var(--blue-pale);border:1.5px solid var(--border);border-radius:5px;font-size:.8rem;font-weight:600;color:var(--blue);display:none}
+.upload-progress.on{display:block}
+.upload-err{margin:.45rem .85rem 0;padding:.5rem .8rem;background:#fdf0f0;border:1.5px solid #f0b0b0;border-radius:5px;font-size:.8rem;font-weight:500;color:var(--error);display:none}
+.upload-err.on{display:block}
+select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-family:'Source Sans 3',sans-serif;font-size:.82rem;font-weight:600;color:var(--text-mid);background:var(--white)}
+.upload-zone{margin:.55rem .85rem;border:2px dashed var(--border-strong);border-radius:8px;padding:1.2rem .85rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;flex-shrink:0}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue-light);background:var(--blue-faint)}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.uz-icon{font-size:1.5rem;opacity:.25}
+.uz-text{font-size:.84rem;font-weight:600;color:var(--text-mid);margin-top:.3rem}
+.uz-hint{font-size:.7rem;color:var(--text-faint)}
+.focus-section{padding:.55rem .85rem;border-bottom:1.5px solid var(--border);flex-shrink:0}
+.focus-label{font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-light);margin-bottom:.42rem}
+.chips{display:flex;flex-wrap:wrap;gap:.25rem}
+.chip{padding:.18rem .52rem;border:1.5px solid var(--border);border-radius:20px;font-size:.7rem;font-weight:600;color:var(--text-light);cursor:pointer;transition:all .15s;user-select:none}
+.chip.on{background:var(--blue-pale);border-color:var(--blue-light);color:var(--blue)}
+.docs-scroll{flex:1;overflow-y:auto;padding:0 .55rem .55rem}
+.doc-item{padding:.52rem .72rem;border-radius:6px;border:1.5px solid var(--border);margin-bottom:.32rem;background:var(--blue-faint);display:flex;align-items:flex-start;gap:.5rem}
+.doc-icon{font-size:.9rem;flex-shrink:0;margin-top:2px}
+.doc-info{flex:1;min-width:0}
+.doc-name{font-size:.8rem;font-weight:700;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-meta{font-size:.68rem;color:var(--text-faint);margin-top:.08rem;font-weight:500}
+.docs-empty-msg{padding:1.35rem .85rem;text-align:center;color:var(--text-faint);font-size:.84rem;font-style:italic;line-height:1.7}
+.overlay{position:fixed;inset:0;background:rgba(10,30,54,.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:1rem}
+.modal{background:var(--white);border-radius:12px;padding:1.75rem;width:100%;max-width:440px;box-shadow:0 24px 70px rgba(10,30,54,.35)}
+.modal h3{font-family:'Libre Baskerville',serif;font-size:1.15rem;font-weight:700;color:var(--navy);margin-bottom:1.1rem}
+.modal .f-label{margin-top:.85rem}
+.modal .f-label:first-of-type{margin-top:0}
+.modal input,.modal select,.modal textarea{width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;font-weight:500;color:var(--text-dark);outline:none;background:var(--off-white)}
+.modal input:focus,.modal textarea:focus{border-color:var(--blue-light);background:#fff}
+.modal textarea{resize:vertical;min-height:75px}
+.modal-btns{display:flex;gap:.55rem;justify-content:flex-end;margin-top:1.35rem}
+.btn-primary{padding:.65rem 1.35rem;background:var(--navy);border:none;border-radius:7px;color:#fff;font-family:'Source Sans 3',sans-serif;font-size:.95rem;font-weight:700;cursor:pointer}
+.btn-primary:hover{background:var(--blue-light)}
+.btn-secondary{padding:.65rem 1.35rem;background:transparent;border:2px solid var(--border);border-radius:7px;color:var(--text-mid);font-family:'Source Sans 3',sans-serif;font-size:.95rem;font-weight:600;cursor:pointer}
+.share-item{display:flex;align-items:center;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border);font-size:.88rem;font-weight:500}
+.share-item:last-child{border-bottom:none}
+.tool-modal{max-width:500px}
+.anchor-list{max-height:160px;overflow-y:auto;border:2px solid var(--border);border-radius:6px;padding:.45rem;margin-top:.35rem}
+.anchor-item{display:flex;align-items:center;gap:.55rem;padding:.3rem .35rem;font-size:.85rem;font-weight:500;color:var(--text-dark);cursor:pointer;border-radius:4px}
+.anchor-item:hover{background:var(--blue-faint)}
+.anchor-item input{flex-shrink:0;accent-color:var(--blue);width:15px;height:15px}
+.modal p.tool-desc{font-size:.88rem;color:var(--text-mid);margin-bottom:.85rem;line-height:1.65}
+.toast{position:fixed;bottom:1.35rem;right:1.35rem;padding:.7rem 1.1rem;background:var(--navy);color:#fff;border-radius:7px;font-size:.88rem;font-weight:600;z-index:300;animation:toastIn .28s ease;box-shadow:0 4px 20px rgba(10,30,54,.35)}
+@keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+@media(max-width:900px){.right-panel{display:none}.left-panel{width:240px}}
+@media(max-width:640px){.left-panel{width:200px}.logo em{display:none}}
+</style>
+</head>
+<body>
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <div class="login-logo"><span style="font-size:2.8rem;vertical-align:middle;margin-right:.2rem">⚖</span> Ex Libris Juris</div>
+    <div class="login-sub">Offshore Legal Analysis · Bermuda · Cayman · BVI</div>
+    <div class="login-err" id="loginErr"></div>
+    <label class="f-label">Email</label>
+    <input class="f-input" type="email" id="loginEmail" placeholder="your@email.com" autocomplete="email">
+    <label class="f-label">Password</label>
+    <input class="f-input" type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+    <div class="remember-row">
+      <input type="checkbox" id="rememberMe" checked>
+      <span onclick="document.getElementById('rememberMe').click()">Keep me signed in</span>
+    </div>
+    <button class="btn-login" id="loginBtn">Sign In</button>
+  </div>
+</div>
+<div class="app" id="appShell">
+  <header>
+    <div class="hdr">
+      <div class="logo"><span style="font-size:1.9rem;vertical-align:middle;margin-right:.25rem">⚖</span> Ex Libris Juris <em>Offshore Legal Analysis</em></div>
+      <div class="hdr-right">
+        <div class="jur-tabs">
+          <button class="jur-tab active" data-jur="Bermuda">Bermuda</button>
+          <button class="jur-tab" data-jur="Cayman Islands">Cayman</button>
+          <button class="jur-tab" data-jur="British Virgin Islands">BVI</button>
+        </div>
+        <div class="user-pill" id="userPill" onclick="logout()">
+          <span id="userLabel">—</span>
+          <span style="opacity:.5;font-size:.72rem">Sign out</span>
+        </div>
+      </div>
+    </div>
+  </header>
+  <div class="main-layout">
+    <div class="left-panel">
+      <div class="panel-head">
+        <span class="panel-head-title">Matters</span>
+        <button class="btn-add" id="newMatterBtn">+ New</button>
+      </div>
+      <div class="matters-scroll" id="mattersList"><div class="empty-state">No matters yet.<br>Create one to begin.</div></div>
+    </div>
+    <div class="centre-panel">
+      <div class="chat-toolbar">
+        <div class="chat-matter-title empty" id="chatTitle">Select or create a matter</div>
+        <div class="toolbar-controls">
+          <select class="qtype" id="qtypeSelect">
+            <option value="Factual Analysis">Factual</option>
+            <option value="Legal Issues">Legal Issues</option>
+            <option value="Procedural Advice">Procedural</option>
+            <option value="Case Strategy">Strategy</option>
+            <option value="Document Drafting">Drafting</option>
+          </select>
+          <button class="btn-t" id="histBtn" style="display:none" onclick="toggleHistory()">History</button>
+          <button class="btn-t" onclick="clearChat()">Clear</button>
+        </div>
+      </div>
+      <div class="tools-bar" id="toolsBar" style="display:none">
+        <span class="tools-label">Tools</span>
+        <button class="tool-btn" onclick="openTool('inconsistency')">🔍 Inconsistency</button>
+        <button class="tool-btn" onclick="openTool('proposition')">🎯 Proposition Finder</button>
+        <button class="tool-btn" onclick="openTool('chronology')">📅 Chronology</button>
+        <button class="tool-btn" onclick="openTool('persons')">👥 Persons Index</button>
+        <button class="tool-btn" onclick="openTool('issues')">⚖ Issue Tracker</button>
+        <button class="tool-btn" onclick="openTool('citations')">📚 Citations</button>
+        <button class="tool-btn" onclick="openTool('briefing')">📋 Briefing Note</button>
+        <button class="tool-btn" onclick="openTool('draft')">✍️ Draft</button>
+      </div>
+      <div id="histPanel" class="history-panel">
+        <div class="history-list" id="histList"></div>
+      </div>
+      <div class="messages-area" id="messagesArea">
+        <div class="welcome-state">
+          <div class="welcome-icon" style="font-size:4rem">⚖</div>
+          <div class="welcome-title">Welcome to Ex Libris Juris</div>
+          <div class="welcome-sub">Select or create a matter to begin.<br>Upload documents, then ask unlimited questions.</div>
+        </div>
+      </div>
+      <div class="input-area">
+        <div class="input-row">
+          <textarea id="chatInput" placeholder="Ask your legal question…" rows="2" disabled></textarea>
+          <button class="btn-send" id="sendBtn" disabled>➤</button>
+        </div>
+        <div class="input-hint">Documents indexed and searchable · Enter to send · Shift+Enter for new line</div>
+      </div>
+    </div>
+    <div class="right-panel">
+      <div class="panel-head">
+        <span class="panel-head-title">Documents</span>
+        <button class="btn-add" id="shareBtn" style="display:none;background:var(--success)" onclick="openShare()">Share</button>
+      </div>
+      <div class="upload-progress" id="uploadProg">Processing…</div>
+      <div class="upload-err" id="uploadErr"></div>
+      <select class="doc-type" id="docTypeSelect">
+        <option>Pleading</option><option>Skeleton Argument</option><option>Witness Statement</option>
+        <option>Exhibit</option><option>Case Law</option><option>Statute / Regulation</option>
+        <option>Correspondence</option><option>Expert Report</option><option>Trial Bundle</option><option>Other</option>
+      </select>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" accept=".pdf" multiple id="fileInput">
+        <div class="uz-icon">📂</div>
+        <div class="uz-text">Tap to upload PDFs</div>
+        <div class="uz-hint">or drag and drop</div>
+      </div>
+      <div class="focus-section">
+        <div class="focus-label">Analysis Focus</div>
+        <div class="chips" id="focusChips">
+          <span class="chip on" data-opt="Applicable law & statutes">Applicable law</span>
+          <span class="chip on" data-opt="Case authority">Case authority</span>
+          <span class="chip" data-opt="Limitation periods">Limitation</span>
+          <span class="chip" data-opt="Burden & standard of proof">Burden of proof</span>
+          <span class="chip" data-opt="Injunctive relief">Injunctions</span>
+          <span class="chip" data-opt="Enforcement & recognition">Enforcement</span>
+          <span class="chip" data-opt="Privilege & confidentiality">Privilege</span>
+          <span class="chip" data-opt="Costs">Costs</span>
+          <span class="chip" data-opt="Appeals">Appeals</span>
+          <span class="chip" data-opt="Jurisdictional issues">Jurisdiction</span>
+        </div>
+      </div>
+      <div class="docs-scroll" id="docsList"><div class="docs-empty-msg">Select a matter to see documents.</div></div>
+    </div>
+  </div>
+</div>
+<!-- NEW MATTER MODAL -->
+<div class="overlay" id="newMatterModal" style="display:none">
+  <div class="modal">
+    <h3>New Matter</h3>
+    <label class="f-label">Matter Name</label>
+    <input type="text" id="matterNameInput" placeholder="e.g. Smith v Jones [2025]" maxlength="120">
+    <label class="f-label">Jurisdiction</label>
+    <select id="matterJurSelect"><option value="Bermuda">Bermuda</option><option value="Cayman Islands">Cayman Islands</option><option value="British Virgin Islands">British Virgin Islands</option></select>
+    <label class="f-label">Nature of the Dispute <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+    <textarea id="matterNatureInput" placeholder="e.g. Shareholder dispute arising from alleged misappropriation of company funds. Claimant seeks equitable compensation and account of profits."></textarea>
+    <label class="f-label">Key Issues <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional — one per line)</span></label>
+    <textarea id="matterIssuesInput" placeholder="e.g.&#10;Whether the defendant owed a fiduciary duty&#10;Whether limitation has expired&#10;Whether the court has jurisdiction"></textarea>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal('newMatterModal')">Cancel</button>
+      <button class="btn-primary" id="createMatterBtn">Create Matter</button>
+    </div>
+  </div>
+</div>
+<!-- SHARE MODAL -->
+<div class="overlay" id="shareModal" style="display:none">
+  <div class="modal">
+    <h3>Share Matter</h3>
+    <div id="existingShares" style="margin-bottom:.9rem"></div>
+    <label class="f-label">Share with (email)</label>
+    <input type="email" id="shareEmail" placeholder="colleague@email.com">
+    <label class="f-label">Permission</label>
+    <select id="sharePermission"><option value="read">Read only</option><option value="edit">Can edit (upload and delete documents)</option></select>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal('shareModal')">Close</button>
+      <button class="btn-primary" id="shareSubmitBtn">Share</button>
+    </div>
+  </div>
+</div>
+<!-- TOOL MODAL -->
+<div class="overlay" id="toolModal" style="display:none">
+  <div class="modal tool-modal">
+    <h3 id="toolModalTitle">Tool</h3>
+    <div id="toolModalBody"></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal('toolModal')">Cancel</button>
+      <button class="btn-primary" id="toolRunBtn">Run Analysis</button>
+    </div>
+  </div>
+</div>
+<script>
+let token=localStorage.getItem('mj_token')||sessionStorage.getItem('mj_token');
+let currentUser=null,currentMatter=null,matters=[],documents=[],conversationHistory=[],matterHistory=[];
+let focusAreas=new Set(['Applicable law & statutes','Case authority']);
+let jurisdiction='Bermuda',isLoading=false,pendingTool=null,histOpen=false;
+
+async function init(){
+  if(token){try{const r=await api('/api/auth?action=verify','POST',{});if(r&&r.user){currentUser=r.user;showApp();return;}}catch(e){}}
+  showLogin();
+}
+function showLogin(){document.getElementById('loginScreen').style.display='flex';document.getElementById('appShell').style.display='none';}
+function showApp(){document.getElementById('loginScreen').style.display='none';document.getElementById('appShell').style.display='flex';document.getElementById('userLabel').textContent=currentUser.name||currentUser.email;loadMatters();}
+
+document.getElementById('loginBtn').addEventListener('click',doLogin);
+['loginEmail','loginPassword'].forEach(id=>document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();}));
+
+async function doLogin(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const password=document.getElementById('loginPassword').value;
+  const remember=document.getElementById('rememberMe').checked;
+  const errEl=document.getElementById('loginErr');
+  errEl.style.display='none';
+  if(!email||!password){errEl.textContent='Please enter your email and password';errEl.style.display='block';return;}
+  try{
+    const r=await fetch('/api/auth?action=login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+    const d=await r.json();
+    if(!r.ok){errEl.textContent=d.error||'Invalid email or password';errEl.style.display='block';return;}
+    token=d.token;currentUser=d.user;
+    if(remember){localStorage.setItem('mj_token',token);}else{sessionStorage.setItem('mj_token',token);localStorage.removeItem('mj_token');}
+    showApp();
+  }catch(e){errEl.textContent='Connection error. Please try again.';errEl.style.display='block';}
+}
+
+function logout(){token=null;currentUser=null;currentMatter=null;localStorage.removeItem('mj_token');sessionStorage.removeItem('mj_token');showLogin();}
+
+async function api(url,method='GET',body=null){
+  const opts={method,headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`}};
+  if(body)opts.body=JSON.stringify(body);
+  const r=await fetch(url,opts);
+  if(r.status===401){logout();return null;}
+  const d=await r.json();
+  if(!r.ok)throw new Error(d.error||'Request failed');
+  return d;
+}
+
+document.querySelectorAll('.jur-tab').forEach(btn=>btn.addEventListener('click',()=>{
+  document.querySelectorAll('.jur-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');jurisdiction=btn.dataset.jur;
+}));
+
+document.querySelectorAll('.chip').forEach(chip=>chip.addEventListener('click',()=>{
+  chip.classList.toggle('on');const opt=chip.dataset.opt;
+  focusAreas.has(opt)?focusAreas.delete(opt):focusAreas.add(opt);
+}));
+
+async function loadMatters(){
+  try{const d=await api('/api/matters');if(!d)return;matters=d.matters||[];renderMatters();}
+  catch(e){showToast('Failed to load matters');}
+}
+
+function renderMatters(){
+  const list=document.getElementById('mattersList');
+  if(!matters.length){list.innerHTML='<div class="empty-state">No matters yet.<br>Create one to begin.</div>';return;}
+  list.innerHTML='';
+  matters.forEach(m=>{
+    const div=document.createElement('div');
+    div.className='matter-item'+(currentMatter?.id===m.id?' active':'');
+    const js=m.jurisdiction==='British Virgin Islands'?'BVI':m.jurisdiction==='Cayman Islands'?'Cayman':m.jurisdiction;
+    div.innerHTML=`<div class="matter-name">${esc(m.name)}</div><div class="matter-meta"><span class="badge badge-jur">${js}</span>${m.shared?'<span class="badge badge-shared">Shared</span>':''}<span>${m.document_count||0} docs</span></div><div class="matter-actions">${m.owner_id===currentUser?.id?`<button class="btn-icon" onclick="deleteMatter('${m.id}','${esc(m.name)}')">🗑</button>`:''}</div>`;
+    div.addEventListener('click',e=>{if(e.target.closest('.matter-actions'))return;selectMatter(m);});
+    list.appendChild(div);
+  });
+}
+
+async function selectMatter(m){
+  currentMatter=m;conversationHistory=[];
+  jurisdiction=m.jurisdiction;
+  document.querySelectorAll('.jur-tab').forEach(b=>b.classList.toggle('active',b.dataset.jur===jurisdiction));
+  renderMatters();
+  const titleEl=document.getElementById('chatTitle');titleEl.textContent=m.name;titleEl.classList.remove('empty');
+  document.getElementById('chatInput').disabled=false;document.getElementById('sendBtn').disabled=false;
+  document.getElementById('toolsBar').style.display='flex';document.getElementById('histBtn').style.display='';
+  document.getElementById('shareBtn').style.display=m.owner_id===currentUser?.id?'':'none';
+  clearMessages();
+  await loadDocuments(m.id);await loadHistory(m.id);
+  sysMsg(`Matter loaded: **${m.name}** (${jurisdiction}). ${documents.length} document(s) indexed.${m.nature?' Dispute context loaded.':''}`);
+}
+
+async function deleteMatter(id,name){
+  if(!confirm(`Delete matter "${name}" and all its documents?`))return;
+  try{
+    await api(`/api/matters?id=${id}`,'DELETE');
+    if(currentMatter?.id===id){
+      currentMatter=null;documents=[];matterHistory=[];
+      document.getElementById('chatTitle').textContent='Select or create a matter';
+      document.getElementById('chatTitle').classList.add('empty');
+      document.getElementById('chatInput').disabled=true;document.getElementById('sendBtn').disabled=true;
+      document.getElementById('toolsBar').style.display='none';document.getElementById('histBtn').style.display='none';
+      document.getElementById('shareBtn').style.display='none';clearMessages();renderDocs();
+    }
+    await loadMatters();showToast('Matter deleted');
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+document.getElementById('newMatterBtn').addEventListener('click',()=>{document.getElementById('newMatterModal').style.display='flex';setTimeout(()=>document.getElementById('matterNameInput').focus(),50);});
+document.getElementById('matterNameInput').addEventListener('keydown',e=>{if(e.key==='Enter')createMatter();});
+document.getElementById('createMatterBtn').addEventListener('click',createMatter);
+
+async function createMatter(){
+  const name=document.getElementById('matterNameInput').value.trim();
+  const jur=document.getElementById('matterJurSelect').value;
+  const nature=document.getElementById('matterNatureInput').value.trim();
+  const issues=document.getElementById('matterIssuesInput').value.trim();
+  if(!name)return;
+  try{
+    const d=await api('/api/matters','POST',{name,jurisdiction:jur,nature,issues});
+    ['matterNameInput','matterNatureInput','matterIssuesInput'].forEach(id=>document.getElementById(id).value='');
+    closeModal('newMatterModal');await loadMatters();selectMatter(d.matter);showToast('Matter created');
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+async function openShare(){if(!currentMatter)return;document.getElementById('shareModal').style.display='flex';await loadShares();}
+async function loadShares(){
+  try{
+    const d=await api(`/api/sharing?matter_id=${currentMatter.id}`);
+    const el=document.getElementById('existingShares');
+    if(!d?.shares?.length){el.innerHTML='<div style="font-size:.85rem;color:var(--text-faint);font-style:italic">Not currently shared with anyone.</div>';return;}
+    el.innerHTML=d.shares.map(s=>`<div class="share-item"><span>${esc(s.name||s.email)} <span style="color:var(--text-faint);font-size:.78rem">(${s.permission})</span></span><button class="btn-t" style="font-size:.74rem;padding:.2rem .55rem" onclick="removeShare('${s.id}')">Remove</button></div>`).join('');
+  }catch(e){}
+}
+async function removeShare(shareId){try{await api(`/api/sharing?share_id=${shareId}&matter_id=${currentMatter.id}`,'DELETE');await loadShares();showToast('Access removed');}catch(e){showToast('Error: '+e.message);}}
+document.getElementById('shareSubmitBtn').addEventListener('click',async()=>{
+  const email=document.getElementById('shareEmail').value.trim();
+  const permission=document.getElementById('sharePermission').value;
+  if(!email)return;
+  try{const d=await api('/api/sharing','POST',{matter_id:currentMatter.id,email,permission});document.getElementById('shareEmail').value='';showToast(`Shared with ${d.sharedWith}`);await loadShares();}
+  catch(e){showToast('Error: '+e.message);}
+});
+
+async function loadHistory(matterId){
+  try{const d=await api(`/api/history?matter_id=${matterId}`);matterHistory=d?.history||[];renderHistory();}
+  catch(e){matterHistory=[];}
+}
+function renderHistory(){
+  const list=document.getElementById('histList');
+  if(!matterHistory.length){list.innerHTML='<div style="padding:.75rem .85rem;font-size:.82rem;color:var(--text-faint);font-style:italic">No previous queries for this matter.</div>';return;}
+  list.innerHTML=matterHistory.slice().reverse().map((h,i)=>`<div class="history-item" onclick="loadHistItem(${matterHistory.length-1-i})"><div class="history-q">${esc(h.question.slice(0,90))}${h.question.length>90?'…':''}</div><div class="history-meta">${h.tool_name||'Q&A'} · ${new Date(h.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>`).join('');
+}
+function loadHistItem(i){const h=matterHistory[i];if(!h)return;clearMessages();appendMsg('user',h.question);appendMsg('assistant',h.answer,h.tool_name?'tool':'','');if(histOpen)toggleHistory();}
+function toggleHistory(){histOpen=!histOpen;document.getElementById('histPanel').classList.toggle('open',histOpen);document.getElementById('histBtn').classList.toggle('active',histOpen);}
+async function saveHistory(q,a,toolName=null){if(!currentMatter)return;try{await api('/api/history','POST',{matter_id:currentMatter.id,question:q,answer:a,tool_name:toolName});await loadHistory(currentMatter.id);}catch(e){}}
+
+async function loadDocuments(matterId){try{const d=await api(`/api/documents?matter_id=${matterId}`);documents=d?.documents||[];renderDocs();}catch(e){documents=[];renderDocs();}}
+function renderDocs(){
+  const list=document.getElementById('docsList');
+  if(!currentMatter){list.innerHTML='<div class="docs-empty-msg">Select a matter to see documents.</div>';return;}
+  if(!documents.length){list.innerHTML='<div class="docs-empty-msg">No documents yet.<br>Upload PDFs above.</div>';return;}
+  const icons={'Pleading':'📋','Skeleton Argument':'📝','Witness Statement':'👤','Exhibit':'📎','Case Law':'⚖️','Statute / Regulation':'📖','Correspondence':'✉️','Expert Report':'🔬','Trial Bundle':'📦','Other':'📄'};
+  list.innerHTML=documents.map(doc=>`<div class="doc-item"><span class="doc-icon">${icons[doc.doc_type]||'📄'}</span><div class="doc-info"><div class="doc-name" title="${esc(doc.name)}">${esc(doc.name)}</div><div class="doc-meta">${esc(doc.doc_type)}${doc.chunk_count?' · '+doc.chunk_count+' passages':''}</div></div><button onclick="deleteDoc('${doc.id}','${esc(doc.name)}')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.1rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Remove">×</button></div>`).join('');
+}
+async function deleteDoc(id,name){if(!confirm(`Remove "${name}"?`))return;try{await api(`/api/documents?id=${id}`,'DELETE');await loadDocuments(currentMatter.id);await loadMatters();showToast('Document removed');}catch(e){showToast('Error: '+e.message);}}
+
+const uploadZone=document.getElementById('uploadZone'),fileInput=document.getElementById('fileInput');
+uploadZone.addEventListener('dragover',e=>{e.preventDefault();uploadZone.classList.add('drag-over');});
+uploadZone.addEventListener('dragleave',()=>uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop',e=>{e.preventDefault();uploadZone.classList.remove('drag-over');if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(e.dataTransfer.files).filter(f=>f.type==='application/pdf'));});
+fileInput.addEventListener('change',()=>{if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(fileInput.files));fileInput.value='';});
+
+async function uploadFiles(files){
+  if(!files.length||!currentMatter)return;
+  const docType=document.getElementById('docTypeSelect').value;
+  const prog=document.getElementById('uploadProg'),errEl=document.getElementById('uploadErr');
+  errEl.classList.remove('on');
+  for(const file of files){
+    prog.textContent=`Processing: ${file.name}…`;prog.classList.add('on');
+    try{const b64=await toB64(file);const d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,fileData:b64,docType});if(d)showToast(`✓ ${file.name} — ${d.chunks} passages indexed`);}
+    catch(e){errEl.textContent=`Failed: ${file.name} — ${e.message}`;errEl.classList.add('on');}
+  }
+  prog.classList.remove('on');await loadDocuments(currentMatter.id);await loadMatters();
+}
+function toB64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(file);});}
+
+async function sendMessage(){
+  if(isLoading||!currentMatter)return;
+  const input=document.getElementById('chatInput');
+  const text=input.value.trim();if(!text)return;
+  isLoading=true;input.value='';input.style.height='auto';
+  document.getElementById('sendBtn').disabled=true;
+  appendMsg('user',text);
+  conversationHistory.push({role:'user',content:text});
+  const typing=addTyping();
+  try{
+    const d=await api('/api/analyse','POST',{matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',messages:conversationHistory,jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:[...focusAreas]});
+    typing.remove();
+    if(d?.result){conversationHistory.push({role:'assistant',content:d.result});appendMsg('assistant',d.result,'',text);await saveHistory(text,d.result);}
+  }catch(e){typing.remove();sysMsg(`⚠️ Error: ${e.message}`);conversationHistory.pop();}
+  finally{isLoading=false;document.getElementById('sendBtn').disabled=false;input.focus();}
+}
+document.getElementById('sendBtn').addEventListener('click',sendMessage);
+document.getElementById('chatInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}});
+document.getElementById('chatInput').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,160)+'px';});
+function clearChat(){conversationHistory=[];clearMessages();if(currentMatter)sysMsg('Chat cleared. Documents remain indexed.');}
+
+const toolDefs={
+  inconsistency:{title:'🔍 Inconsistency Tracker',body:()=>`<p class="tool-desc">Select anchor documents (your baseline factual position). The system finds all contradictions in the remaining documents.</p><div class="focus-label">Anchor Documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to compare all)</span></div><div class="anchor-list" id="anchorList">${documents.map(d=>`<label class="anchor-item"><input type="checkbox" value="${esc(d.name)}"> ${esc(d.name)} <span style="color:var(--text-faint);font-size:.72rem">[${d.doc_type}]</span></label>`).join('')||'<div style="font-size:.84rem;color:var(--text-faint)">No documents uploaded.</div>'}</div><div class="focus-label" style="margin-top:.85rem">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the dates of payments"></textarea>`},
+  proposition:{title:'🎯 Proposition Evidence Finder',body:()=>`<p class="tool-desc">State a proposition or factual assertion. The system finds all evidence supporting or contradicting it and grades each reference by strength — red (weak) through amber to green (strong).</p><div class="focus-label">Proposition or Statement</div><textarea id="toolInstructions" placeholder="e.g. The defendant had knowledge of the transactions before 1 January 2023" style="min-height:80px"></textarea>`},
+  chronology:{title:'📅 Chronology Builder',body:()=>`<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology. Disputed dates are flagged.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on events after January 2022"></textarea>`},
+  persons:{title:'👥 Persons & Entities Index',body:()=>`<p class="tool-desc">Identifies every person and entity mentioned across all documents and summarises what the evidence reveals about each.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the directors and shareholders"></textarea>`},
+  issues:{title:'⚖ Issue Tracker',body:()=>`<p class="tool-desc">Maps every legal and factual issue in the pleadings and assesses the supporting evidence for each party.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the limitation defence"></textarea>`},
+  citations:{title:'📚 Citation Checker',body:()=>`<p class="tool-desc">Checks citations in skeleton arguments and pleadings against the judgments you have uploaded. Flags overstated or incorrect propositions.</p><p style="font-size:.84rem;color:var(--text-faint)">Upload the relevant case law as documents before running this tool.</p>`},
+  briefing:{title:'📋 Briefing Note',body:()=>`<p class="tool-desc">Produces a structured briefing note covering background, parties, claim, key facts, legal issues, evidence, procedural position and next steps.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Written for a colleague unfamiliar with the matter"></textarea>`},
+  draft:{title:'✍️ Draft Generator',body:()=>`<p class="tool-desc">Drafts legal documents based on the matter files. Be specific about what you want drafted.</p><div class="focus-label">Drafting Instructions</div><textarea id="toolInstructions" placeholder="e.g. Draft a skeleton argument for the summary judgment application" style="min-height:100px"></textarea>`},
+};
+
+function openTool(t){if(!currentMatter){showToast('Select a matter first');return;}pendingTool=t;const cfg=toolDefs[t];document.getElementById('toolModalTitle').textContent=cfg.title;document.getElementById('toolModalBody').innerHTML=cfg.body();document.getElementById('toolModal').style.display='flex';}
+
+document.getElementById('toolRunBtn').addEventListener('click',async()=>{
+  if(!pendingTool||!currentMatter)return;
+  const instructions=document.getElementById('toolInstructions')?.value?.trim()||'';
+  let anchorDocNames=[];
+  if(pendingTool==='inconsistency')document.querySelectorAll('#anchorList input:checked').forEach(cb=>anchorDocNames.push(cb.value));
+  closeModal('toolModal');
+  const toolLabel=toolDefs[pendingTool]?.title||pendingTool;
+  const typing=addTyping('tool');
+  try{
+    const d=await api('/api/tools','POST',{tool:pendingTool,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction,anchorDocNames,instructions});
+    typing.remove();
+    if(d?.result){
+      const isProp=pendingTool==='proposition';
+      appendMsg('assistant',d.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''));
+      await saveHistory(toolLabel+(instructions?': '+instructions:''),d.result,pendingTool);
+    }
+  }catch(e){typing.remove();sysMsg(`⚠️ Tool error: ${e.message}`);}
+});
+
+async function downloadWord(content,title){
+  try{
+    const r=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify({content,matterName:currentMatter?.name||'Matter',jurisdiction,title})});
+    if(!r.ok){showToast('Export failed');return;}
+    const blob=await r.blob();const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=(title||'analysis').replace(/[^a-z0-9]/gi,'-').toLowerCase()+'.docx';a.click();URL.revokeObjectURL(url);
+    showToast('Downloaded as Word document');
+  }catch(e){showToast('Export error: '+e.message);}
+}
+
+function clearMessages(){document.getElementById('messagesArea').innerHTML='';}
+
+function appendMsg(role,content,variant='',question=''){
+  const area=document.getElementById('messagesArea');
+  const welcome=area.querySelector('.welcome-state');if(welcome)welcome.remove();
+  const w=document.createElement('div');w.className=`msg msg-${role}${variant?' msg-'+(variant==='prop'?'tool':variant):''}`;
+  const time=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const bubble=document.createElement('div');bubble.className='msg-bubble';
+  if(role==='assistant'){bubble.innerHTML=variant==='prop'?renderProp(content):renderMd(content);}
+  else{bubble.textContent=content;}
+  const meta=document.createElement('div');meta.className='msg-meta';
+  if(role==='assistant'){
+    const ts=document.createElement('span');ts.textContent=`Ex Libris Juris · ${jurisdiction==='British Virgin Islands'?'BVI':jurisdiction} · ${time}`;
+    const dl=document.createElement('button');dl.className='btn-dl';dl.textContent='⬇ Word';
+    const cap=content;const ttl=question||currentMatter?.name;
+    dl.onclick=()=>downloadWord(cap,ttl);
+    meta.appendChild(ts);meta.appendChild(dl);
+  }else{meta.textContent=`You · ${time}`;}
+  w.appendChild(bubble);w.appendChild(meta);area.appendChild(w);area.scrollTop=area.scrollHeight;
+}
+
+function sysMsg(text){const area=document.getElementById('messagesArea');const el=document.createElement('div');el.style.cssText='text-align:center;font-size:.78rem;font-weight:500;color:var(--text-faint);padding:.45rem;font-style:italic;';el.innerHTML=renderMd(text);area.appendChild(el);area.scrollTop=area.scrollHeight;}
+function addTyping(v=''){const area=document.getElementById('messagesArea');const w=document.createElement('div');w.className=`msg msg-assistant${v?' msg-'+v:''}`;w.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';area.appendChild(w);area.scrollTop=area.scrollHeight;return w;}
+
+function renderProp(text){
+  const gLabels={5:'Strong — direct evidence',4:'Good — supportive evidence',3:'Moderate — indirect',2:'Weak — tangential',1:'Contrary — contradicts proposition'};
+  const parts=text.split(/(?=###\s)/);let html='';
+  for(const part of parts){
+    const gm=part.match(/GRADE:\s*([1-5])/i);
+    if(gm){const g=parseInt(gm[1]);html+=`<div class="strength-row g${g}"><div class="sdot"></div><div style="flex:1"><div class="slabel">${gLabels[g]||'Grade '+g}</div>${renderMd(part.replace(/GRADE:\s*[1-5]/gi,'').trim())}</div></div>`;}
+    else{html+=renderMd(part);}
+  }
+  return html;
+}
+
+function renderMd(text){
+  const lines=text.split('\n');let html='',i=0;
+  while(i<lines.length){
+    const l=lines[i];
+    if(/^#{1,2} /.test(l)){html+=`<h2>${inl(l.replace(/^#+\s/,''))}</h2>`;}
+    else if(l.startsWith('### ')){html+=`<h3>${inl(l.slice(4))}</h3>`;}
+    else if(l.startsWith('#### ')){html+=`<h4>${inl(l.slice(5))}</h4>`;}
+    else if(l.startsWith('- ')||l.startsWith('• ')){html+='<ul>';while(i<lines.length&&(lines[i].startsWith('- ')||lines[i].startsWith('• '))){html+=`<li>${inl(lines[i].slice(2))}</li>`;i++;}html+='</ul>';continue;}
+    else if(/^\d+\. /.test(l)){html+='<ol>';while(i<lines.length&&/^\d+\. /.test(lines[i])){html+=`<li>${inl(lines[i].replace(/^\d+\. /,''))}</li>`;i++;}html+='</ol>';continue;}
+    else if(l.startsWith('> ')){html+=`<blockquote>${inl(l.slice(2))}</blockquote>`;}
+    else if(l.includes('⚠️')){html+=`<div class="caution">${inl(l)}</div>`;}
+    else if(l.trim()){html+=`<p>${inl(l)}</p>`;}
+    i++;
+  }
+  return html;
+}
+function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function inl(t){return esc(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>').replace(/_(.+?)_/g,'<em>$1</em>');}
+function closeModal(id){document.getElementById(id).style.display='none';}
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.style.display='none';}));
+function showToast(msg){document.querySelector('.toast')?.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3200);}
+init();
+</script>
+</body>
+</html>

@@ -1,4 +1,5 @@
-"routes": [
+{
+  "routes": [
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "src": "/(.*)", "dest": "/index.html" }
   ],
@@ -12,4 +13,5 @@
     "api/sharing.js":   { "maxDuration": 30  },
     "api/history.js":   { "maxDuration": 30  },
     "api/export.js":    { "maxDuration": 30  }
-  
+  }
+}

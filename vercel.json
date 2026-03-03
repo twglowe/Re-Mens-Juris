@@ -1,9 +1,4 @@
 {
-  "cleanUrls": true,
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/(.*)", "dest": "/index.html" }
-  ],
   "functions": {
     "api/upload.js":    { "maxDuration": 300 },
     "api/analyse.js":   { "maxDuration": 120 },
@@ -16,3 +11,8 @@
     "api/export.js":    { "maxDuration": 30  }
   }
 }
+```
+
+No routes at all — just the functions config. Vercel should serve `index.html` automatically from the root. Commit, wait for green, then run:
+```
+curl -s https://re-mens-juris.vercel.app | wc -c

@@ -1,18 +1,11 @@
 {
-  "functions": {
-    "api/upload.js":    { "maxDuration": 300 },
-    "api/analyse.js":   { "maxDuration": 120 },
-    "api/tools.js":     { "maxDuration": 300 },
-    "api/matters.js":   { "maxDuration": 30  },
-    "api/documents.js": { "maxDuration": 30  },
-    "api/auth.js":      { "maxDuration": 30  },
-    "api/sharing.js":   { "maxDuration": 30  },
-    "api/history.js":   { "maxDuration": 30  },
-    "api/export.js":    { "maxDuration": 30  }
-  }
+  "version": 2,
+  "builds": [
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "api/*.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
 }
-```
-
-No routes at all — just the functions config. Vercel should serve `index.html` automatically from the root. Commit, wait for green, then run:
-```
-curl -s https://re-mens-juris.vercel.app | wc -c

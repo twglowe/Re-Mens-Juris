@@ -13,6 +13,7 @@
     "api/auth.js":      { "maxDuration": 30  },
     "api/sharing.js":   { "maxDuration": 30  },
     "api/history.js":   { "maxDuration": 30  },
-    "api/export.js":    { "maxDuration": 30  }
+    "api/export.js":    { "maxDuration": 30  },
+    "api/usage.js":     { "maxDuration": 30  }
   }
 }

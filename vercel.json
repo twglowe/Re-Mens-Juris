@@ -1,9 +1,8 @@
-{
+{{
   "version": 2,
-  "cleanUrls": true,
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/(.*)", "dest": "/index.html" }
+    { "src": "/(.*)", "dest": "/public/index.html" }
   ],
   "functions": {
     "api/upload.js":    { "maxDuration": 300 },

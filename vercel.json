@@ -1,9 +1,9 @@
 {
   "version": 2,
-  "public": true,
-  "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/:path*", "destination": "/index.html" }
+  "cleanUrls": true,
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ],
   "functions": {
     "api/upload.js":    { "maxDuration": 300 },
@@ -14,7 +14,6 @@
     "api/auth.js":      { "maxDuration": 30  },
     "api/sharing.js":   { "maxDuration": 30  },
     "api/history.js":   { "maxDuration": 30  },
-    "api/export.js":    { "maxDuration": 30  },
-    "api/usage.js":     { "maxDuration": 30  }
+    "api/export.js":    { "maxDuration": 30  }
   }
 }

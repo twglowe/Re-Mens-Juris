@@ -1,39 +1,3 @@
-import { createClient } from "@supabase/supabase-js";
-import Anthropic from "@anthropic-ai/sdk";
-
-export const config = { maxDuration: 120 };
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-const INPUT_COST_PER_M  = 3.00;
-const OUTPUT_COST_PER_M = 15.00;
-
-async function getUser(req) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token) return null;
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  return error ? null : user;
-}
-
-async function searchChunks(matterId, query, limit = 25) {
-  const keywords = query.split(/\s+/).filter(w => w.length > 3).slice(0, 10).join(" | ");
-  if (!keywords) {
-    const { data } = await supabase.from("chunks").select("content, document_name, doc_type").eq("matter_id", matterId).limit(limit);
-    return data || [];
-  }
-  const { data, error } = await supabase.from("chunks").select("content, document_name, doc_type")
-    .eq("matter_id", matterId)
-    .textSearch("content", keywords, { type: "plain", config: "english" })
-    .limit(limit);
-  if (error || !data?.length) {
-    const { data: fallback } = await supabase.from("chunks").select("content, document_name, doc_type").eq("matter_id", matterId).limit(limit);
-    return fallback || [];
-  }
-  return data;
-}
-
-async function logUsage(matterId, userId, toolName, inputTokens, outputTokens, cost) {
   try {
     await supabase.from("usage_log").insert({
       matter_id: matterId, user_id: userId, tool_name: toolName,

@@ -68,3 +68,37 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message });
   }
 }
+      // Usage summary across all matters owned by this user
+      const { data: matters } = await supabase
+        .from("matters")
+        .select("id, name")
+        .eq("owner_id", user.id);
+
+      const matterIds = (matters || []).map(m => m.id);
+      if (matterIds.length === 0) return res.status(200).json({ summary: [] });
+
+      const { data, error } = await supabase
+        .from("usage_log")
+        .select("matter_id, tool_name, input_tokens, output_tokens, cost_usd")
+        .in("matter_id", matterIds)
+        .eq("user_id", user.id);
+      if (error) throw error;
+
+      const byMatter = {};
+      for (const m of matters) byMatter[m.id] = { matterId: m.id, matterName: m.name, inputTokens: 0, outputTokens: 0, costUsd: 0, runs: 0 };
+      for (const r of (data || [])) {
+        if (byMatter[r.matter_id]) {
+          byMatter[r.matter_id].inputTokens  += r.input_tokens  || 0;
+          byMatter[r.matter_id].outputTokens += r.output_tokens || 0;
+          byMatter[r.matter_id].costUsd      += r.cost_usd      || 0;
+          byMatter[r.matter_id].runs++;
+        }
+      }
+
+      const summary = Object.values(byMatter).sort((a, b) => b.costUsd - a.costUsd);
+      return res.status(200).json({ summary });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}

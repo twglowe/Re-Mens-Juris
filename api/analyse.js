@@ -1,3 +1,74 @@
+import { createClient } from "@supabase/supabase-js";
+import Anthropic from "@anthropic-ai/sdk";
+
+export const config = { maxDuration: 120 };
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const INPUT_COST_PER_M  = 3.00;
+const OUTPUT_COST_PER_M = 15.00;
+
+async function getUser(req) {
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  if (!token) return null;
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  return error ? null : user;
+}
+
+// Extract core search terms from a natural language question
+async function extractSearchTerms(query) {
+  try {
+    const response = await anthropic.messages.create({
+      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+      max_tokens: 200,
+      messages: [{
+        role: "user",
+        content: `Extract the key legal search terms from this question. Return ONLY a space-separated list of the most important nouns, names, and legal concepts — no verbs, no filler words, no explanation. Maximum 8 terms.
+
+Question: "${query}"
+
+Terms:`
+      }]
+    });
+    const terms = response.content?.find(b => b.type === "text")?.text?.trim() || "";
+    return terms.split(/\s+/).filter(w => w.length > 2).slice(0, 8);
+  } catch (e) {
+    // Fall back to simple keyword extraction
+    return query.split(/\s+/).filter(w => w.length > 3).slice(0, 8);
+  }
+}
+
+async function searchChunks(matterId, query, limit = 30) {
+  // First try with AI-extracted terms
+  const terms = await extractSearchTerms(query);
+  const keywords = terms.join(" | ");
+
+  if (keywords) {
+    const { data, error } = await supabase.from("chunks").select("content, document_name, doc_type")
+      .eq("matter_id", matterId)
+      .textSearch("content", keywords, { type: "plain", config: "english" })
+      .limit(limit);
+    if (!error && data?.length) return data;
+  }
+
+  // Fall back to simple keyword extraction if AI terms yield nothing
+  const simpleKeywords = query.split(/\s+/).filter(w => w.length > 3).slice(0, 10).join(" | ");
+  if (simpleKeywords) {
+    const { data, error } = await supabase.from("chunks").select("content, document_name, doc_type")
+      .eq("matter_id", matterId)
+      .textSearch("content", simpleKeywords, { type: "plain", config: "english" })
+      .limit(limit);
+    if (!error && data?.length) return data;
+  }
+
+  // Final fallback — return most recent chunks
+  const { data } = await supabase.from("chunks").select("content, document_name, doc_type")
+    .eq("matter_id", matterId).limit(limit);
+  return data || [];
+}
+
+async function logUsage(matterId, userId, toolName, inputTokens, outputTokens, cost) {
   try {
     await supabase.from("usage_log").insert({
       matter_id: matterId, user_id: userId, tool_name: toolName,
@@ -34,6 +105,51 @@ export default async function handler(req, res) {
       }
     }
 
+    const matterContext = [
+      matterNature ? `Nature of the dispute: ${matterNature}` : "",
+      matterIssues ? `Key issues in this matter: ${matterIssues}` : "",
+    ].filter(Boolean).join("\n");
+
+    const system = `You are a senior litigation counsel specialising in ${jurisdiction || "Bermuda"} offshore common law litigation. You have deep expertise in Bermuda, Cayman Islands and BVI law, court rules (RSC Bermuda, GCR Cayman, CPR BVI), statutes, company law, trust law, insolvency, and English common law precedent as applied offshore.
+
+Matter: "${matterName || "Current Matter"}"
+${matterContext ? `\n${matterContext}\n` : ""}
+${contextText ? `The following passages are retrieved from the matter documents as most relevant to this question. Refer to them specifically, quoting where helpful:\n\n${contextText}` : "No documents uploaded yet. Answer based on your legal knowledge."}
+
+In every response:
+1. Apply ${jurisdiction || "Bermuda"}-specific law — cite local statutes, court rules, and leading authority by name
+2. Refer to document passages specifically, identifying which document they come from
+3. Flag where ${jurisdiction || "Bermuda"} law diverges from English law or other offshore jurisdictions
+4. Be precise — identify unsettled points and flag litigation risk
+5. Address these focus areas: ${focusAreas?.join(", ") || "all relevant issues"}
+6. Use clear ## headings. Do not truncate your response.
+Analysis type: ${queryType || "General Legal Analysis"}
+End with: ⚠️ Professional Caution: AI-generated analysis. Verify against current primary sources before reliance.`;
+
+    const cleanMessages = messages.map(m => ({
+      role: m.role,
+      content: typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.filter(c => c.type === "text").map(c => c.text).join("\n") : String(m.content)
+    }));
+
+    const response = await anthropic.messages.create({
+      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+      max_tokens: 8192,
+      system,
+      messages: cleanMessages,
+    });
+
+    const resultText = response.content?.find(b => b.type === "text")?.text || "";
+    const inputTokens  = response.usage?.input_tokens  || 0;
+    const outputTokens = response.usage?.output_tokens || 0;
+    const costUsd = (inputTokens * INPUT_COST_PER_M / 1_000_000) + (outputTokens * OUTPUT_COST_PER_M / 1_000_000);
+
+    if (matterId) await logUsage(matterId, user.id, "qa", inputTokens, outputTokens, costUsd);
+
+    return res.status(200).json({ result: resultText, usage: { inputTokens, outputTokens, costUsd } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
     const matterContext = [
       matterNature ? `Nature of the dispute: ${matterNature}` : "",
       matterIssues ? `Key issues in this matter: ${matterIssues}` : "",

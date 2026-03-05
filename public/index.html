@@ -1,40 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Ex Libris Juris — Legal Analysis</title>
-<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --navy:#0f2744;--navy-mid:#1a3a5c;--blue:#1d6fa4;--blue-light:#2689c8;
-  --blue-pale:#e8f4fd;--blue-faint:#f4f9fd;--white:#fff;--off-white:#f2f7fc;
-  --border:#c5ddf0;--border-strong:#90c0e0;
-  --text-dark:#0a1e36;--text-mid:#1e3d5c;--text-light:#4a6a84;--text-faint:#7a9ab4;
-  --error:#c0392b;--success:#27ae60;--warning:#e67e22;
-}
-html,body{height:100%;background:var(--off-white);color:var(--text-dark);font-family:'Source Sans 3',sans-serif;font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
-.login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--navy);padding:1.5rem}
-.login-box{background:var(--white);border-radius:14px;padding:2.75rem 2.25rem;width:100%;max-width:400px;box-shadow:0 30px 90px rgba(0,0,0,.45)}
-.login-logo{font-family:'Libre Baskerville',serif;font-size:2rem;font-weight:700;color:var(--navy);text-align:center;margin-bottom:.25rem}
-.login-sub{text-align:center;font-size:.9rem;color:var(--text-faint);font-style:italic;margin-bottom:2rem}
-.f-label{display:block;font-size:.82rem;font-weight:700;color:var(--text-mid);letter-spacing:.06em;text-transform:uppercase;margin-bottom:.4rem}
-.f-input{width:100%;padding:.85rem 1.1rem;border:2px solid var(--border);border-radius:8px;font-family:'Source Sans 3',sans-serif;font-size:1.05rem;color:var(--text-dark);margin-bottom:1.1rem;outline:none;transition:border-color .2s;background:var(--off-white)}
-.f-input:focus{border-color:var(--blue-light);background:#fff}
-.remember-row{display:flex;align-items:center;gap:.5rem;margin-bottom:1.25rem}
-.remember-row input{width:18px;height:18px;accent-color:var(--blue);cursor:pointer}
-.remember-row span{font-size:.9rem;color:var(--text-mid);font-weight:500;cursor:pointer}
-.btn-login{width:100%;padding:.95rem;background:var(--navy);border:none;border-radius:8px;color:#fff;font-family:'Libre Baskerville',serif;font-size:1.1rem;font-weight:700;cursor:pointer;transition:background .2s}
-.btn-login:hover{background:var(--blue-light)}
-.login-err{padding:.7rem .9rem;background:#fdf0f0;border:1.5px solid #f0b0b0;border-radius:6px;font-size:.9rem;font-weight:500;color:var(--error);margin-bottom:1rem;display:none}
-.app{height:100vh;display:none;flex-direction:column;overflow:hidden}
-header{background:var(--navy);padding:0 1.5rem;flex-shrink:0;box-shadow:0 2px 16px rgba(15,39,68,.5)}
-.hdr{display:flex;align-items:center;justify-content:space-between;height:62px;gap:1rem}
-.logo{font-family:'Libre Baskerville',serif;font-size:1.35rem;font-weight:700;color:#fff;flex-shrink:0}
-.logo em{color:#9acce8;font-style:italic;font-size:.78rem;font-weight:400;margin-left:.5rem}
-.hdr-right{display:flex;align-items:center;gap:.85rem}
-.jur-tabs{display:flex;border:1.5px solid rgba(255,255,255,.22);border-radius:6px;overflow:hidden}
+public/index.html.jur-tabs{display:flex;border:1.5px solid rgba(255,255,255,.22);border-radius:6px;overflow:hidden}
 .jur-tab{padding:.32rem .9rem;border:none;border-right:1px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.55);font-size:.82rem;font-weight:600;cursor:pointer;transition:all .2s;font-family:'Source Sans 3',sans-serif}
 .jur-tab:last-child{border-right:none}
 .jur-tab.active{background:var(--blue-light);color:#fff}

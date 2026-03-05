@@ -22,11 +22,26 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === "GET") {
-      const { matter_id } = req.query;
+      const { matter_id, doc_name } = req.query;
       const { access } = await canAccessMatter(user.id, matter_id);
       if (!access) return res.status(403).json({ error: "Access denied" });
 
-      const { data, error } = await supabase.from("documents").select("*").eq("matter_id", matter_id).order("created_at", { ascending: false });
+      // If doc_name provided, return chunks for source passage panel
+      if (doc_name) {
+        const { data, error } = await supabase.from("chunks")
+          .select("content, chunk_index")
+          .eq("matter_id", matter_id)
+          .eq("document_name", doc_name)
+          .order("chunk_index", { ascending: true })
+          .limit(20);
+        if (error) throw error;
+        return res.status(200).json({ chunks: data || [] });
+      }
+
+      // Otherwise return document list
+      const { data, error } = await supabase.from("documents")
+        .select("*").eq("matter_id", matter_id)
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return res.status(200).json({ documents: data });
     }
@@ -35,6 +50,20 @@ export default async function handler(req, res) {
       const { id } = req.query;
       const { data: doc } = await supabase.from("documents").select("matter_id").eq("id", id).single();
       if (!doc) return res.status(404).json({ error: "Document not found" });
+      const { canEdit } = await canAccessMatter(user.id, doc.matter_id);
+      if (!canEdit) return res.status(403).json({ error: "You do not have edit permission" });
+      await supabase.from("chunks").delete().eq("document_id", id);
+      await supabase.from("documents").delete().eq("id", id);
+      const { count } = await supabase.from("documents").select("*", { count: "exact", head: true }).eq("matter_id", doc.matter_id);
+      await supabase.from("matters").update({ document_count: count || 0 }).eq("id", doc.matter_id);
+      return res.status(200).json({ success: true });
+    }
+
+    return res.status(405).json({ error: "Method not allowed" });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}      if (!doc) return res.status(404).json({ error: "Document not found" });
 
       const { canEdit } = await canAccessMatter(user.id, doc.matter_id);
       if (!canEdit) return res.status(403).json({ error: "You do not have edit permission" });

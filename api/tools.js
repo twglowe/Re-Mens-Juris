@@ -1,39 +1,3 @@
-import { createClient } from "@supabase/supabase-js";
-import Anthropic from "@anthropic-ai/sdk";
-
-export const config = { maxDuration: 300 };
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-// Pricing per million tokens (claude-sonnet-4-6)
-const INPUT_COST_PER_M  = 3.00;
-const OUTPUT_COST_PER_M = 15.00;
-
-async function getUser(req) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token) return null;
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  return error ? null : user;
-}
-
-// Fetch ALL chunks with no artificial cap, paginated in batches of 1000
-async function getAllChunks(matterId, docTypes = null) {
-  let allChunks = [];
-  let from = 0;
-  const pageSize = 1000;
-  while (true) {
-    let query = supabase.from("chunks")
-      .select("content, document_name, doc_type, chunk_index")
-      .eq("matter_id", matterId)
-      .order("document_name")
-      .order("chunk_index")
-      .range(from, from + pageSize - 1);
-    if (docTypes && docTypes.length > 0) query = query.in("doc_type", docTypes);
-    const { data, error } = await query;
-    if (error || !data || data.length === 0) break;
-    allChunks = allChunks.concat(data);
-    if (data.length < pageSize) break;
     from += pageSize;
   }
   return allChunks;

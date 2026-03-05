@@ -6,6 +6,9 @@ export const config = { maxDuration: 120 };
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const INPUT_COST_PER_M  = 3.00;
+const OUTPUT_COST_PER_M = 15.00;
+
 async function getUser(req) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
@@ -28,6 +31,15 @@ async function searchChunks(matterId, query, limit = 25) {
     return fallback || [];
   }
   return data;
+}
+
+async function logUsage(matterId, userId, toolName, inputTokens, outputTokens, cost) {
+  try {
+    await supabase.from("usage_log").insert({
+      matter_id: matterId, user_id: userId, tool_name: toolName,
+      input_tokens: inputTokens, output_tokens: outputTokens, cost_usd: cost,
+    });
+  } catch (e) { console.error("Usage log error:", e); }
 }
 
 export default async function handler(req, res) {
@@ -85,13 +97,20 @@ End with: ⚠️ Professional Caution: AI-generated analysis. Verify against cur
     }));
 
     const response = await anthropic.messages.create({
-      model: process.env.CLAUDE_MODEL || "claude-opus-4-5",
+      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
       max_tokens: 8192,
       system,
       messages: cleanMessages,
     });
 
-    return res.status(200).json({ result: response.content?.find(b => b.type === "text")?.text || "" });
+    const resultText = response.content?.find(b => b.type === "text")?.text || "";
+    const inputTokens  = response.usage?.input_tokens  || 0;
+    const outputTokens = response.usage?.output_tokens || 0;
+    const costUsd = (inputTokens * INPUT_COST_PER_M / 1_000_000) + (outputTokens * OUTPUT_COST_PER_M / 1_000_000);
+
+    if (matterId) await logUsage(matterId, user.id, "qa", inputTokens, outputTokens, costUsd);
+
+    return res.status(200).json({ result: resultText, usage: { inputTokens, outputTokens, costUsd } });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

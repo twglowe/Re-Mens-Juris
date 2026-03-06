@@ -6,7 +6,7 @@ export const config = { maxDuration: 300 };
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Pricing per million tokens (claude-sonnet-4-5)
+// Pricing per million tokens (claude-sonnet-4-6)
 const INPUT_COST_PER_M  = 3.00;
 const OUTPUT_COST_PER_M = 15.00;
 
@@ -17,12 +17,13 @@ async function getUser(req) {
   return error ? null : user;
 }
 
-// Fetch ALL chunks with no artificial cap
-async function getAllChunks(matterId, docTypes = null) {
+// Fetch chunks — limit to 3000 per call to avoid memory issues
+async function getAllChunks(matterId, docTypes = null, limit = 3000) {
   let query = supabase.from("chunks")
     .select("content, document_name, doc_type")
     .eq("matter_id", matterId)
-    .limit(10000);
+    .order("chunk_index", { ascending: true })
+    .limit(limit);
   if (docTypes && docTypes.length > 0) query = query.in("doc_type", docTypes);
   const { data, error } = await query;
   if (error) throw new Error("Chunk fetch failed: " + error.message);
@@ -38,19 +39,22 @@ function chunksToDocMap(chunks) {
   return byDoc;
 }
 
-// Split docs into batches of ~80k chars to stay within context limits
-function batchDocs(byDoc, maxChars = 80000) {
+// Split docs into batches of ~30k chars to keep each Claude call fast
+function batchDocs(byDoc, maxChars = 30000) {
   const batches = [];
   let current = {};
   let currentSize = 0;
   for (const [name, data] of Object.entries(byDoc)) {
-    const docSize = data.text.length + name.length + 50;
+    // Truncate very large individual docs to 60k chars to avoid single-doc overflow
+    const truncated = data.text.length > 60000 ? data.text.slice(0, 60000) + '\n[...truncated for processing...]' : data.text;
+    const docData = { ...data, text: truncated };
+    const docSize = truncated.length + name.length + 50;
     if (currentSize + docSize > maxChars && Object.keys(current).length > 0) {
       batches.push(current);
       current = {};
       currentSize = 0;
     }
-    current[name] = data;
+    current[name] = docData;
     currentSize += docSize;
   }
   if (Object.keys(current).length > 0) batches.push(current);
@@ -63,8 +67,8 @@ function docsToText(byDoc) {
 
 async function runTool(system, userPrompt) {
   const response = await anthropic.messages.create({
-    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-5",
-    max_tokens: 8192,
+    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+    max_tokens: 4096,
     system,
     messages: [{ role: "user", content: userPrompt }],
   });
@@ -85,15 +89,21 @@ async function runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc) {
     return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cost: r.cost };
   }
 
-  // Extraction pass
+  // Extraction pass — run batches in parallel (max 3 at once to avoid rate limits)
   const extracts = [];
-  for (let i = 0; i < batches.length; i++) {
-    const batchText = docsToText(batches[i]);
-    const r = await runTool(systemBase, extractPromptFn(batchText, i + 1, batches.length));
-    extracts.push(r.text);
-    totalInput  += r.inputTokens;
-    totalOutput += r.outputTokens;
-    totalCost   += r.cost;
+  const PARALLEL = 3;
+  for (let i = 0; i < batches.length; i += PARALLEL) {
+    const slice = batches.slice(i, i + PARALLEL);
+    const results = await Promise.all(slice.map((batch, j) => {
+      const batchText = docsToText(batch);
+      return runTool(systemBase, extractPromptFn(batchText, i + j + 1, batches.length));
+    }));
+    for (const r of results) {
+      extracts.push(r.text);
+      totalInput  += r.inputTokens;
+      totalOutput += r.outputTokens;
+      totalCost   += r.cost;
+    }
   }
 
   // Synthesis pass

@@ -149,6 +149,7 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .tab-close:hover{background:rgba(0,0,0,.08);color:var(--error)}
 .tab-workspace{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0}
 .tab-workspace.active{display:flex;min-height:0}
+.tool-msgs{flex:1;overflow-y:auto;padding:1.35rem;display:flex;flex-direction:column;gap:1.15rem;min-height:0}
 /* Tool workspace ready state */
 .tool-ready{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;padding:2rem;text-align:center;gap:1rem}
 .tool-ready-icon{font-size:2.5rem;opacity:.2}
@@ -337,7 +338,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         </div>
       </div>
       <!-- Tool workspaces injected here by JS -->
-      <div id="toolWorkspaces"></div>
+      <div id="toolWorkspaces" style="display:contents"></div>
       <div class="input-area">
         <div class="input-row">
           <textarea id="chatInput" placeholder="Ask a legal question about this matter…" rows="1"></textarea>
@@ -817,7 +818,7 @@ function getOrCreateToolTab(toolName){
       <div class="tool-ready-sub">Click Run to analyse all documents in this matter.</div>
       <button class="btn-run-tool" onclick="promptTool('${toolName}')">Run Analysis</button>
     </div>
-    <div class="messages-area tool-msgs" id="msgs-${toolName}" style="display:none;flex:1;overflow-y:auto;min-height:0"></div>`;
+    <div class="messages-area tool-msgs" id="msgs-${toolName}" style="display:none"></div>`;
   document.getElementById('toolWorkspaces').appendChild(ws);
 
   openTabs.push(toolName);
@@ -862,7 +863,6 @@ function getActiveMessagesArea(){
 }
 
 function showToolResult(toolName){
-  // Hide ready state, show messages area
   const ready=document.getElementById('ready-'+toolName);
   const msgs=document.getElementById('msgs-'+toolName);
   if(ready) ready.style.display='none';

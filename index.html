@@ -147,8 +147,8 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .tab.active{color:var(--navy);border-bottom-color:var(--blue-light);background:var(--white)}
 .tab-close{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:.9rem;padding:0 .1rem;line-height:1;border-radius:3px;margin-left:.1rem}
 .tab-close:hover{background:rgba(0,0,0,.08);color:var(--error)}
-.tab-workspace{display:none;flex:1;flex-direction:column;overflow:hidden}
-.tab-workspace.active{display:flex}
+.tab-workspace{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0}
+.tab-workspace.active{display:flex;min-height:0}
 /* Tool workspace ready state */
 .tool-ready{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;padding:2rem;text-align:center;gap:1rem}
 .tool-ready-icon{font-size:2.5rem;opacity:.2}
@@ -817,7 +817,7 @@ function getOrCreateToolTab(toolName){
       <div class="tool-ready-sub">Click Run to analyse all documents in this matter.</div>
       <button class="btn-run-tool" onclick="promptTool('${toolName}')">Run Analysis</button>
     </div>
-    <div class="messages-area tool-msgs" id="msgs-${toolName}" style="display:none"></div>`;
+    <div class="messages-area tool-msgs" id="msgs-${toolName}" style="display:none;flex:1;overflow-y:auto;min-height:0"></div>`;
   document.getElementById('toolWorkspaces').appendChild(ws);
 
   openTabs.push(toolName);

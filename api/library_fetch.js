@@ -1,10 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 export const config = { maxDuration: 30 };
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -18,104 +15,90 @@ export default async function handler(req, res) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser(auth);
   if (authErr || !user) return res.status(401).json({ error: "Unauthorised" });
 
-  const action = req.method === "GET"
-    ? req.query.action
-    : (req.body?.action || req.query.action);
+  const action = req.query.action || req.body?.action;
 
   try {
-    // Get all case types for this user
+    // All case types for this user
     if (action === "getCaseTypes") {
       const { data, error } = await supabase
         .from("case_types")
         .select("id, name")
-        .eq("owner_id", user.id)
+        .eq("user_id", user.id)
         .order("name");
       if (error) throw error;
       return res.json({ caseTypes: data || [] });
     }
 
-    // Get subcategories for a case type
+    // Subcategories for a case type
     if (action === "getSubcategories") {
       const caseTypeId = req.query.caseTypeId || req.body?.caseTypeId;
       const { data, error } = await supabase
         .from("case_subcategories")
         .select("id, name")
+        .eq("user_id", user.id)
         .eq("case_type_id", caseTypeId)
         .order("name");
       if (error) throw error;
       return res.json({ subcategories: data || [] });
     }
 
-    // Get doc types for a case type (and optionally subcategory)
+    // Doc types for a case type
     if (action === "getDocTypes") {
       const caseTypeId = req.query.caseTypeId || req.body?.caseTypeId;
       const { data, error } = await supabase
         .from("doc_types")
         .select("id, name")
+        .eq("user_id", user.id)
         .eq("case_type_id", caseTypeId)
         .order("name");
       if (error) throw error;
       return res.json({ docTypes: data || [] });
     }
 
-    // Get matching library content for drafting
+    // Matching sections and precedents for draft context
     if (action === "getDraftContext") {
-      const { caseTypeId, subcategoryId, docTypeId } = req.method === "GET" ? req.query : req.body;
+      const caseTypeId   = req.query.caseTypeId   || req.body?.caseTypeId;
+      const subcategoryId= req.query.subcategoryId || req.body?.subcategoryId;
+      const docTypeId    = req.query.docTypeId     || req.body?.docTypeId;
 
-      // Fetch standard sections matching this case type / doc type
-      let sectionsQuery = supabase
+      // Standard sections for this case type
+      let secQ = supabase
         .from("standard_sections")
-        .select("id, title, content, applies_to_doc_type_id")
-        .eq("owner_id", user.id);
-
-      // Filter by case type via the tag table
+        .select("id, title, content, doc_type_id")
+        .eq("user_id", user.id);
       if (caseTypeId) {
-        const { data: taggedIds } = await supabase
-          .from("section_case_type_tags")
-          .select("section_id")
-          .eq("case_type_id", caseTypeId);
-        const ids = (taggedIds || []).map(t => t.section_id);
-        if (ids.length > 0) {
-          sectionsQuery = sectionsQuery.in("id", ids);
-        }
+        secQ = secQ.or(`case_type_id.eq.${caseTypeId},case_type_id.is.null`);
       }
-
       if (docTypeId) {
-        sectionsQuery = sectionsQuery.or(`applies_to_doc_type_id.eq.${docTypeId},applies_to_doc_type_id.is.null`);
+        secQ = secQ.or(`doc_type_id.eq.${docTypeId},doc_type_id.is.null`);
       }
+      const { data: sections } = await secQ.order("title").limit(50);
 
-      const { data: sections } = await sectionsQuery.order("title");
-
-      // Fetch precedent document chunks matching this case type / doc type
-      let precedentsQuery = supabase
+      // Precedent docs for this case type
+      let precQ = supabase
         .from("precedent_docs")
-        .select("id, title, doc_type_id, case_type_id, subcategory_id")
-        .eq("owner_id", user.id);
+        .select("id, name, description, doc_type_id, subcategory_id")
+        .eq("user_id", user.id);
+      if (caseTypeId)    precQ = precQ.eq("case_type_id", caseTypeId);
+      if (subcategoryId) precQ = precQ.eq("subcategory_id", subcategoryId);
+      if (docTypeId)     precQ = precQ.eq("doc_type_id", docTypeId);
+      const { data: precedents } = await precQ.order("name").limit(20);
 
-      if (caseTypeId) precedentsQuery = precedentsQuery.eq("case_type_id", caseTypeId);
-      if (subcategoryId) precedentsQuery = precedentsQuery.eq("subcategory_id", subcategoryId);
-      if (docTypeId) precedentsQuery = precedentsQuery.eq("doc_type_id", docTypeId);
-
-      const { data: precedents } = await precedentsQuery.order("title");
-
-      return res.json({
-        sections: sections || [],
-        precedents: precedents || []
-      });
+      return res.json({ sections: sections || [], precedents: precedents || [] });
     }
 
-    // Get chunks for a specific precedent doc
+    // Chunks for a specific precedent doc
     if (action === "getPrecedentChunks") {
       const docId = req.query.docId || req.body?.docId;
       const { data, error } = await supabase
         .from("precedent_chunks")
         .select("content, chunk_index")
-        .eq("doc_id", docId)
+        .eq("precedent_doc_id", docId)
+        .eq("user_id", user.id)
         .order("chunk_index")
         .limit(200);
       if (error) throw error;
-      const text = (data || []).map(c => c.content).join("\n\n");
-      return res.json({ text });
+      return res.json({ text: (data || []).map(c => c.content).join("\n\n") });
     }
 
     return res.status(400).json({ error: "Unknown action" });

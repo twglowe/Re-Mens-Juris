@@ -958,25 +958,720 @@ document.getElementById('chatInput').addEventListener('input',function(){this.st
 function clearChat(){clearMessages();if(currentMatter)sysMsg('Chat cleared. Documents remain indexed.');}
 
 const toolDefs={
+  inconsistency:{title:'🔍 Inconsistency Tracker',body:()=>`<p class="tool-desc">Select anchor documents (your baseline factual position). The system finds all contradictions in the remaining documents.</p><div class="focus-label">Anchor Documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to compare all)</span></div><div class="anchor-list" id="anchorList">${documents.map(d=>`<label class="anchor-item"><input type="checkbox" value="${esc(d.name)}"> ${esc(d.name)} <span style="color:var(--text-faint);font-size:.72rem">[${d.doc_type}]</span></label>`).join('')||'<div style="font-size:.84rem;color:var(--text-faint)">No documents uploaded.</div>'}</div><div class="focus-label" style="margin-top:.85rem">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the dates of payments"></textarea>`},
+  proposition:{title:'🎯 Proposition Evidence Finder',body:()=>`<p class="tool-desc">State a proposition or factual assertion. The system finds all evidence supporting or contradicting it and grades each reference by strength.</p><div class="focus-label">Proposition or Statement</div><textarea id="toolInstructions" placeholder="e.g. The defendant had knowledge of the transactions before 1 January 2023" style="min-height:80px"></textarea>`},
+  chronology:{title:'📅 Chronology Builder',body:()=>`<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology. Disputed dates are flagged.</p><div class="focus-label">Focus or Date Range <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on events after January 2022, or limit to Issue 3 — the share transfer"></textarea>`},
+  persons:{title:'👥 Persons & Entities Index',body:()=>`<p class="tool-desc">Identifies every person and entity across all documents — with organisational roles (director, shareholder, trustee etc.) and procedural roles (claimant, witness etc.) auto-detected.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the directors and shareholders"></textarea>`},
+  issues:{title:'⚖ Issue Tracker',body:()=>`<p class="tool-desc">Maps every legal and factual issue and assesses the supporting evidence for each party.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the limitation defence"></textarea>`},
+  citations:{title:'📚 Citation Checker',body:()=>`<p class="tool-desc">Checks citations in skeleton arguments and pleadings against uploaded judgments. Flags overstated or incorrect propositions.</p><p style="font-size:.84rem;color:var(--text-faint)">Upload the relevant case law before running this tool.</p>`},
+  briefing:{title:'📋 Briefing Note',body:()=>`<p class="tool-desc">Produces a structured briefing note covering background, parties, claim, key facts, legal issues, evidence, procedural position and next steps.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Written for a colleague unfamiliar with the matter"></textarea>`},
+  draft:{title:'✍️ Draft Generator',body:()=>`<p class="tool-desc">Drafts legal documents based on the matter files. Be specific about what you want drafted.</p><div class="focus-label">Drafting Instructions</div><textarea id="toolInstructions" placeholder="e.g. Draft a skeleton argument for the summary judgment application" style="min-height:100px"></textarea>`},
+};
 
-    <!-- Draft Library Selector -->
-    <div id="draftLibSelector" style="display:none;margin-bottom:.75rem;padding:.75rem;background:var(--blue-faint);border-radius:6px;border:1px solid var(--border);">
-      <div style="font-size:.72rem;font-weight:700;color:var(--text-light);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem;">Library</div>
-      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem;">
-        <select id="draftCaseType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;background:var(--white);color:var(--text-dark);">
-          <option value="">Case type…</option>
-        </select>
-        <select id="draftSubcategory" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;background:var(--white);color:var(--text-dark);">
-          <option value="">Sub-category…</option>
-        </select>
-        <select id="draftDocType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;background:var(--white);color:var(--text-dark);">
-          <option value="">Document type…</option>
-        </select>
+// ── LIBRARY STATE ─────────────────────────────────────────────────────────────
+let libraryData = { caseTypes:[], subcats:[], docTypes:[], precedents:[], sections:[] };
+let activeLibTab = 'case-type';
+let pendingSubcats = []; // for new case type creation
+let pendingDocTypes = [];
+
+function switchLeftPanel(panel){
+  document.getElementById('mattersPanel').style.display = panel==='matters' ? '' : 'none';
+  document.getElementById('libraryPanel').style.display = panel==='library' ? 'flex' : 'none';
+  document.getElementById('toggleMatters').classList.toggle('active', panel==='matters');
+  document.getElementById('toggleLibrary').classList.toggle('active', panel==='library');
+  if(panel==='library') loadLibrary();
+}
+
+async function loadLibrary(){
+  if(!token) return;
+  try{
+    const [ctRes, scRes, dtRes, pdRes, ssRes] = await Promise.all([
+      api('/api/library?type=case_types'),
+      api('/api/library?type=subcats'),
+      api('/api/library?type=doc_types'),
+      api('/api/library?type=precedents'),
+      api('/api/library?type=sections'),
+    ]);
+    libraryData.caseTypes  = ctRes.data || [];
+    libraryData.subcats    = scRes.data || [];
+    libraryData.docTypes   = dtRes.data || [];
+    libraryData.precedents = pdRes.data || [];
+    libraryData.sections   = ssRes.data || [];
+    renderLibraryFilters();
+    renderLibrary();
+  } catch(e){ console.error('Library load error:', e); }
+}
+
+function renderLibraryFilters(){
+  const typeEl  = document.getElementById('libFilterType');
+  const subEl   = document.getElementById('libFilterSub');
+  const docEl   = document.getElementById('libFilterDoc');
+  const selType = typeEl.value;
+  typeEl.innerHTML = '<option value="">All case types</option>' +
+    libraryData.caseTypes.map(ct=>`<option value="${ct.id}">${esc(ct.name)}</option>`).join('');
+  typeEl.value = selType;
+  const filteredSubs = selType
+    ? libraryData.subcats.filter(s=>s.case_type_id===selType)
+    : libraryData.subcats;
+  subEl.innerHTML = '<option value="">All sub-categories</option>' +
+    filteredSubs.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  const filteredDocs = selType
+    ? libraryData.docTypes.filter(d=>d.case_type_id===selType)
+    : libraryData.docTypes;
+  docEl.innerHTML = '<option value="">All doc types</option>' +
+    filteredDocs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+}
+
+function renderLibrary(){
+  renderLibraryFilters();
+  const filterType = document.getElementById('libFilterType').value;
+  const filterSub  = document.getElementById('libFilterSub').value;
+  const filterDoc  = document.getElementById('libFilterDoc').value;
+  const list = document.getElementById('libraryList');
+
+  const filtPrec = libraryData.precedents.filter(p=>
+    (!filterType || p.case_type_id===filterType) &&
+    (!filterSub  || p.subcategory_id===filterSub) &&
+    (!filterDoc  || p.doc_type_id===filterDoc)
+  );
+  const filtSec = libraryData.sections.filter(s=>
+    (!filterType || s.case_type_id===filterType) &&
+    (!filterSub  || s.subcategory_id===filterSub) &&
+    (!filterDoc  || s.doc_type_id===filterDoc)
+  );
+
+  if(!libraryData.caseTypes.length){
+    list.innerHTML='<div class="empty-state">No library entries yet.<br>Click + New to add case types.</div>';
+    return;
+  }
+
+  // Group by case type
+  const typesToShow = filterType
+    ? libraryData.caseTypes.filter(ct=>ct.id===filterType)
+    : libraryData.caseTypes;
+
+  list.innerHTML = typesToShow.map(ct=>{
+    const precs = filtPrec.filter(p=>p.case_type_id===ct.id);
+    const secs  = filtSec.filter(s=>s.case_type_id===ct.id);
+    const subs  = libraryData.subcats.filter(s=>s.case_type_id===ct.id);
+    const docs  = libraryData.docTypes.filter(d=>d.case_type_id===ct.id);
+    return `<div class="lib-section">
+      <div class="lib-section-title">
+        <span>${esc(ct.name)}${ct.jurisdiction?' · '+esc(ct.jurisdiction):''}</span>
+        <button class="btn-icon" onclick="deleteCaseType('${ct.id}')" title="Delete case type">🗑</button>
       </div>
-      <div id="draftLibItems" style="display:none;border-top:1px solid var(--border);padding-top:.5rem;max-height:180px;overflow-y:auto;">
-        <div id="draftSectionsList"></div>
-        <div id="draftPrecedentsList"></div>
-      </div>
+      ${subs.length ? `<div style="font-size:.72rem;color:var(--text-faint);margin-bottom:.3rem">Sub-cats: ${subs.map(s=>esc(s.name)).join(', ')}</div>` : ''}
+      ${docs.length ? `<div style="font-size:.72rem;color:var(--text-faint);margin-bottom:.5rem">Doc types: ${docs.map(d=>esc(d.name)).join(', ')}</div>` : ''}
+      ${precs.map(p=>`<div class="lib-item" onclick="viewLibItem('prec','${p.id}')">
+        <div class="lib-item-name">📄 ${esc(p.name)}</div>
+        <div class="lib-item-meta">${esc(p.description||'')}${p.jurisdiction?' · '+esc(p.jurisdiction):''}</div>
+        <div class="lib-item-tags">
+          ${p.subcategory_id?`<span class="lib-tag">${esc(libraryData.subcats.find(s=>s.id===p.subcategory_id)?.name||'')}</span>`:''}
+          ${p.doc_type_id?`<span class="lib-tag">${esc(libraryData.docTypes.find(d=>d.id===p.doc_type_id)?.name||'')}</span>`:''}
+        </div>
+      </div>`).join('')}
+      ${secs.map(s=>`<div class="lib-item" onclick="viewLibItem('sec','${s.id}')">
+        <div class="lib-item-name">📝 ${esc(s.title)}</div>
+        <div class="lib-item-meta">${esc(s.notes||'Standard section')}</div>
+        <div class="lib-item-tags"><span class="lib-tag section">Standard Section</span>
+          ${s.doc_type_id?`<span class="lib-tag">${esc(libraryData.docTypes.find(d=>d.id===s.doc_type_id)?.name||'')}</span>`:''}
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+function openLibraryModal(){
+  pendingSubcats=[];
+  pendingDocTypes=[];
+  document.getElementById('libSubcatList').innerHTML='';
+  document.getElementById('libDocTypeList').innerHTML='';
+  document.getElementById('libCaseTypeName').value='';
+  document.getElementById('libCaseTypeDesc').value='';
+  // Populate case type dropdowns
+  const opts = '<option value="">Select case type…</option>'+
+    libraryData.caseTypes.map(ct=>`<option value="${ct.id}">${esc(ct.name)}</option>`).join('');
+  ['libPrecCaseType','libSecCaseType'].forEach(id=>{
+    document.getElementById(id).innerHTML = id==='libSecCaseType'
+      ? '<option value="">Any case type</option>'+libraryData.caseTypes.map(ct=>`<option value="${ct.id}">${esc(ct.name)}</option>`).join('')
+      : opts;
+  });
+  switchLibTab('case-type');
+  document.getElementById('libraryModal').style.display='flex';
+}
+
+function switchLibTab(tab){
+  activeLibTab=tab;
+  document.querySelectorAll('.lib-modal-tab').forEach((t,i)=>{
+    const tabs=['case-type','precedent','section'];
+    t.classList.toggle('active',tabs[i]===tab);
+  });
+  ['case-type','precedent','section'].forEach(t=>{
+    document.getElementById('libTab-'+t).style.display=t===tab?'':'none';
+  });
+}
+
+function addSubcatField(){
+  const val=document.getElementById('libNewSubcat').value.trim();
+  if(!val)return;
+  pendingSubcats.push(val);
+  document.getElementById('libNewSubcat').value='';
+  const div=document.getElementById('libSubcatList');
+  div.innerHTML=pendingSubcats.map((s,i)=>`<div style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;padding:.2rem .4rem;background:var(--blue-faint);border-radius:4px">${esc(s)}<button class="btn-icon" onclick="pendingSubcats.splice(${i},1);addSubcatField()">×</button></div>`).join('');
+}
+
+function addDocTypeField(){
+  const val=document.getElementById('libNewDocType').value.trim();
+  if(!val)return;
+  pendingDocTypes.push(val);
+  document.getElementById('libNewDocType').value='';
+  const div=document.getElementById('libDocTypeList');
+  div.innerHTML=pendingDocTypes.map((d,i)=>`<div style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;padding:.2rem .4rem;background:var(--blue-faint);border-radius:4px">${esc(d)}<button class="btn-icon" onclick="pendingDocTypes.splice(${i},1);addDocTypeField()">×</button></div>`).join('');
+}
+
+function updatePrecSubcats(){
+  const ctId=document.getElementById('libPrecCaseType').value;
+  const subs=libraryData.subcats.filter(s=>s.case_type_id===ctId);
+  const docs=libraryData.docTypes.filter(d=>d.case_type_id===ctId);
+  document.getElementById('libPrecSubcat').innerHTML='<option value="">None</option>'+subs.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  document.getElementById('libPrecDocType').innerHTML='<option value="">None</option>'+docs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+}
+
+function updateSecSubcats(){
+  const ctId=document.getElementById('libSecCaseType').value;
+  const subs=libraryData.subcats.filter(s=>s.case_type_id===ctId);
+  const docs=libraryData.docTypes.filter(d=>d.case_type_id===ctId);
+  document.getElementById('libSecSubcat').innerHTML='<option value="">Any</option>'+subs.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  document.getElementById('libSecDocType').innerHTML='<option value="">Any</option>'+docs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+}
+
+async function saveLibraryEntry(){
+  const btn=document.getElementById('libSaveBtn');
+  btn.disabled=true; btn.textContent='Saving…';
+  try{
+    if(activeLibTab==='case-type'){
+      const name=document.getElementById('libCaseTypeName').value.trim();
+      if(!name){showToast('Case type name required');return;}
+      // Also pick up any unsaved subcat/doctype input
+      const pendingSub=document.getElementById('libNewSubcat').value.trim();
+      if(pendingSub)pendingSubcats.push(pendingSub);
+      const pendingDoc=document.getElementById('libNewDocType').value.trim();
+      if(pendingDoc)pendingDocTypes.push(pendingDoc);
+      await api('/api/library','POST',{
+        action:'create_case_type',
+        name,
+        jurisdiction:document.getElementById('libCaseTypeJur').value,
+        description:document.getElementById('libCaseTypeDesc').value,
+        subcats:pendingSubcats,
+        docTypes:pendingDocTypes,
+      });
+      showToast('Case type saved');
+    }
+    else if(activeLibTab==='precedent'){
+      const name=document.getElementById('libPrecName').value.trim();
+      const caseTypeId=document.getElementById('libPrecCaseType').value;
+      const file=document.getElementById('libPrecFile').files[0];
+      if(!name||!caseTypeId){showToast('Name and case type required');return;}
+      if(!file){showToast('Please upload a PDF document');return;}
+      // Upload via FormData
+      const fd=new FormData();
+      fd.append('action','create_precedent');
+      fd.append('name',name);
+      fd.append('case_type_id',caseTypeId);
+      fd.append('subcategory_id',document.getElementById('libPrecSubcat').value||'');
+      fd.append('doc_type_id',document.getElementById('libPrecDocType').value||'');
+      fd.append('jurisdiction',document.getElementById('libPrecJur').value||'');
+      fd.append('description',document.getElementById('libPrecDesc').value||'');
+      fd.append('file',file);
+      const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd});
+      if(!r.ok) throw new Error(await r.text());
+      showToast('Precedent document saved and indexed');
+    }
+    else if(activeLibTab==='section'){
+      const title=document.getElementById('libSecTitle').value.trim();
+      const content=document.getElementById('libSecContent').value.trim();
+      if(!title||!content){showToast('Title and section text required');return;}
+      await api('/api/library','POST',{
+        action:'create_section',
+        title,
+        content,
+        case_type_id:document.getElementById('libSecCaseType').value||null,
+        subcategory_id:document.getElementById('libSecSubcat').value||null,
+        doc_type_id:document.getElementById('libSecDocType').value||null,
+        notes:document.getElementById('libSecNotes').value||'',
+      });
+      showToast('Standard section saved');
+    }
+    await loadLibrary();
+    closeModal('libraryModal');
+  }catch(e){showToast('Error: '+e.message);}
+  finally{btn.disabled=false;btn.textContent='Save';}
+}
+
+async function deleteCaseType(id){
+  if(!confirm('Delete this case type and all its sub-categories, document types, precedents and sections?'))return;
+  await api('/api/library','DELETE',{action:'delete_case_type',id});
+  await loadLibrary();
+  showToast('Deleted');
+}
+
+function viewLibItem(type, id){
+  if(type==='sec'){
+    const s=libraryData.sections.find(x=>x.id===id);
+    if(!s)return;
+    document.getElementById('libDetailTitle').textContent=s.title;
+    document.getElementById('libDetailBody').textContent=s.content;
+    document.getElementById('libDetailUseBtn').onclick=()=>useLibItemInDraft(type,id);
+    document.getElementById('libDetailModal').style.display='flex';
+  } else {
+    const p=libraryData.precedents.find(x=>x.id===id);
+    if(!p)return;
+    document.getElementById('libDetailTitle').textContent=p.name;
+    document.getElementById('libDetailBody').textContent=p.description||'Precedent document — click "Use in Current Draft" to incorporate into your next draft.';
+    document.getElementById('libDetailUseBtn').onclick=()=>useLibItemInDraft(type,id);
+    document.getElementById('libDetailModal').style.display='flex';
+  }
+}
+
+function useLibItemInDraft(type, id){
+  closeModal('libDetailModal');
+  switchLeftPanel('matters');
+  if(!currentMatter){showToast('Select a matter first, then run the Draft tool');return;}
+  // Open draft tool with this library item pre-selected
+  pendingTool='draft';
+  const cfg=toolDefs['draft'];
+  document.getElementById('toolModalTitle').textContent=cfg.title;
+  document.getElementById('toolModalBody').innerHTML=cfg.body();
+  // Store the library item reference
+  document.getElementById('toolModal').dataset.libType=type;
+  document.getElementById('toolModal').dataset.libId=id;
+  document.getElementById('toolModal').style.display='flex';
+  showToast('Library item selected — configure your draft and click Run');
+}
+
+// ── TAB MANAGEMENT ────────────────────────────────────────────────────────────
+// openTabs: array of {id, toolName, label} — 'chat' always first
+let openTabs=['chat'];
+let activeTab='chat';
+
+function switchTab(tabId){
+  activeTab=tabId;
+  // Update tab bar highlight
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tabId));
+  // Show/hide workspaces
+  document.getElementById('ws-chat').classList.toggle('active',tabId==='chat');
+  document.querySelectorAll('.tool-workspace').forEach(ws=>{
+    ws.classList.toggle('active',ws.dataset.tool===tabId);
+  });
+  // Update chat input placeholder
+  const cfg=toolDefs[tabId];
+  const inp=document.getElementById('chatInput');
+  if(cfg) inp.placeholder=`Ask a follow-up question about the ${cfg.title.replace(/^[^\w]*/,'')}…`;
+  else inp.placeholder='Ask a legal question about this matter…';
+}
+
+function getOrCreateToolTab(toolName){
+  // If tab already exists, just switch to it
+  if(openTabs.includes(toolName)){
+    switchTab(toolName);
+    return false; // already existed
+  }
+  // Create tab button
+  const tabBar=document.getElementById('tabBar');
+  const cfg=toolDefs[toolName];
+  const tab=document.createElement('div');
+  tab.className='tab';
+  tab.dataset.tab=toolName;
+  tab.innerHTML=`${cfg.title.split(' ').slice(0,2).join(' ')}<button class="tab-close" title="Close tab">×</button>`;
+  tab.querySelector('.tab-close').addEventListener('click',e=>{
+    e.stopPropagation();
+    closeTab(toolName);
+  });
+  tab.addEventListener('click',()=>switchTab(toolName));
+  tabBar.appendChild(tab);
+
+  // Create workspace
+  const ws=document.createElement('div');
+  ws.className='tool-workspace tab-workspace';
+  ws.dataset.tool=toolName;
+  // Ready state
+  ws.innerHTML=`
+    <div class="tool-ready" id="ready-${toolName}">
+      <div class="tool-ready-icon">${cfg.title.split(' ')[0]}</div>
+      <div class="tool-ready-title">${cfg.title.replace(/^[^\w]*/,'')}</div>
+      <div class="tool-ready-sub">Click Run to analyse all documents in this matter.</div>
+      <button class="btn-run-tool" onclick="promptTool('${toolName}')">Run Analysis</button>
     </div>
+    <div class="messages-area tool-msgs" id="msgs-${toolName}" style="display:none"></div>`;
+  document.getElementById('toolWorkspaces').appendChild(ws);
 
-    
+  openTabs.push(toolName);
+  switchTab(toolName);
+  return true; // newly created
+}
+
+function closeTab(toolName){
+  // Remove tab button
+  document.querySelectorAll('.tab').forEach(t=>{if(t.dataset.tab===toolName)t.remove();});
+  // Remove workspace
+  document.querySelectorAll('.tool-workspace').forEach(ws=>{if(ws.dataset.tool===toolName)ws.remove();});
+  openTabs=openTabs.filter(t=>t!==toolName);
+  // Switch to chat
+  if(activeTab===toolName)switchTab('chat');
+  showToast('Tab closed — result saved in History');
+}
+
+function openTool(t){
+  if(!currentMatter){showToast('Select a matter first');return;}
+  const isNew=getOrCreateToolTab(t);
+  if(!isNew){
+    // Tab already exists — just switch to it, don't re-run
+    return;
+  }
+  // New tab — auto-open the config modal
+  promptTool(t);
+}
+
+function promptTool(t){
+  if(!currentMatter){showToast('Select a matter first');return;}
+  pendingTool=t;
+  const cfg=toolDefs[t];
+  document.getElementById('toolModalTitle').textContent=cfg.title;
+  document.getElementById('toolModalBody').innerHTML=cfg.body();
+  document.getElementById('toolModal').style.display='flex';
+}
+
+function getActiveMessagesArea(){
+  if(activeTab==='chat') return document.getElementById('messagesArea');
+  return document.getElementById('msgs-'+activeTab)||document.getElementById('messagesArea');
+}
+
+function showToolResult(toolName){
+  const ready=document.getElementById('ready-'+toolName);
+  const msgs=document.getElementById('msgs-'+toolName);
+  if(ready) ready.style.display='none';
+  if(msgs) msgs.style.display='flex';
+  return msgs;
+}
+
+document.getElementById('toolRunBtn').addEventListener('click',async()=>{
+  if(!pendingTool||!currentMatter)return;
+  const instructions=document.getElementById('toolInstructions')?.value?.trim()||'';
+  let anchorDocNames=[];
+  if(pendingTool==='inconsistency')document.querySelectorAll('#anchorList input:checked').forEach(cb=>anchorDocNames.push(cb.value));
+  closeModal('toolModal');
+
+  const toolName=pendingTool;
+  const toolLabel=toolDefs[toolName]?.title||toolName;
+
+  // Make sure we're on this tool's tab
+  switchTab(toolName);
+  const msgsArea=showToolResult(toolName);
+
+  const progressWrap=document.getElementById('progressWrap');
+  const progressLabel=document.getElementById('progressLabel');
+  const progressFill=document.getElementById('progressFill');
+  const needsFullScan=['chronology','persons','issues','briefing','draft','inconsistency','proposition'].includes(toolName);
+  let progressInterval=null;
+  if(needsFullScan){
+    progressWrap.classList.add('on');
+    progressLabel.textContent=`Running ${toolLabel}… (may take several minutes for large matters)`;
+    let pct=0;
+    progressInterval=setInterval(()=>{pct=Math.min(pct+1,90);progressFill.style.width=pct+'%';},2000);
+  }
+
+  // Add typing indicator to tool workspace
+  const typing=document.createElement('div');
+  typing.className='msg msg-assistant msg-tool';
+  typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
+  msgsArea.appendChild(typing);
+  msgsArea.scrollTop=msgsArea.scrollHeight;
+
+  try{
+    const d=await api('/api/tools','POST',{tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction,anchorDocNames,instructions});
+    typing.remove();
+    if(d?.result){
+      const isProp=toolName==='proposition';
+      const costStr=d.usage?.costUsd?` · $${d.usage.costUsd.toFixed(4)}`:'';
+      const hId=await saveHistory(toolLabel+(instructions?': '+instructions:''),d.result,toolName);
+      appendMsgTo(msgsArea,'assistant',d.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);
+    }
+  }catch(e){
+    typing.remove();
+    const errEl=document.createElement('div');
+    errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
+    errEl.textContent='⚠️ Tool error: '+e.message;
+    msgsArea.appendChild(errEl);
+  }
+  finally{
+    if(progressInterval)clearInterval(progressInterval);
+    progressFill.style.width='100%';
+    setTimeout(()=>{progressWrap.classList.remove('on');progressFill.style.width='0%';},800);
+  }
+});
+
+// ── SOURCE PASSAGE PANEL ──────────────────────────────────────────────────────
+async function openSourcePanel(docName,contextText){
+  document.getElementById('sourcePanelTitle').textContent=docName;
+  const body=document.getElementById('sourcePanelBody');
+  body.innerHTML='<div style="color:var(--text-faint);font-size:.88rem;font-style:italic;padding:.5rem 0">Loading passage…</div>';
+  document.getElementById('sourcePanel').classList.add('open');
+
+  try{
+    // Search for relevant chunks from this document
+    const d=await api('/api/documents?matter_id='+currentMatter.id+'&doc_name='+encodeURIComponent(docName));
+    const chunks=d?.chunks||[];
+    if(!chunks.length){body.innerHTML='<div style="color:var(--text-faint);font-size:.88rem">No passages found for this document.</div>';return;}
+    // Show passages that best match the context
+    body.innerHTML=`<div class="source-doc-label">${esc(docName)}</div>`+
+      chunks.slice(0,8).map(c=>`<div class="source-passage" style="margin-bottom:1rem">${esc(c.content)}</div>`).join('');
+  }catch(e){
+    body.innerHTML=`<div style="color:var(--text-faint);font-size:.88rem">Could not load passages: ${esc(e.message)}</div>`;
+  }
+}
+function closeSourcePanel(){document.getElementById('sourcePanel').classList.remove('open');}
+
+// ── FIND REFERENCES FOR EDITED TEXT ──────────────────────────────────────────
+async function findReferences(bubble,toolName){
+  const editedText=bubble.innerText||bubble.textContent;
+  if(!editedText||!currentMatter)return;
+  showToast('Finding references for edited text…');
+  try{
+    const d=await api('/api/analyse','POST',{
+      matterId:currentMatter.id,matterName:currentMatter.name,
+      matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',
+      messages:[{role:'user',content:`For each statement in the following edited text that is NOT already attributed to a source document, search the matter documents and add a source reference if one exists. Return the full text with source references added in the format *(Source: [Document Name])*. If no source exists for a statement, leave it unchanged.\n\nEDITED TEXT:\n${editedText}`}],
+      jurisdiction,queryType:'Factual Analysis',focusAreas:[]
+    });
+    if(d?.result){
+      // Insert the result as a new message below
+      appendMsg('assistant',d.result,'tool','References found for edited text');
+      await saveHistory('Find references (edited text)',d.result,toolName||'tool');
+    }
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+// ── BUNDLE INDEX ──────────────────────────────────────────────────────────────
+async function showBundleIndex(referencedDocs){
+  if(!currentMatter)return;
+  document.getElementById('bundleModalTitle').textContent=`Document Bundle — ${currentMatter.name}`;
+  const body=document.getElementById('bundleModalBody');
+  body.innerHTML='<div style="color:var(--text-faint);font-size:.88rem;font-style:italic">Generating bundle index…</div>';
+  document.getElementById('bundleModal').style.display='flex';
+
+  try{
+    // Get all documents for this matter
+    const allDocs=documents.length?documents:(await api('/api/documents?matter_id='+currentMatter.id)).documents||[];
+    // Filter to referenced docs if provided, otherwise all
+    const docsToList=referencedDocs&&referencedDocs.length
+      ? allDocs.filter(d=>referencedDocs.some(r=>d.name.toLowerCase().includes(r.toLowerCase())||r.toLowerCase().includes(d.name.toLowerCase())))
+      : allDocs;
+    if(!docsToList.length){body.innerHTML='<div style="color:var(--text-faint);font-size:.88rem">No documents found.</div>';return;}
+
+    // Ask Claude to produce a sorted bundle description
+    const docList=docsToList.map(d=>`${d.name} [${d.doc_type}]${d.chunk_count?' ('+d.chunk_count+' passages)':''}`).join('\n');
+    const d=await api('/api/analyse','POST',{
+      matterId:currentMatter.id,matterName:currentMatter.name,
+      matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',
+      messages:[{role:'user',content:`Produce a document bundle index for the matter "${currentMatter.name}". For each document listed below, provide:\n1. A sequential bundle number\n2. The document name\n3. The document type\n4. A one-line description of what the document is\n5. The approximate date of the document if determinable from its name\n\nSort the documents in chronological order where possible (oldest first). Return as a JSON array with fields: num, name, type, description, date.\n\nDOCUMENTS:\n${docList}`}],
+      jurisdiction,queryType:'Factual Analysis',focusAreas:[]
+    });
+
+    let rows=[];
+    try{
+      const raw=d.result.replace(/```json|```/g,'').trim();
+      const start=raw.indexOf('[');const end=raw.lastIndexOf(']');
+      rows=JSON.parse(raw.slice(start,end+1));
+    }catch(e){
+      // Fallback: display docs as plain list
+      rows=docsToList.map((doc,i)=>({num:i+1,name:doc.name,type:doc.doc_type,description:'',date:''}));
+    }
+
+    const tableHtml=`<table class="bundle-table">
+      <thead><tr><th>#</th><th>Document</th><th>Type</th><th>Description</th><th>Date</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${r.num||''}</td><td>${esc(r.name||'')}</td><td>${esc(r.type||'')}</td><td>${esc(r.description||'')}</td><td>${esc(r.date||'')}</td></tr>`).join('')}</tbody>
+    </table>`;
+    body.innerHTML=tableHtml;
+
+    // Set up Word download for bundle
+    document.getElementById('bundleDownloadBtn').onclick=()=>{
+      const content=`# Document Bundle Index\n**Matter:** ${currentMatter.name}\n**Jurisdiction:** ${jurisdiction}\n\n`+
+        rows.map(r=>`${r.num}. **${r.name}** [${r.type}]\n   ${r.description}${r.date?' — '+r.date:''}`).join('\n\n');
+      downloadWord(content,'Bundle Index — '+currentMatter.name);
+    };
+  }catch(e){body.innerHTML=`<div style="color:var(--error);font-size:.88rem">Error: ${esc(e.message)}</div>`;}
+}
+
+// ── TOOL HISTORY PER TOOL ─────────────────────────────────────────────────────
+function getToolHistory(toolName){
+  if(!currentMatter)return[];
+  return matterHistory.filter(h=>h.tool_name===toolName).slice().reverse();
+}
+
+function renderToolHistoryBar(toolName,historyId,bubble){
+  const bar=document.createElement('div');
+  bar.className='tool-history-bar';
+  const hist=getToolHistory(toolName);
+  if(!hist.length)return bar;
+
+  const toggle=document.createElement('button');
+  toggle.className='tool-history-toggle';
+  toggle.innerHTML=`📂 Previous ${hist.length} run${hist.length!==1?'s':''} of ${toolDefs[toolName]?.title.replace(/^[^\w]*/,'').split(' ').slice(0,2).join(' ')||toolName}`;
+  const list=document.createElement('div');
+  list.className='tool-history-list';
+
+  hist.forEach((h,i)=>{
+    if(h.id===historyId)return; // Don't show current run
+    const item=document.createElement('div');
+    item.className='tool-hist-item';
+    const lbl=document.createElement('div');lbl.className='tool-hist-label';lbl.textContent=h.question.slice(0,70)+(h.question.length>70?'…':'');
+    const dt=document.createElement('div');dt.className='tool-hist-date';dt.textContent=new Date(h.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'});
+    const del=document.createElement('button');del.className='tool-hist-del';del.textContent='×';del.title='Delete this run';
+    del.addEventListener('click',async(e)=>{
+      e.stopPropagation();
+      if(!confirm('Delete this saved result?'))return;
+      try{
+        await api(`/api/history?id=${h.id}`,'DELETE');
+        await loadHistory(currentMatter.id);
+        item.remove();
+        showToast('Deleted');
+      }catch(err){showToast('Error: '+err.message);}
+    });
+    item.appendChild(lbl);item.appendChild(dt);item.appendChild(del);
+    item.addEventListener('click',()=>{
+      clearMessages();
+      appendMsg('assistant',h.answer,'tool',h.question,null,h.tool_name,h.id);
+      list.classList.remove('open');
+    });
+    list.appendChild(item);
+  });
+
+  toggle.addEventListener('click',()=>list.classList.toggle('open'));
+  bar.appendChild(toggle);
+  bar.appendChild(list);
+  return bar;
+}
+
+// ── APPEND MESSAGE ────────────────────────────────────────────────────────────
+function appendMsg(role,content,variant='',question='',costStr='',toolName=null,historyId=null){
+  appendMsgTo(document.getElementById('messagesArea'),role,content,variant,question,costStr,toolName,historyId);
+}
+
+function appendMsgTo(area,role,content,variant,question,costStr,toolName,historyId){
+  if(!area) area=document.getElementById('messagesArea');
+  const welcome=area.querySelector('.welcome-state');if(welcome)welcome.remove();
+  const w=document.createElement('div');w.className=`msg msg-${role}${variant?' msg-'+(variant==='prop'?'tool':variant):''}`;
+  const time=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const bubble=document.createElement('div');bubble.className='msg-bubble';
+  if(role==='assistant'){
+    bubble.innerHTML=variant==='prop'?renderProp(content):renderMdWithSourceLinks(content);
+  }else{
+    bubble.textContent=content;
+  }
+  const meta=document.createElement('div');meta.className='msg-meta';
+  if(role==='assistant'){
+    const ts=document.createElement('span');ts.textContent=`Ex Libris Juris · ${jurisdiction==='British Virgin Islands'?'BVI':jurisdiction} · ${time}`;
+    if(costStr){const cp=document.createElement('span');cp.className='cost-pill';cp.textContent=costStr;ts.appendChild(cp);}
+    meta.appendChild(ts);
+    const dl=document.createElement('button');dl.className='btn-dl';dl.textContent='⬇ Word';
+    dl.onclick=()=>downloadWord(content,question||currentMatter?.name);
+    meta.appendChild(dl);
+    if(toolName){
+      const editBtn=document.createElement('button');editBtn.className='btn-dl';editBtn.textContent='✏️ Edit';
+      let editing=false;
+      editBtn.onclick=()=>{editing=!editing;bubble.contentEditable=editing?'true':'false';editBtn.textContent=editing?'✅ Done':'✏️ Edit';if(!editing)findRefsBtn.style.display='';};
+      meta.appendChild(editBtn);
+      const findRefsBtn=document.createElement('button');
+      findRefsBtn.className='find-refs-btn';findRefsBtn.textContent='🔍 Find References';
+      findRefsBtn.style.display='none';
+      findRefsBtn.onclick=()=>findReferences(bubble,toolName);
+      meta.appendChild(findRefsBtn);
+      const bundleBtn=document.createElement('button');bundleBtn.className='btn-dl';bundleBtn.textContent='📑 Bundle';
+      bundleBtn.onclick=()=>showBundleIndex(extractDocRefs(content));
+      meta.appendChild(bundleBtn);
+    }
+  }else{
+    meta.textContent=`You · ${time}`;
+  }
+  w.appendChild(bubble);w.appendChild(meta);
+  if(toolName&&historyId){
+    const histBar=renderToolHistoryBar(toolName,historyId,bubble);
+    if(histBar.children.length)w.appendChild(histBar);
+  }
+  area.appendChild(w);area.scrollTop=area.scrollHeight;
+}
+
+// Extract document names referenced as *(Source: X)* or [X] in content
+function extractDocRefs(content){
+  const refs=new Set();
+  const sourceMatches=content.matchAll(/\*\(Source:\s*([^)]+)\)\*/g);
+  for(const m of sourceMatches)refs.add(m[1].trim());
+  const bracketMatches=content.matchAll(/\[([^\]]{5,80})\]/g);
+  for(const m of bracketMatches){
+    const name=m[1].trim();
+    if(documents.some(d=>d.name.toLowerCase().includes(name.toLowerCase().slice(0,20))))refs.add(name);
+  }
+  return [...refs];
+}
+
+// Render markdown with clickable source links
+function renderMdWithSourceLinks(text){
+  let html=renderMd(text);
+  // Make *(Source: DocName)* into clickable links
+  html=html.replace(/\*\(Source:\s*([^)]+)\)\*/g,(match,docName)=>{
+    const safe=esc(docName.trim());
+    return `<span class="source-link" onclick="openSourcePanel('${safe.replace(/'/g,"\\'")}','')" title="View source passage">📎 ${safe}</span>`;
+  });
+  return html;
+}
+
+async function downloadWord(content,title){
+  try{
+    const r=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify({content,matterName:currentMatter?.name||'Matter',jurisdiction,title})});
+    if(!r.ok){showToast('Export failed');return;}
+    const blob=await r.blob();const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=(title||'analysis').replace(/[^a-z0-9]/gi,'-').toLowerCase()+'.docx';a.click();URL.revokeObjectURL(url);
+    showToast('Downloaded as Word document');
+  }catch(e){showToast('Export error: '+e.message);}
+}
+
+function clearMessages(){document.getElementById('messagesArea').innerHTML='';}
+function sysMsg(text){const area=document.getElementById('messagesArea');const el=document.createElement('div');el.style.cssText='text-align:center;font-size:.78rem;font-weight:500;color:var(--text-faint);padding:.45rem;font-style:italic;';el.innerHTML=renderMd(text);area.appendChild(el);area.scrollTop=area.scrollHeight;}
+function addTyping(v=''){const area=getActiveMessagesArea()||document.getElementById('messagesArea');const w=document.createElement('div');w.className=`msg msg-assistant${v?' msg-'+v:''}`;w.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';area.appendChild(w);area.scrollTop=area.scrollHeight;return w;}
+
+function renderProp(text){
+  const gLabels={5:'Strong — direct evidence',4:'Good — supportive evidence',3:'Moderate — indirect',2:'Weak — tangential',1:'Contrary — contradicts proposition'};
+  const parts=text.split(/(?=###\s)/);let html='';
+  for(const part of parts){
+    const gm=part.match(/GRADE:\s*([1-5])/i);
+    if(gm){const g=parseInt(gm[1]);html+=`<div class="strength-row g${g}"><div class="sdot"></div><div style="flex:1"><div class="slabel">${gLabels[g]||'Grade '+g}</div>${renderMdWithSourceLinks(part.replace(/GRADE:\s*[1-5]/gi,'').trim())}</div></div>`;}
+    else{html+=renderMdWithSourceLinks(part);}
+  }
+  return html;
+}
+
+function renderMd(text){
+  const lines=text.split('\n');let html='',i=0;
+  while(i<lines.length){
+    const l=lines[i];
+    if(/^#{1,2} /.test(l)){html+=`<h2>${inl(l.replace(/^#+\s/,''))}</h2>`;}
+    else if(l.startsWith('### ')){html+=`<h3>${inl(l.slice(4))}</h3>`;}
+    else if(l.startsWith('#### ')){html+=`<h4>${inl(l.slice(5))}</h4>`;}
+    else if(l.startsWith('- ')||l.startsWith('• ')){html+='<ul>';while(i<lines.length&&(lines[i].startsWith('- ')||lines[i].startsWith('• '))){html+=`<li>${inl(lines[i].slice(2))}</li>`;i++;}html+='</ul>';continue;}
+    else if(/^\d+\. /.test(l)){html+='<ol>';while(i<lines.length&&/^\d+\. /.test(lines[i])){html+=`<li>${inl(lines[i].replace(/^\d+\. /,''))}</li>`;i++;}html+='</ol>';continue;}
+    else if(l.startsWith('> ')){html+=`<blockquote>${inl(l.slice(2))}</blockquote>`;}
+    else if(l.includes('⚠️')){html+=`<div class="caution">${inl(l)}</div>`;}
+    else if(l.trim()){html+=`<p>${inl(l)}</p>`;}
+    i++;
+  }
+  return html;
+}
+function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function inl(t){return esc(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>').replace(/_(.+?)_/g,'<em>$1</em>');}
+function closeModal(id){document.getElementById(id).style.display='none';}
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.style.display='none';}));
+function showToast(msg){document.querySelector('.toast')?.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3200);}
+init();
+</script>
+</body>
+</html>

@@ -958,6 +958,26 @@ document.getElementById('chatInput').addEventListener('input',function(){this.st
 function clearChat(){clearMessages();if(currentMatter)sysMsg('Chat cleared. Documents remain indexed.');}
 
 const toolDefs={
+
+    <!-- Draft Library Selector -->
+    <div id="draftLibSelector" style="display:none;margin-bottom:.75rem;padding:.75rem;background:var(--blue-faint);border-radius:6px;border:1px solid var(--border);">
+      <div style="font-size:.72rem;font-weight:700;color:var(--text-light);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem;">Library</div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem;">
+        <select id="draftCaseType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;background:var(--white);color:var(--text-dark);">
+          <option value="">Case type…</option>
+        </select>
+        <select id="draftSubcategory" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;background:var(--white);color:var(--text-dark);">
+          <option value="">Sub-category…</option>
+        </select>
+        <select id="draftDocType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;background:var(--white);color:var(--text-dark);">
+          <option value="">Document type…</option>
+        </select>
+      </div>
+      <div id="draftLibItems" style="display:none;border-top:1px solid var(--border);padding-top:.5rem;max-height:180px;overflow-y:auto;">
+        <div id="draftSectionsList"></div>
+        <div id="draftPrecedentsList"></div>
+      </div>
+    </div>
   inconsistency:{title:'🔍 Inconsistency Tracker',body:()=>`<p class="tool-desc">Select anchor documents (your baseline factual position). The system finds all contradictions in the remaining documents.</p><div class="focus-label">Anchor Documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to compare all)</span></div><div class="anchor-list" id="anchorList">${documents.map(d=>`<label class="anchor-item"><input type="checkbox" value="${esc(d.name)}"> ${esc(d.name)} <span style="color:var(--text-faint);font-size:.72rem">[${d.doc_type}]</span></label>`).join('')||'<div style="font-size:.84rem;color:var(--text-faint)">No documents uploaded.</div>'}</div><div class="focus-label" style="margin-top:.85rem">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the dates of payments"></textarea>`},
   proposition:{title:'🎯 Proposition Evidence Finder',body:()=>`<p class="tool-desc">State a proposition or factual assertion. The system finds all evidence supporting or contradicting it and grades each reference by strength.</p><div class="focus-label">Proposition or Statement</div><textarea id="toolInstructions" placeholder="e.g. The defendant had knowledge of the transactions before 1 January 2023" style="min-height:80px"></textarea>`},
   chronology:{title:'📅 Chronology Builder',body:()=>`<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology. Disputed dates are flagged.</p><div class="focus-label">Focus or Date Range <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on events after January 2022, or limit to Issue 3 — the share transfer"></textarea>`},
@@ -1330,6 +1350,11 @@ function openTool(t){
   }
   // New tab — auto-open the config modal
   promptTool(t);
+
+  // Load library if draft tool opened
+  if (tool === "draft") {
+    setTimeout(loadDraftLibrary, 100);
+  }
 }
 
 function promptTool(t){
@@ -1388,7 +1413,11 @@ document.getElementById('toolRunBtn').addEventListener('click',async()=>{
   msgsArea.scrollTop=msgsArea.scrollHeight;
 
   try{
-    const d=await api('/api/tools','POST',{tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction,anchorDocNames,instructions});
+    const d=await api('
+    // Add library context for draft tool
+    const libCtx = (tool === "draft") ? buildLibraryContext() : null;
+    if (libCtx) body.libraryContext = libCtx;
+    /api/tools','POST',{tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction,anchorDocNames,instructions});
     typing.remove();
     if(d?.result){
       const isProp=toolName==='proposition';
@@ -1672,6 +1701,192 @@ function closeModal(id){document.getElementById(id).style.display='none';}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.style.display='none';}));
 function showToast(msg){document.querySelector('.toast')?.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3200);}
 init();
+
+
+// === DRAFT LIBRARY INTEGRATION ===
+// ============================================================
+// DRAFT TOOL LIBRARY INTEGRATION — add to index.html JS
+// ============================================================
+
+// State
+let draftLibState = {
+  caseTypes: [],
+  subcategories: [],
+  docTypes: [],
+  sections: [],
+  precedents: [],
+  selectedSectionIds: new Set(),
+  selectedPrecedentIds: new Set()
+};
+
+// Load case types when draft tab is opened
+async function loadDraftLibrary() {
+  const token = localStorage.getItem("elj_token");
+  if (!token) return;
+  try {
+    const r = await fetch("/api/library_fetch?action=getCaseTypes", {
+      headers: { Authorization: "Bearer " + token }
+    });
+    const d = await r.json();
+    draftLibState.caseTypes = d.caseTypes || [];
+    const sel = document.getElementById("draftCaseType");
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Case type…</option>';
+    draftLibState.caseTypes.forEach(ct => {
+      sel.innerHTML += `<option value="${ct.id}" data-name="${ct.name}">${ct.name}</option>`;
+    });
+    document.getElementById("draftLibSelector").style.display = "";
+  } catch (e) { console.warn("loadDraftLibrary:", e); }
+}
+
+// When case type changes — load subcategories and doc types
+document.addEventListener("change", async function(e) {
+  const token = localStorage.getItem("elj_token");
+  if (!token) return;
+
+  if (e.target.id === "draftCaseType") {
+    const caseTypeId = e.target.value;
+    // Reset downstream
+    document.getElementById("draftSubcategory").innerHTML = '<option value="">Sub-category…</option>';
+    document.getElementById("draftDocType").innerHTML = '<option value="">Document type…</option>';
+    document.getElementById("draftLibItems").style.display = "none";
+    draftLibState.selectedSectionIds = new Set();
+    draftLibState.selectedPrecedentIds = new Set();
+    if (!caseTypeId) return;
+
+    const [subR, dtR] = await Promise.all([
+      fetch(`/api/library_fetch?action=getSubcategories&caseTypeId=${caseTypeId}`, { headers: { Authorization: "Bearer " + token } }).then(r => r.json()),
+      fetch(`/api/library_fetch?action=getDocTypes&caseTypeId=${caseTypeId}`, { headers: { Authorization: "Bearer " + token } }).then(r => r.json())
+    ]);
+
+    const subSel = document.getElementById("draftSubcategory");
+    (subR.subcategories || []).forEach(s => {
+      subSel.innerHTML += `<option value="${s.id}" data-name="${s.name}">${s.name}</option>`;
+    });
+
+    const dtSel = document.getElementById("draftDocType");
+    (dtR.docTypes || []).forEach(d => {
+      dtSel.innerHTML += `<option value="${d.id}" data-name="${d.name}">${d.name}</option>`;
+    });
+
+    await loadDraftLibItems(caseTypeId, null, null);
+  }
+
+  if (e.target.id === "draftSubcategory" || e.target.id === "draftDocType") {
+    const caseTypeId = document.getElementById("draftCaseType").value;
+    const subcategoryId = document.getElementById("draftSubcategory").value;
+    const docTypeId = document.getElementById("draftDocType").value;
+    if (caseTypeId) await loadDraftLibItems(caseTypeId, subcategoryId || null, docTypeId || null);
+  }
+});
+
+async function loadDraftLibItems(caseTypeId, subcategoryId, docTypeId) {
+  const token = localStorage.getItem("elj_token");
+  let url = `/api/library_fetch?action=getDraftContext&caseTypeId=${caseTypeId}`;
+  if (subcategoryId) url += `&subcategoryId=${subcategoryId}`;
+  if (docTypeId) url += `&docTypeId=${docTypeId}`;
+
+  try {
+    const r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+    const d = await r.json();
+    draftLibState.sections = d.sections || [];
+    draftLibState.precedents = d.precedents || [];
+    renderDraftLibItems();
+  } catch (e) { console.warn("loadDraftLibItems:", e); }
+}
+
+function renderDraftLibItems() {
+  const container = document.getElementById("draftLibItems");
+  const secDiv = document.getElementById("draftSectionsList");
+  const precDiv = document.getElementById("draftPrecedentsList");
+
+  if (draftLibState.sections.length === 0 && draftLibState.precedents.length === 0) {
+    container.style.display = "none";
+    return;
+  }
+  container.style.display = "";
+
+  // Standard sections
+  if (draftLibState.sections.length > 0) {
+    secDiv.innerHTML = `<div style="font-size:.75rem;font-weight:700;color:var(--text-light);letter-spacing:.06em;text-transform:uppercase;margin-bottom:.3rem;">Standard Sections</div>`;
+    draftLibState.sections.forEach(s => {
+      const checked = draftLibState.selectedSectionIds.has(s.id) ? "checked" : "";
+      secDiv.innerHTML += `
+        <label style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.85rem;cursor:pointer;">
+          <input type="checkbox" value="${s.id}" data-section-title="${s.title}" data-section-content="${encodeURIComponent(s.content || '')}" class="draft-section-cb" ${checked}
+            style="width:14px;height:14px;accent-color:var(--blue-light);">
+          ${s.title}
+        </label>`;
+    });
+  } else {
+    secDiv.innerHTML = "";
+  }
+
+  // Precedents
+  if (draftLibState.precedents.length > 0) {
+    precDiv.innerHTML = `<div style="font-size:.75rem;font-weight:700;color:var(--text-light);letter-spacing:.06em;text-transform:uppercase;margin:.5rem 0 .3rem;">Precedent Documents</div>`;
+    draftLibState.precedents.forEach(p => {
+      const checked = draftLibState.selectedPrecedentIds.has(p.id) ? "checked" : "";
+      precDiv.innerHTML += `
+        <label style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.85rem;cursor:pointer;">
+          <input type="checkbox" value="${p.id}" class="draft-precedent-cb" ${checked}
+            style="width:14px;height:14px;accent-color:var(--blue-light);">
+          ${p.title}
+        </label>`;
+    });
+  } else {
+    precDiv.innerHTML = "";
+  }
+
+  // Track checkbox changes
+  document.querySelectorAll(".draft-section-cb").forEach(cb => {
+    cb.onchange = () => {
+      if (cb.checked) draftLibState.selectedSectionIds.add(cb.value);
+      else draftLibState.selectedSectionIds.delete(cb.value);
+    };
+  });
+  document.querySelectorAll(".draft-precedent-cb").forEach(cb => {
+    cb.onchange = () => {
+      if (cb.checked) draftLibState.selectedPrecedentIds.add(cb.value);
+      else draftLibState.selectedPrecedentIds.delete(cb.value);
+    };
+  });
+}
+
+// Build libraryContext object to send with draft request
+function buildLibraryContext() {
+  const ctSel = document.getElementById("draftCaseType");
+  const subSel = document.getElementById("draftSubcategory");
+  const dtSel = document.getElementById("draftDocType");
+
+  const caseTypeName = ctSel?.options[ctSel.selectedIndex]?.dataset?.name || "";
+  const subcategoryName = subSel?.options[subSel.selectedIndex]?.dataset?.name || "";
+  const docTypeName = dtSel?.options[dtSel.selectedIndex]?.dataset?.name || "";
+
+  if (!caseTypeName) return null;
+
+  // Collect selected sections with their content
+  const selectedSections = [];
+  document.querySelectorAll(".draft-section-cb:checked").forEach(cb => {
+    selectedSections.push({
+      id: cb.value,
+      title: cb.dataset.sectionTitle,
+      content: decodeURIComponent(cb.dataset.sectionContent || "")
+    });
+  });
+
+  const selectedPrecedentIds = Array.from(draftLibState.selectedPrecedentIds);
+
+  return {
+    caseTypeName,
+    subcategoryName,
+    docTypeName,
+    selectedSections,
+    selectedPrecedentIds
+  };
+}
+
+
 </script>
 </body>
 </html>

@@ -958,6 +958,25 @@ document.getElementById('chatInput').addEventListener('input',function(){this.st
 function clearChat(){clearMessages();if(currentMatter)sysMsg('Chat cleared. Documents remain indexed.');}
 
 const toolDefs={
+    <!-- DRAFT-LIB-SELECTOR -->
+    <div id="draftLibSelector" style="display:none;margin-bottom:.75rem;padding:.75rem;background:#f0f4ff;border-radius:6px;border:1px solid #d0d8f0;">
+      <div style="font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem;">Library</div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem;">
+        <select id="draftCaseType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;background:#fff;color:#1a2540;">
+          <option value="">Case type…</option>
+        </select>
+        <select id="draftSubcategory" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;background:#fff;color:#1a2540;">
+          <option value="">Sub-category…</option>
+        </select>
+        <select id="draftDocType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;background:#fff;color:#1a2540;">
+          <option value="">Document type…</option>
+        </select>
+      </div>
+      <div id="draftLibItems" style="display:none;border-top:1px solid #d0d8f0;padding-top:.5rem;max-height:180px;overflow-y:auto;">
+        <div id="draftSectionsList"></div>
+        <div id="draftPrecedentsList"></div>
+      </div>
+    </div>
   inconsistency:{title:'🔍 Inconsistency Tracker',body:()=>`<p class="tool-desc">Select anchor documents (your baseline factual position). The system finds all contradictions in the remaining documents.</p><div class="focus-label">Anchor Documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to compare all)</span></div><div class="anchor-list" id="anchorList">${documents.map(d=>`<label class="anchor-item"><input type="checkbox" value="${esc(d.name)}"> ${esc(d.name)} <span style="color:var(--text-faint);font-size:.72rem">[${d.doc_type}]</span></label>`).join('')||'<div style="font-size:.84rem;color:var(--text-faint)">No documents uploaded.</div>'}</div><div class="focus-label" style="margin-top:.85rem">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the dates of payments"></textarea>`},
   proposition:{title:'🎯 Proposition Evidence Finder',body:()=>`<p class="tool-desc">State a proposition or factual assertion. The system finds all evidence supporting or contradicting it and grades each reference by strength.</p><div class="focus-label">Proposition or Statement</div><textarea id="toolInstructions" placeholder="e.g. The defendant had knowledge of the transactions before 1 January 2023" style="min-height:80px"></textarea>`},
   chronology:{title:'📅 Chronology Builder',body:()=>`<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology. Disputed dates are flagged.</p><div class="focus-label">Focus or Date Range <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on events after January 2022, or limit to Issue 3 — the share transfer"></textarea>`},
@@ -1330,6 +1349,8 @@ function openTool(t){
   }
   // New tab — auto-open the config modal
   promptTool(t);
+
+  if (tool === 'draft') { setTimeout(loadDraftLibrary, 100); }
 }
 
 function promptTool(t){
@@ -1672,6 +1693,125 @@ function closeModal(id){document.getElementById(id).style.display='none';}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.style.display='none';}));
 function showToast(msg){document.querySelector('.toast')?.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3200);}
 init();
+
+// ── DRAFT LIBRARY INTEGRATION ──────────────────────────────────────────────
+
+let _draftLibState = { sections: [], precedents: [], selSections: new Set(), selPrecedents: new Set() };
+
+async function loadDraftLibrary() {
+  const token = localStorage.getItem('elj_token');
+  if (!token) return;
+  try {
+    const r = await fetch('/api/library_fetch?action=getCaseTypes', { headers: { Authorization: 'Bearer ' + token } });
+    const d = await r.json();
+    const sel = document.getElementById('draftCaseType');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Case type…</option>';
+    (d.caseTypes || []).forEach(ct => {
+      const o = document.createElement('option');
+      o.value = ct.id; o.dataset.name = ct.name; o.textContent = ct.name;
+      sel.appendChild(o);
+    });
+    document.getElementById('draftLibSelector').style.display = '';
+  } catch(e) { console.warn('loadDraftLibrary:', e); }
+}
+
+document.addEventListener('change', async function(e) {
+  const token = localStorage.getItem('elj_token');
+  if (!token) return;
+  if (e.target.id === 'draftCaseType') {
+    const ctId = e.target.value;
+    document.getElementById('draftSubcategory').innerHTML = '<option value="">Sub-category…</option>';
+    document.getElementById('draftDocType').innerHTML = '<option value="">Document type…</option>';
+    document.getElementById('draftLibItems').style.display = 'none';
+    _draftLibState.selSections = new Set(); _draftLibState.selPrecedents = new Set();
+    if (!ctId) return;
+    const [sr, dr] = await Promise.all([
+      fetch('/api/library_fetch?action=getSubcategories&caseTypeId='+ctId, { headers: { Authorization: 'Bearer '+token } }).then(r=>r.json()),
+      fetch('/api/library_fetch?action=getDocTypes&caseTypeId='+ctId, { headers: { Authorization: 'Bearer '+token } }).then(r=>r.json())
+    ]);
+    const ss = document.getElementById('draftSubcategory');
+    (sr.subcategories||[]).forEach(s => { const o=document.createElement('option'); o.value=s.id; o.dataset.name=s.name; o.textContent=s.name; ss.appendChild(o); });
+    const ds = document.getElementById('draftDocType');
+    (dr.docTypes||[]).forEach(d => { const o=document.createElement('option'); o.value=d.id; o.dataset.name=d.name; o.textContent=d.name; ds.appendChild(o); });
+    await _loadDraftItems(ctId, null, null);
+  }
+  if (e.target.id === 'draftSubcategory' || e.target.id === 'draftDocType') {
+    const ctId = document.getElementById('draftCaseType').value;
+    if (ctId) await _loadDraftItems(ctId, document.getElementById('draftSubcategory').value||null, document.getElementById('draftDocType').value||null);
+  }
+});
+
+async function _loadDraftItems(ctId, subId, dtId) {
+  const token = localStorage.getItem('elj_token');
+  let url = '/api/library_fetch?action=getDraftContext&caseTypeId='+ctId;
+  if (subId) url += '&subcategoryId='+subId;
+  if (dtId)  url += '&docTypeId='+dtId;
+  const d = await fetch(url, { headers: { Authorization: 'Bearer '+token } }).then(r=>r.json());
+  _draftLibState.sections   = d.sections   || [];
+  _draftLibState.precedents = d.precedents || [];
+  _renderDraftItems();
+}
+
+function _renderDraftItems() {
+  const wrap = document.getElementById('draftLibItems');
+  const sd   = document.getElementById('draftSectionsList');
+  const pd   = document.getElementById('draftPrecedentsList');
+  if (!_draftLibState.sections.length && !_draftLibState.precedents.length) { wrap.style.display='none'; return; }
+  wrap.style.display = '';
+  sd.innerHTML = '';
+  if (_draftLibState.sections.length) {
+    sd.innerHTML = '<div style="font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin:.4rem 0 .2rem;">Standard Sections</div>';
+    _draftLibState.sections.forEach(s => {
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.value=s.id;
+      cb.dataset.title = s.title; cb.dataset.content = encodeURIComponent(s.content||'');
+      cb.className = 'draft-sec-cb';
+      if (_draftLibState.selSections.has(s.id)) cb.checked = true;
+      cb.onchange = () => cb.checked ? _draftLibState.selSections.add(s.id) : _draftLibState.selSections.delete(s.id);
+      lbl.appendChild(cb); lbl.appendChild(document.createTextNode(s.title));
+      sd.appendChild(lbl);
+    });
+  }
+  pd.innerHTML = '';
+  if (_draftLibState.precedents.length) {
+    pd.innerHTML = '<div style="font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin:.4rem 0 .2rem;">Precedent Documents</div>';
+    _draftLibState.precedents.forEach(p => {
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.value=p.id;
+      cb.className = 'draft-prec-cb';
+      if (_draftLibState.selPrecedents.has(p.id)) cb.checked = true;
+      cb.onchange = () => cb.checked ? _draftLibState.selPrecedents.add(p.id) : _draftLibState.selPrecedents.delete(p.id);
+      lbl.appendChild(cb); lbl.appendChild(document.createTextNode(p.title));
+      pd.appendChild(lbl);
+    });
+  }
+}
+
+function buildLibraryContext() {
+  const ctSel  = document.getElementById('draftCaseType');
+  const subSel = document.getElementById('draftSubcategory');
+  const dtSel  = document.getElementById('draftDocType');
+  const ctName = ctSel?.selectedOptions[0]?.dataset?.name || '';
+  if (!ctName) return null;
+  const selectedSections = [];
+  document.querySelectorAll('.draft-sec-cb:checked').forEach(cb => {
+    selectedSections.push({ id: cb.value, title: cb.dataset.title, content: decodeURIComponent(cb.dataset.content||'') });
+  });
+  const selectedPrecedentIds = [];
+  document.querySelectorAll('.draft-prec-cb:checked').forEach(cb => selectedPrecedentIds.push(cb.value));
+  return {
+    caseTypeName:    ctName,
+    subcategoryName: subSel?.selectedOptions[0]?.dataset?.name || '',
+    docTypeName:     dtSel?.selectedOptions[0]?.dataset?.name  || '',
+    selectedSections,
+    selectedPrecedentIds
+  };
+}
+
+// ── END DRAFT LIBRARY INTEGRATION ──────────────────────────────────────────
 </script>
 </body>
 </html>

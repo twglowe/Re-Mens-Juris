@@ -1409,7 +1409,11 @@ document.getElementById('toolRunBtn').addEventListener('click',async()=>{
   msgsArea.scrollTop=msgsArea.scrollHeight;
 
   try{
-    const d=await api('/api/tools','POST',{tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction,anchorDocNames,instructions});
+    // DRAFT-LIB-FETCH-HOOK
+    const _libCtx = (toolName === 'draft') ? buildLibraryContext() : null;
+    const _toolBody = {tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction,anchorDocNames,instructions};
+    if (_libCtx) _toolBody.libraryContext = _libCtx;
+    const d=await api('/api/tools','POST',_toolBody);
     typing.remove();
     if(d?.result){
       const isProp=toolName==='proposition';

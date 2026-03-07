@@ -292,7 +292,7 @@ export default async function handler(req, res) {
     else if (tool === "draft") {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
-      const systemBase = `You are a senior litigation counsel in ${jur} drafting a legal document for "${matterName}". Apply ${jur} law, procedure, and drafting conventions.\n${matterContext}`;
+      const systemBase = `You are a senior litigation counsel in ${jur} drafting a legal document for "${matterName}". Apply ${jur} law, procedure, and drafting conventions.\n${matterContext}${libraryText}`;
       const r = await runBatched(
         systemBase,
         (batchText, batchNum, total) =>

@@ -157,6 +157,31 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .tool-ready-sub{font-size:.88rem;color:var(--text-faint);line-height:1.65;max-width:320px}
 .btn-run-tool{padding:.7rem 1.6rem;background:var(--navy);border:none;border-radius:7px;color:#fff;font-family:'Source Sans 3',sans-serif;font-size:.95rem;font-weight:700;cursor:pointer;transition:background .2s}
 .btn-run-tool:hover{background:var(--blue-light)}
+/* Panel toggle */
+.panel-toggle-bar{display:flex;border-bottom:2px solid var(--border);flex-shrink:0}
+.panel-toggle{flex:1;padding:.55rem .5rem;border:none;background:transparent;font-family:'Source Sans 3',sans-serif;font-size:.82rem;font-weight:600;color:var(--text-faint);cursor:pointer;transition:all .18s;border-bottom:2.5px solid transparent;margin-bottom:-2px}
+.panel-toggle:hover{color:var(--text-mid);background:var(--blue-faint)}
+.panel-toggle.active{color:var(--navy);border-bottom-color:var(--blue-light);background:var(--white)}
+/* Library */
+.lib-filter-bar{padding:.45rem .7rem;display:flex;flex-direction:column;gap:.3rem;border-bottom:1.5px solid var(--border);flex-shrink:0;background:var(--off-white)}
+.lib-filter{width:100%;padding:.28rem .5rem;border:1.5px solid var(--border);border-radius:5px;background:var(--white);color:var(--text-mid);font-size:.78rem;font-family:'Source Sans 3',sans-serif;cursor:pointer}
+.lib-section{padding:.5rem .7rem .2rem}
+.lib-section-title{font-size:.72rem;font-weight:700;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:.35rem;display:flex;align-items:center;justify-content:space-between}
+.lib-item{padding:.5rem .75rem;border-radius:6px;border:1.5px solid var(--border);margin-bottom:.3rem;background:var(--white);cursor:pointer;transition:all .18s}
+.lib-item:hover{background:var(--blue-pale);border-color:var(--blue-light)}
+.lib-item-name{font-size:.85rem;font-weight:600;color:var(--text-dark)}
+.lib-item-meta{font-size:.72rem;color:var(--text-faint);margin-top:.1rem}
+.lib-item-tags{display:flex;gap:.3rem;margin-top:.3rem;flex-wrap:wrap}
+.lib-tag{font-size:.68rem;padding:.1rem .4rem;border-radius:10px;background:var(--blue-faint);color:var(--blue);border:1px solid var(--border);font-weight:600}
+.lib-tag.section{background:#f0f8f0;color:#2d7a2d;border-color:#b0d8b0}
+/* Library modal */
+.lib-modal-tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:1rem}
+.lib-modal-tab{padding:.5rem 1rem;border:none;background:transparent;font-family:'Source Sans 3',sans-serif;font-size:.88rem;font-weight:600;color:var(--text-faint);cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px}
+.lib-modal-tab.active{color:var(--navy);border-bottom-color:var(--blue-light)}
+.lib-section-editor{display:flex;flex-direction:column;gap:.6rem}
+.lib-section-text{width:100%;min-height:200px;padding:.7rem;border:1.5px solid var(--border);border-radius:6px;font-family:'Source Sans 3',sans-serif;font-size:.9rem;line-height:1.7;resize:vertical}
+.lib-section-text:focus{outline:none;border-color:var(--blue-light)}
+
 /* Find references */
 .find-refs-btn{padding:.15rem .55rem;border:1px solid var(--green-border);border-radius:3px;background:var(--green-pale);color:#3a7a3a;font-size:.7rem;font-weight:600;cursor:pointer;transition:all .18s}
 .find-refs-btn:hover{background:#d0ecd0;border-color:#5cb85c}
@@ -284,11 +309,41 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
   </header>
   <div class="main-layout">
     <div class="left-panel">
-      <div class="panel-head">
-        <span class="panel-head-title">Matters</span>
-        <button class="btn-add" id="newMatterBtn">+ New</button>
+      <!-- Panel toggle -->
+      <div class="panel-toggle-bar">
+        <button class="panel-toggle active" id="toggleMatters" onclick="switchLeftPanel('matters')">Matters</button>
+        <button class="panel-toggle" id="toggleLibrary" onclick="switchLeftPanel('library')">📚 Library</button>
       </div>
-      <div class="matters-scroll" id="mattersList"><div class="empty-state">No matters yet.<br>Create one to begin.</div></div>
+
+      <!-- Matters panel -->
+      <div id="mattersPanel">
+        <div class="panel-head">
+          <span class="panel-head-title">Matters</span>
+          <button class="btn-add" id="newMatterBtn">+ New</button>
+        </div>
+        <div class="matters-scroll" id="mattersList"><div class="empty-state">No matters yet.<br>Create one to begin.</div></div>
+      </div>
+
+      <!-- Library panel -->
+      <div id="libraryPanel" style="display:none;flex:1;flex-direction:column;overflow:hidden">
+        <div class="panel-head">
+          <span class="panel-head-title">Precedent Library</span>
+          <button class="btn-add" onclick="openLibraryModal()">+ New</button>
+        </div>
+        <!-- Filter bar -->
+        <div class="lib-filter-bar">
+          <select class="lib-filter" id="libFilterType" onchange="renderLibrary()">
+            <option value="">All case types</option>
+          </select>
+          <select class="lib-filter" id="libFilterSub" onchange="renderLibrary()">
+            <option value="">All sub-categories</option>
+          </select>
+          <select class="lib-filter" id="libFilterDoc" onchange="renderLibrary()">
+            <option value="">All doc types</option>
+          </select>
+        </div>
+        <div class="matters-scroll" id="libraryList"><div class="empty-state">No library entries yet.<br>Add case types to begin.</div></div>
+      </div>
     </div>
     <div class="centre-panel">
       <div class="chat-toolbar">
@@ -466,6 +521,154 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeModal('bundleModal')">Close</button>
       <button class="btn-primary" id="bundleDownloadBtn">⬇ Word</button>
+    </div>
+  </div>
+</div>
+
+<!-- Library: Add/Edit entry modal -->
+<div class="overlay" id="libraryModal" style="display:none">
+  <div class="modal" style="max-width:540px;width:95%">
+    <h3 id="libModalTitle">Add to Library</h3>
+    <div class="lib-modal-tabs">
+      <button class="lib-modal-tab active" onclick="switchLibTab('case-type')">Case Types</button>
+      <button class="lib-modal-tab" onclick="switchLibTab('precedent')">Precedent Doc</button>
+      <button class="lib-modal-tab" onclick="switchLibTab('section')">Standard Section</button>
+    </div>
+
+    <!-- Case type tab -->
+    <div id="libTab-case-type">
+      <div class="f-group">
+        <label class="f-label">Case Type Name *</label>
+        <input class="f-input" id="libCaseTypeName" placeholder="e.g. Winding Up, Foreign Law Opinion, Ordinary Action">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Jurisdiction (optional)</label>
+        <select class="f-input" id="libCaseTypeJur">
+          <option value="">Any</option>
+          <option>Bermuda</option>
+          <option>Cayman Islands</option>
+          <option>British Virgin Islands</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Description (optional)</label>
+        <input class="f-input" id="libCaseTypeDesc" placeholder="Brief description">
+      </div>
+      <div style="margin-top:.5rem">
+        <div style="font-size:.82rem;font-weight:600;color:var(--text-mid);margin-bottom:.4rem">Sub-categories</div>
+        <div id="libSubcatList" style="display:flex;flex-direction:column;gap:.3rem;margin-bottom:.4rem"></div>
+        <div style="display:flex;gap:.4rem">
+          <input class="f-input" id="libNewSubcat" placeholder="Add sub-category (e.g. Creditors Petition)" style="flex:1">
+          <button class="btn-secondary" onclick="addSubcatField()">+ Add</button>
+        </div>
+      </div>
+      <div style="margin-top:.75rem">
+        <div style="font-size:.82rem;font-weight:600;color:var(--text-mid);margin-bottom:.4rem">Document Types</div>
+        <div id="libDocTypeList" style="display:flex;flex-direction:column;gap:.3rem;margin-bottom:.4rem"></div>
+        <div style="display:flex;gap:.4rem">
+          <input class="f-input" id="libNewDocType" placeholder="Add document type (e.g. Skeleton Argument)" style="flex:1">
+          <button class="btn-secondary" onclick="addDocTypeField()">+ Add</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Precedent doc tab -->
+    <div id="libTab-precedent" style="display:none">
+      <div class="f-group">
+        <label class="f-label">Document Name *</label>
+        <input class="f-input" id="libPrecName" placeholder="e.g. Skeleton — ABC v DEF (2024)">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Case Type *</label>
+        <select class="f-input" id="libPrecCaseType" onchange="updatePrecSubcats()">
+          <option value="">Select case type…</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Sub-category</label>
+        <select class="f-input" id="libPrecSubcat">
+          <option value="">None</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Document Type</label>
+        <select class="f-input" id="libPrecDocType">
+          <option value="">None</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Jurisdiction</label>
+        <select class="f-input" id="libPrecJur">
+          <option value="">Any</option>
+          <option>Bermuda</option>
+          <option>Cayman Islands</option>
+          <option>British Virgin Islands</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Description</label>
+        <input class="f-input" id="libPrecDesc" placeholder="Brief description of this precedent">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Upload Document (PDF)</label>
+        <input type="file" id="libPrecFile" accept=".pdf" class="f-input" style="padding:.3rem">
+        <div style="font-size:.75rem;color:var(--text-faint);margin-top:.2rem">The document will be chunked and stored in your library for drafting use.</div>
+      </div>
+    </div>
+
+    <!-- Standard section tab -->
+    <div id="libTab-section" style="display:none">
+      <div class="f-group">
+        <label class="f-label">Section Title *</label>
+        <input class="f-input" id="libSecTitle" placeholder="e.g. Cayman Sources of Law, Introduction to Affidavit">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Case Type</label>
+        <select class="f-input" id="libSecCaseType" onchange="updateSecSubcats()">
+          <option value="">Any case type</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Sub-category</label>
+        <select class="f-input" id="libSecSubcat">
+          <option value="">Any</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Document Type</label>
+        <select class="f-input" id="libSecDocType">
+          <option value="">Any</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Section Text *</label>
+        <textarea class="lib-section-text" id="libSecContent" placeholder="Paste or type the standard section text here…"></textarea>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Notes (optional)</label>
+        <input class="f-input" id="libSecNotes" placeholder="When to use this section, any caveats">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Also apply to additional case types</label>
+        <div id="libSecExtraTags" style="display:flex;flex-direction:column;gap:.3rem"></div>
+      </div>
+    </div>
+
+    <div class="modal-btns" style="margin-top:1.2rem">
+      <button class="btn-secondary" onclick="closeModal('libraryModal')">Cancel</button>
+      <button class="btn-primary" id="libSaveBtn" onclick="saveLibraryEntry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Library: View precedent/section detail -->
+<div class="overlay" id="libDetailModal" style="display:none">
+  <div class="modal" style="max-width:600px;width:95%">
+    <h3 id="libDetailTitle"></h3>
+    <div id="libDetailBody" style="max-height:400px;overflow-y:auto;font-size:.92rem;line-height:1.8;white-space:pre-wrap"></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal('libDetailModal')">Close</button>
+      <button class="btn-primary" id="libDetailUseBtn">Use in Current Draft</button>
     </div>
   </div>
 </div>
@@ -764,6 +967,287 @@ const toolDefs={
   briefing:{title:'📋 Briefing Note',body:()=>`<p class="tool-desc">Produces a structured briefing note covering background, parties, claim, key facts, legal issues, evidence, procedural position and next steps.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Written for a colleague unfamiliar with the matter"></textarea>`},
   draft:{title:'✍️ Draft Generator',body:()=>`<p class="tool-desc">Drafts legal documents based on the matter files. Be specific about what you want drafted.</p><div class="focus-label">Drafting Instructions</div><textarea id="toolInstructions" placeholder="e.g. Draft a skeleton argument for the summary judgment application" style="min-height:100px"></textarea>`},
 };
+
+// ── LIBRARY STATE ─────────────────────────────────────────────────────────────
+let libraryData = { caseTypes:[], subcats:[], docTypes:[], precedents:[], sections:[] };
+let activeLibTab = 'case-type';
+let pendingSubcats = []; // for new case type creation
+let pendingDocTypes = [];
+
+function switchLeftPanel(panel){
+  document.getElementById('mattersPanel').style.display = panel==='matters' ? '' : 'none';
+  document.getElementById('libraryPanel').style.display = panel==='library' ? 'flex' : 'none';
+  document.getElementById('toggleMatters').classList.toggle('active', panel==='matters');
+  document.getElementById('toggleLibrary').classList.toggle('active', panel==='library');
+  if(panel==='library') loadLibrary();
+}
+
+async function loadLibrary(){
+  if(!token) return;
+  try{
+    const [ctRes, scRes, dtRes, pdRes, ssRes] = await Promise.all([
+      api('/api/library?type=case_types'),
+      api('/api/library?type=subcats'),
+      api('/api/library?type=doc_types'),
+      api('/api/library?type=precedents'),
+      api('/api/library?type=sections'),
+    ]);
+    libraryData.caseTypes  = ctRes.data || [];
+    libraryData.subcats    = scRes.data || [];
+    libraryData.docTypes   = dtRes.data || [];
+    libraryData.precedents = pdRes.data || [];
+    libraryData.sections   = ssRes.data || [];
+    renderLibraryFilters();
+    renderLibrary();
+  } catch(e){ console.error('Library load error:', e); }
+}
+
+function renderLibraryFilters(){
+  const typeEl  = document.getElementById('libFilterType');
+  const subEl   = document.getElementById('libFilterSub');
+  const docEl   = document.getElementById('libFilterDoc');
+  const selType = typeEl.value;
+  typeEl.innerHTML = '<option value="">All case types</option>' +
+    libraryData.caseTypes.map(ct=>`<option value="${ct.id}">${esc(ct.name)}</option>`).join('');
+  typeEl.value = selType;
+  const filteredSubs = selType
+    ? libraryData.subcats.filter(s=>s.case_type_id===selType)
+    : libraryData.subcats;
+  subEl.innerHTML = '<option value="">All sub-categories</option>' +
+    filteredSubs.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  const filteredDocs = selType
+    ? libraryData.docTypes.filter(d=>d.case_type_id===selType)
+    : libraryData.docTypes;
+  docEl.innerHTML = '<option value="">All doc types</option>' +
+    filteredDocs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+}
+
+function renderLibrary(){
+  renderLibraryFilters();
+  const filterType = document.getElementById('libFilterType').value;
+  const filterSub  = document.getElementById('libFilterSub').value;
+  const filterDoc  = document.getElementById('libFilterDoc').value;
+  const list = document.getElementById('libraryList');
+
+  const filtPrec = libraryData.precedents.filter(p=>
+    (!filterType || p.case_type_id===filterType) &&
+    (!filterSub  || p.subcategory_id===filterSub) &&
+    (!filterDoc  || p.doc_type_id===filterDoc)
+  );
+  const filtSec = libraryData.sections.filter(s=>
+    (!filterType || s.case_type_id===filterType) &&
+    (!filterSub  || s.subcategory_id===filterSub) &&
+    (!filterDoc  || s.doc_type_id===filterDoc)
+  );
+
+  if(!libraryData.caseTypes.length){
+    list.innerHTML='<div class="empty-state">No library entries yet.<br>Click + New to add case types.</div>';
+    return;
+  }
+
+  // Group by case type
+  const typesToShow = filterType
+    ? libraryData.caseTypes.filter(ct=>ct.id===filterType)
+    : libraryData.caseTypes;
+
+  list.innerHTML = typesToShow.map(ct=>{
+    const precs = filtPrec.filter(p=>p.case_type_id===ct.id);
+    const secs  = filtSec.filter(s=>s.case_type_id===ct.id);
+    const subs  = libraryData.subcats.filter(s=>s.case_type_id===ct.id);
+    const docs  = libraryData.docTypes.filter(d=>d.case_type_id===ct.id);
+    return `<div class="lib-section">
+      <div class="lib-section-title">
+        <span>${esc(ct.name)}${ct.jurisdiction?' · '+esc(ct.jurisdiction):''}</span>
+        <button class="btn-icon" onclick="deleteCaseType('${ct.id}')" title="Delete case type">🗑</button>
+      </div>
+      ${subs.length ? `<div style="font-size:.72rem;color:var(--text-faint);margin-bottom:.3rem">Sub-cats: ${subs.map(s=>esc(s.name)).join(', ')}</div>` : ''}
+      ${docs.length ? `<div style="font-size:.72rem;color:var(--text-faint);margin-bottom:.5rem">Doc types: ${docs.map(d=>esc(d.name)).join(', ')}</div>` : ''}
+      ${precs.map(p=>`<div class="lib-item" onclick="viewLibItem('prec','${p.id}')">
+        <div class="lib-item-name">📄 ${esc(p.name)}</div>
+        <div class="lib-item-meta">${esc(p.description||'')}${p.jurisdiction?' · '+esc(p.jurisdiction):''}</div>
+        <div class="lib-item-tags">
+          ${p.subcategory_id?`<span class="lib-tag">${esc(libraryData.subcats.find(s=>s.id===p.subcategory_id)?.name||'')}</span>`:''}
+          ${p.doc_type_id?`<span class="lib-tag">${esc(libraryData.docTypes.find(d=>d.id===p.doc_type_id)?.name||'')}</span>`:''}
+        </div>
+      </div>`).join('')}
+      ${secs.map(s=>`<div class="lib-item" onclick="viewLibItem('sec','${s.id}')">
+        <div class="lib-item-name">📝 ${esc(s.title)}</div>
+        <div class="lib-item-meta">${esc(s.notes||'Standard section')}</div>
+        <div class="lib-item-tags"><span class="lib-tag section">Standard Section</span>
+          ${s.doc_type_id?`<span class="lib-tag">${esc(libraryData.docTypes.find(d=>d.id===s.doc_type_id)?.name||'')}</span>`:''}
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+function openLibraryModal(){
+  pendingSubcats=[];
+  pendingDocTypes=[];
+  document.getElementById('libSubcatList').innerHTML='';
+  document.getElementById('libDocTypeList').innerHTML='';
+  document.getElementById('libCaseTypeName').value='';
+  document.getElementById('libCaseTypeDesc').value='';
+  // Populate case type dropdowns
+  const opts = '<option value="">Select case type…</option>'+
+    libraryData.caseTypes.map(ct=>`<option value="${ct.id}">${esc(ct.name)}</option>`).join('');
+  ['libPrecCaseType','libSecCaseType'].forEach(id=>{
+    document.getElementById(id).innerHTML = id==='libSecCaseType'
+      ? '<option value="">Any case type</option>'+libraryData.caseTypes.map(ct=>`<option value="${ct.id}">${esc(ct.name)}</option>`).join('')
+      : opts;
+  });
+  switchLibTab('case-type');
+  document.getElementById('libraryModal').style.display='flex';
+}
+
+function switchLibTab(tab){
+  activeLibTab=tab;
+  document.querySelectorAll('.lib-modal-tab').forEach((t,i)=>{
+    const tabs=['case-type','precedent','section'];
+    t.classList.toggle('active',tabs[i]===tab);
+  });
+  ['case-type','precedent','section'].forEach(t=>{
+    document.getElementById('libTab-'+t).style.display=t===tab?'':'none';
+  });
+}
+
+function addSubcatField(){
+  const val=document.getElementById('libNewSubcat').value.trim();
+  if(!val)return;
+  pendingSubcats.push(val);
+  document.getElementById('libNewSubcat').value='';
+  const div=document.getElementById('libSubcatList');
+  div.innerHTML=pendingSubcats.map((s,i)=>`<div style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;padding:.2rem .4rem;background:var(--blue-faint);border-radius:4px">${esc(s)}<button class="btn-icon" onclick="pendingSubcats.splice(${i},1);addSubcatField()">×</button></div>`).join('');
+}
+
+function addDocTypeField(){
+  const val=document.getElementById('libNewDocType').value.trim();
+  if(!val)return;
+  pendingDocTypes.push(val);
+  document.getElementById('libNewDocType').value='';
+  const div=document.getElementById('libDocTypeList');
+  div.innerHTML=pendingDocTypes.map((d,i)=>`<div style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;padding:.2rem .4rem;background:var(--blue-faint);border-radius:4px">${esc(d)}<button class="btn-icon" onclick="pendingDocTypes.splice(${i},1);addDocTypeField()">×</button></div>`).join('');
+}
+
+function updatePrecSubcats(){
+  const ctId=document.getElementById('libPrecCaseType').value;
+  const subs=libraryData.subcats.filter(s=>s.case_type_id===ctId);
+  const docs=libraryData.docTypes.filter(d=>d.case_type_id===ctId);
+  document.getElementById('libPrecSubcat').innerHTML='<option value="">None</option>'+subs.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  document.getElementById('libPrecDocType').innerHTML='<option value="">None</option>'+docs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+}
+
+function updateSecSubcats(){
+  const ctId=document.getElementById('libSecCaseType').value;
+  const subs=libraryData.subcats.filter(s=>s.case_type_id===ctId);
+  const docs=libraryData.docTypes.filter(d=>d.case_type_id===ctId);
+  document.getElementById('libSecSubcat').innerHTML='<option value="">Any</option>'+subs.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  document.getElementById('libSecDocType').innerHTML='<option value="">Any</option>'+docs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+}
+
+async function saveLibraryEntry(){
+  const btn=document.getElementById('libSaveBtn');
+  btn.disabled=true; btn.textContent='Saving…';
+  try{
+    if(activeLibTab==='case-type'){
+      const name=document.getElementById('libCaseTypeName').value.trim();
+      if(!name){showToast('Case type name required');return;}
+      // Also pick up any unsaved subcat/doctype input
+      const pendingSub=document.getElementById('libNewSubcat').value.trim();
+      if(pendingSub)pendingSubcats.push(pendingSub);
+      const pendingDoc=document.getElementById('libNewDocType').value.trim();
+      if(pendingDoc)pendingDocTypes.push(pendingDoc);
+      await api('/api/library','POST',{
+        action:'create_case_type',
+        name,
+        jurisdiction:document.getElementById('libCaseTypeJur').value,
+        description:document.getElementById('libCaseTypeDesc').value,
+        subcats:pendingSubcats,
+        docTypes:pendingDocTypes,
+      });
+      showToast('Case type saved');
+    }
+    else if(activeLibTab==='precedent'){
+      const name=document.getElementById('libPrecName').value.trim();
+      const caseTypeId=document.getElementById('libPrecCaseType').value;
+      const file=document.getElementById('libPrecFile').files[0];
+      if(!name||!caseTypeId){showToast('Name and case type required');return;}
+      if(!file){showToast('Please upload a PDF document');return;}
+      // Upload via FormData
+      const fd=new FormData();
+      fd.append('action','create_precedent');
+      fd.append('name',name);
+      fd.append('case_type_id',caseTypeId);
+      fd.append('subcategory_id',document.getElementById('libPrecSubcat').value||'');
+      fd.append('doc_type_id',document.getElementById('libPrecDocType').value||'');
+      fd.append('jurisdiction',document.getElementById('libPrecJur').value||'');
+      fd.append('description',document.getElementById('libPrecDesc').value||'');
+      fd.append('file',file);
+      const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd});
+      if(!r.ok) throw new Error(await r.text());
+      showToast('Precedent document saved and indexed');
+    }
+    else if(activeLibTab==='section'){
+      const title=document.getElementById('libSecTitle').value.trim();
+      const content=document.getElementById('libSecContent').value.trim();
+      if(!title||!content){showToast('Title and section text required');return;}
+      await api('/api/library','POST',{
+        action:'create_section',
+        title,
+        content,
+        case_type_id:document.getElementById('libSecCaseType').value||null,
+        subcategory_id:document.getElementById('libSecSubcat').value||null,
+        doc_type_id:document.getElementById('libSecDocType').value||null,
+        notes:document.getElementById('libSecNotes').value||'',
+      });
+      showToast('Standard section saved');
+    }
+    await loadLibrary();
+    closeModal('libraryModal');
+  }catch(e){showToast('Error: '+e.message);}
+  finally{btn.disabled=false;btn.textContent='Save';}
+}
+
+async function deleteCaseType(id){
+  if(!confirm('Delete this case type and all its sub-categories, document types, precedents and sections?'))return;
+  await api('/api/library','DELETE',{action:'delete_case_type',id});
+  await loadLibrary();
+  showToast('Deleted');
+}
+
+function viewLibItem(type, id){
+  if(type==='sec'){
+    const s=libraryData.sections.find(x=>x.id===id);
+    if(!s)return;
+    document.getElementById('libDetailTitle').textContent=s.title;
+    document.getElementById('libDetailBody').textContent=s.content;
+    document.getElementById('libDetailUseBtn').onclick=()=>useLibItemInDraft(type,id);
+    document.getElementById('libDetailModal').style.display='flex';
+  } else {
+    const p=libraryData.precedents.find(x=>x.id===id);
+    if(!p)return;
+    document.getElementById('libDetailTitle').textContent=p.name;
+    document.getElementById('libDetailBody').textContent=p.description||'Precedent document — click "Use in Current Draft" to incorporate into your next draft.';
+    document.getElementById('libDetailUseBtn').onclick=()=>useLibItemInDraft(type,id);
+    document.getElementById('libDetailModal').style.display='flex';
+  }
+}
+
+function useLibItemInDraft(type, id){
+  closeModal('libDetailModal');
+  switchLeftPanel('matters');
+  if(!currentMatter){showToast('Select a matter first, then run the Draft tool');return;}
+  // Open draft tool with this library item pre-selected
+  pendingTool='draft';
+  const cfg=toolDefs['draft'];
+  document.getElementById('toolModalTitle').textContent=cfg.title;
+  document.getElementById('toolModalBody').innerHTML=cfg.body();
+  // Store the library item reference
+  document.getElementById('toolModal').dataset.libType=type;
+  document.getElementById('toolModal').dataset.libId=id;
+  document.getElementById('toolModal').style.display='flex';
+  showToast('Library item selected — configure your draft and click Run');
+}
 
 // ── TAB MANAGEMENT ────────────────────────────────────────────────────────────
 // openTabs: array of {id, toolName, label} — 'chat' always first

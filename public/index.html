@@ -958,6 +958,19 @@ document.getElementById('chatInput').addEventListener('input',function(){this.st
 function clearChat(){clearMessages();if(currentMatter)sysMsg('Chat cleared. Documents remain indexed.');}
 
 const toolDefs={
+    <!-- DRAFT-LIB-SELECTOR -->
+    <div id="draftLibSelector" style="display:none;margin-bottom:.75rem;padding:.75rem;background:#f0f4ff;border-radius:6px;border:1px solid #d0d8f0;">
+      <div style="font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem;">Library</div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem;">
+        <select id="draftCaseType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Case type...</option></select>
+        <select id="draftSubcategory" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Sub-category...</option></select>
+        <select id="draftDocType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Document type...</option></select>
+      </div>
+      <div id="draftLibItems" style="display:none;border-top:1px solid #d0d8f0;padding-top:.5rem;max-height:180px;overflow-y:auto;">
+        <div id="draftSectionsList"></div>
+        <div id="draftPrecedentsList"></div>
+      </div>
+    </div>
   inconsistency:{title:'🔍 Inconsistency Tracker',body:()=>`<p class="tool-desc">Select anchor documents (your baseline factual position). The system finds all contradictions in the remaining documents.</p><div class="focus-label">Anchor Documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to compare all)</span></div><div class="anchor-list" id="anchorList">${documents.map(d=>`<label class="anchor-item"><input type="checkbox" value="${esc(d.name)}"> ${esc(d.name)} <span style="color:var(--text-faint);font-size:.72rem">[${d.doc_type}]</span></label>`).join('')||'<div style="font-size:.84rem;color:var(--text-faint)">No documents uploaded.</div>'}</div><div class="focus-label" style="margin-top:.85rem">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the dates of payments"></textarea>`},
   proposition:{title:'🎯 Proposition Evidence Finder',body:()=>`<p class="tool-desc">State a proposition or factual assertion. The system finds all evidence supporting or contradicting it and grades each reference by strength.</p><div class="focus-label">Proposition or Statement</div><textarea id="toolInstructions" placeholder="e.g. The defendant had knowledge of the transactions before 1 January 2023" style="min-height:80px"></textarea>`},
   chronology:{title:'📅 Chronology Builder',body:()=>`<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology. Disputed dates are flagged.</p><div class="focus-label">Focus or Date Range <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on events after January 2022, or limit to Issue 3 — the share transfer"></textarea>`},
@@ -1328,6 +1341,8 @@ function openTool(t){
     // Tab already exists — just switch to it, don't re-run
     return;
   }
+  if(t==='draft'){setTimeout(loadDraftLibrary,150);}
+
   // New tab — auto-open the config modal
   promptTool(t);
 }
@@ -1388,7 +1403,7 @@ document.getElementById('toolRunBtn').addEventListener('click',async()=>{
   msgsArea.scrollTop=msgsArea.scrollHeight;
 
   try{
-    const d=await api('/api/tools','POST',{tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction,anchorDocNames,instructions});
+    var _tb={tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction,anchorDocNames,instructions};if(toolName==='draft'){var _lc=buildLibraryContext();if(_lc)_tb.libraryContext=_lc;}const d=await api('/api/tools','POST',_tb);
     typing.remove();
     if(d?.result){
       const isProp=toolName==='proposition';
@@ -1672,6 +1687,136 @@ function closeModal(id){document.getElementById(id).style.display='none';}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.style.display='none';}));
 function showToast(msg){document.querySelector('.toast')?.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3200);}
 init();
+
+// DRAFT-LIB-INTEGRATION
+var _dls={sections:[],precedents:[],selSec:new Set(),selPrec:new Set()};
+
+function loadDraftLibrary(){
+  var tok=localStorage.getItem('elj_token');
+  if(!tok)return;
+  fetch('/api/library_fetch?action=getCaseTypes',{headers:{'Authorization':'Bearer '+tok}})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      var sel=document.getElementById('draftCaseType');
+      if(!sel)return;
+      sel.innerHTML='<option value="">Case type...</option>';
+      (d.caseTypes||[]).forEach(function(ct){
+        var o=document.createElement('option');
+        o.value=ct.id;o.setAttribute('data-name',ct.name);o.textContent=ct.name;
+        sel.appendChild(o);
+      });
+      var ls=document.getElementById('draftLibSelector');
+      if(ls)ls.style.display='';
+    }).catch(function(e){console.warn('loadDraftLibrary:',e);});
+}
+
+document.addEventListener('change',function(e){
+  var tok=localStorage.getItem('elj_token');
+  if(!tok)return;
+  if(e.target.id==='draftCaseType'){
+    var ctId=e.target.value;
+    document.getElementById('draftSubcategory').innerHTML='<option value="">Sub-category...</option>';
+    document.getElementById('draftDocType').innerHTML='<option value="">Document type...</option>';
+    var li=document.getElementById('draftLibItems');if(li)li.style.display='none';
+    _dls.selSec=new Set();_dls.selPrec=new Set();
+    if(!ctId)return;
+    Promise.all([
+      fetch('/api/library_fetch?action=getSubcategories&caseTypeId='+ctId,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}),
+      fetch('/api/library_fetch?action=getDocTypes&caseTypeId='+ctId,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();})
+    ]).then(function(res){
+      var ss=document.getElementById('draftSubcategory');
+      (res[0].subcategories||[]).forEach(function(s){var o=document.createElement('option');o.value=s.id;o.setAttribute('data-name',s.name);o.textContent=s.name;ss.appendChild(o);});
+      var ds=document.getElementById('draftDocType');
+      (res[1].docTypes||[]).forEach(function(d){var o=document.createElement('option');o.value=d.id;o.setAttribute('data-name',d.name);o.textContent=d.name;ds.appendChild(o);});
+      _loadDraftItems(ctId,null,null);
+    });
+  }
+  if(e.target.id==='draftSubcategory'||e.target.id==='draftDocType'){
+    var ctId=document.getElementById('draftCaseType').value;
+    if(ctId)_loadDraftItems(
+      ctId,
+      document.getElementById('draftSubcategory').value||null,
+      document.getElementById('draftDocType').value||null
+    );
+  }
+});
+
+function _loadDraftItems(ctId,subId,dtId){
+  var tok=localStorage.getItem('elj_token');
+  var url='/api/library_fetch?action=getDraftContext&caseTypeId='+ctId;
+  if(subId)url+='&subcategoryId='+subId;
+  if(dtId)url+='&docTypeId='+dtId;
+  fetch(url,{headers:{'Authorization':'Bearer '+tok}})
+    .then(function(r){return r.json();})
+    .then(function(d){_dls.sections=d.sections||[];_dls.precedents=d.precedents||[];_renderDraftItems();});
+}
+
+function _renderDraftItems(){
+  var wrap=document.getElementById('draftLibItems');
+  var sd=document.getElementById('draftSectionsList');
+  var pd=document.getElementById('draftPrecedentsList');
+  if(!_dls.sections.length&&!_dls.precedents.length){if(wrap)wrap.style.display='none';return;}
+  if(wrap)wrap.style.display='';
+  if(sd){
+    sd.innerHTML='';
+    if(_dls.sections.length){
+      var hd=document.createElement('div');
+      hd.style.cssText='font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin:.4rem 0 .2rem;';
+      hd.textContent='Standard Sections';sd.appendChild(hd);
+      _dls.sections.forEach(function(s){
+        var lbl=document.createElement('label');
+        lbl.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';
+        var cb=document.createElement('input');cb.type='checkbox';cb.value=s.id;
+        cb.setAttribute('data-title',s.title);
+        cb.setAttribute('data-content',encodeURIComponent(s.content||''));
+        cb.className='draft-sec-cb';
+        if(_dls.selSec.has(s.id))cb.checked=true;
+        cb.onchange=function(){if(this.checked)_dls.selSec.add(this.value);else _dls.selSec.delete(this.value);};
+        lbl.appendChild(cb);lbl.appendChild(document.createTextNode(' '+s.title));sd.appendChild(lbl);
+      });
+    }
+  }
+  if(pd){
+    pd.innerHTML='';
+    if(_dls.precedents.length){
+      var hd=document.createElement('div');
+      hd.style.cssText='font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin:.4rem 0 .2rem;';
+      hd.textContent='Precedent Documents';pd.appendChild(hd);
+      _dls.precedents.forEach(function(p){
+        var lbl=document.createElement('label');
+        lbl.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';
+        var cb=document.createElement('input');cb.type='checkbox';cb.value=p.id;
+        cb.className='draft-prec-cb';
+        if(_dls.selPrec.has(p.id))cb.checked=true;
+        cb.onchange=function(){if(this.checked)_dls.selPrec.add(this.value);else _dls.selPrec.delete(this.value);};
+        lbl.appendChild(cb);lbl.appendChild(document.createTextNode(' '+p.title));pd.appendChild(lbl);
+      });
+    }
+  }
+}
+
+function buildLibraryContext(){
+  var ctSel=document.getElementById('draftCaseType');
+  if(!ctSel||!ctSel.value)return null;
+  var ctName=(ctSel.selectedOptions[0]&&ctSel.selectedOptions[0].getAttribute('data-name'))||'';
+  if(!ctName)return null;
+  var subSel=document.getElementById('draftSubcategory');
+  var dtSel=document.getElementById('draftDocType');
+  var secs=[];
+  document.querySelectorAll('.draft-sec-cb:checked').forEach(function(cb){
+    secs.push({id:cb.value,title:cb.getAttribute('data-title'),content:decodeURIComponent(cb.getAttribute('data-content')||'')});
+  });
+  var precs=[];
+  document.querySelectorAll('.draft-prec-cb:checked').forEach(function(cb){precs.push(cb.value);});
+  return {
+    caseTypeName:ctName,
+    subcategoryName:(subSel&&subSel.value&&subSel.selectedOptions[0])?subSel.selectedOptions[0].getAttribute('data-name')||'':'',
+    docTypeName:(dtSel&&dtSel.value&&dtSel.selectedOptions[0])?dtSel.selectedOptions[0].getAttribute('data-name')||'':'',
+    selectedSections:secs,
+    selectedPrecedentIds:precs
+  };
+}
+// END DRAFT-LIB-INTEGRATION
 </script>
 </body>
 </html>

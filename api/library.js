@@ -109,8 +109,15 @@ export default async function handler(req, res) {
 
   // ── DELETE ────────────────────────────────────────────────────────────────
   if (req.method === "DELETE") {
-    let body = req.body;
-    if (typeof body === "string") body = JSON.parse(body);
+    let body = await new Promise((resolve, reject) => {
+      let raw = "";
+      req.on("data", chunk => { raw += chunk; });
+      req.on("end", () => {
+        try { resolve(JSON.parse(raw)); }
+        catch(e) { reject(new Error("Invalid JSON body")); }
+      });
+      req.on("error", reject);
+    });
     const { action, id } = body;
 
     if (action === "delete_case_type") {
@@ -183,9 +190,16 @@ export default async function handler(req, res) {
       return res.status(201).json({ success: true, id: precDoc.id });
     }
 
-    // JSON body actions
-    let body = req.body;
-    if (typeof body === "string") body = JSON.parse(body);
+    // JSON body actions — bodyParser is disabled so read raw stream
+    let body = await new Promise((resolve, reject) => {
+      let raw = "";
+      req.on("data", chunk => { raw += chunk; });
+      req.on("end", () => {
+        try { resolve(JSON.parse(raw)); }
+        catch(e) { reject(new Error("Invalid JSON body")); }
+      });
+      req.on("error", reject);
+    });
     const { action } = body;
 
     if (action === "create_case_type") {

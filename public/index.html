@@ -228,6 +228,15 @@ textarea#chatInput::placeholder{color:var(--text-faint);font-weight:400}
 .upload-err{margin:.45rem .85rem 0;padding:.5rem .8rem;background:#fdf0f0;border:1.5px solid #f0b0b0;border-radius:5px;font-size:.8rem;font-weight:500;color:var(--error);display:none}
 .upload-err.on{display:block}
 select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-family:'Source Sans 3',sans-serif;font-size:.82rem;font-weight:600;color:var(--text-mid);background:var(--white)}
+.upload-meta{padding:.5rem .75rem .25rem;border-bottom:1px solid var(--border);}
+.um-row{display:flex;flex-direction:column;margin-bottom:.45rem;}
+.um-label{font-size:.68rem;font-weight:700;color:var(--text-faint);letter-spacing:.07em;text-transform:uppercase;margin-bottom:.2rem;}
+.um-combo{display:flex;flex-direction:column;gap:.2rem;}
+.um-combo select{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;background:var(--off-white);color:var(--text-dark);}
+.um-custom{padding:.3rem .5rem;border:1.5px solid var(--blue-light);border-radius:5px;font-size:.82rem;}
+.issue-chips{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.25rem;}
+.issue-chip{display:inline-flex;align-items:center;gap:.25rem;background:var(--blue-pale);border:1px solid var(--blue-light);border-radius:12px;padding:.15rem .5rem;font-size:.75rem;color:var(--blue);}
+.issue-chip button{background:none;border:none;color:var(--blue);cursor:pointer;padding:0;font-size:.85rem;line-height:1;}
 .upload-zone{margin:.55rem .85rem;border:2px dashed var(--border-strong);border-radius:8px;padding:1.2rem .85rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;flex-shrink:0}
 .upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue-light);background:var(--blue-faint)}
 .upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
@@ -404,18 +413,65 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
     </div>
     <div class="right-panel">
       <div class="panel-head"><span class="panel-head-title">Documents</span></div>
-      <select class="doc-type" id="docTypeSelect">
-        <option>Pleading</option>
-        <option>Skeleton Argument</option>
-        <option>Witness Statement</option>
-        <option>Exhibit</option>
-        <option>Case Law</option>
-        <option>Statute / Regulation</option>
-        <option>Correspondence</option>
-        <option>Expert Report</option>
-        <option>Trial Bundle</option>
-        <option>Other</option>
-      </select>
+      <div class="upload-meta">
+        <div class="um-row">
+          <label class="um-label">Party</label>
+          <div class="um-combo">
+            <select id="docPartySelect" onchange="syncCombo(this,'docPartyCustom')">
+              <option value="">— optional —</option>
+              <option>Plaintiff</option>
+              <option>Defendant</option>
+              <option>Petitioner</option>
+              <option>Respondent</option>
+              <option>Applicant</option>
+              <option>Appellant</option>
+              <option value="__custom__">Other…</option>
+            </select>
+            <input type="text" id="docPartyCustom" class="um-custom" placeholder="Type party name" style="display:none">
+          </div>
+        </div>
+        <div class="um-row">
+          <label class="um-label">Document type</label>
+          <div class="um-combo">
+            <select id="docTypeSelect" onchange="syncCombo(this,'docTypeCustom')">
+              <option value="">— optional —</option>
+              <option>Pleading</option>
+              <option>Skeleton Argument</option>
+              <option>Memo of Grounds of Appeal</option>
+              <option>Petition</option>
+              <option>Witness Statement</option>
+              <option>Affidavit</option>
+              <option>Exhibit</option>
+              <option>Discovery</option>
+              <option>Instructions</option>
+              <option>Opinion</option>
+              <option>Case Law</option>
+              <option>Statute / Regulation</option>
+              <option>Correspondence</option>
+              <option>Expert Report</option>
+              <option>Other</option>
+              <option value="__custom__">Custom…</option>
+            </select>
+            <input type="text" id="docTypeCustom" class="um-custom" placeholder="Type document type" style="display:none">
+          </div>
+        </div>
+        <div class="um-row">
+          <label class="um-label">Issues</label>
+          <div class="um-combo">
+            <select id="docIssuesSelect" onchange="addIssueChip(this.value);this.selectedIndex=0;">
+              <option value="">Add issue…</option>
+              <option>Liability</option>
+              <option>Quantum</option>
+              <option>Jurisdiction</option>
+              <option>Limitation</option>
+              <option>Evidence</option>
+              <option>Procedure</option>
+              <option value="__custom__">Other…</option>
+            </select>
+          </div>
+          <div id="issueChips" class="issue-chips"></div>
+        </div>
+      </div>
       <div class="upload-zone" id="uploadZone">
         <input type="file" id="fileInput" accept=".pdf,.doc,.docx" multiple>
         <div class="uz-icon">📎</div>
@@ -424,17 +480,6 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       </div>
       <div class="upload-progress" id="uploadProg"></div>
       <div class="upload-err" id="uploadErr"></div>
-      <div class="focus-section">
-        <div class="focus-label">Focus Areas</div>
-        <div class="chips" id="focusChips">
-          <span class="chip" data-v="Liability">Liability</span>
-          <span class="chip" data-v="Quantum">Quantum</span>
-          <span class="chip" data-v="Jurisdiction">Jurisdiction</span>
-          <span class="chip" data-v="Limitation">Limitation</span>
-          <span class="chip" data-v="Evidence">Evidence</span>
-          <span class="chip" data-v="Procedure">Procedure</span>
-        </div>
-      </div>
       <div class="docs-scroll"><div id="docsList"></div></div>
     </div>
   </div>
@@ -803,15 +848,47 @@ uploadZone.addEventListener('dragleave',()=>uploadZone.classList.remove('drag-ov
 uploadZone.addEventListener('drop',e=>{e.preventDefault();uploadZone.classList.remove('drag-over');if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(e.dataTransfer.files).filter(f=>f.type==='application/pdf'));});
 fileInput.addEventListener('change',()=>{if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(fileInput.files));fileInput.value='';});
 
+function getUploadMeta(){
+  var partySel=document.getElementById('docPartySelect');
+  var partyCustom=document.getElementById('docPartyCustom');
+  var party=partySel.value==='__custom__'?partyCustom.value.trim():(partySel.value||'');
+  var typeSel=document.getElementById('docTypeSelect');
+  var typeCustom=document.getElementById('docTypeCustom');
+  var docType=typeSel.value==='__custom__'?typeCustom.value.trim():(typeSel.value||'Other');
+  var chips=document.querySelectorAll('.issue-chip');
+  var issues=Array.from(chips).map(function(c){return c.getAttribute('data-v');}).join(', ');
+  return{party:party||null,docType:docType||'Other',docIssues:issues||null};
+}
+function syncCombo(sel,customId){
+  var el=document.getElementById(customId);
+  if(el) el.style.display=sel.value==='__custom__'?'':'none';
+}
+function addIssueChip(val){
+  if(!val||val==='__custom__'){
+    var v=prompt('Enter issue:');
+    if(!v||!v.trim())return;
+    val=v.trim();
+  }
+  var container=document.getElementById('issueChips');
+  if(!container)return;
+  // avoid duplicates
+  var existing=Array.from(container.querySelectorAll('.issue-chip')).map(function(c){return c.getAttribute('data-v').toLowerCase();});
+  if(existing.indexOf(val.toLowerCase())!==-1)return;
+  var chip=document.createElement('span');
+  chip.className='issue-chip';
+  chip.setAttribute('data-v',val);
+  chip.innerHTML=val+' <button onclick="this.parentElement.remove()" title="Remove">×</button>';
+  container.appendChild(chip);
+}
 async function uploadFiles(files){
   if(!files.length||!currentMatter)return;
-  const docType=document.getElementById('docTypeSelect').value;
+  var meta=getUploadMeta();
   const prog=document.getElementById('uploadProg'),errEl=document.getElementById('uploadErr');
   errEl.classList.remove('on');
   for(const file of files){
-    prog.textContent=`Processing: ${file.name}…`;prog.classList.add('on');
-    try{const b64=await toB64(file);const d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,fileData:b64,docType});if(d)showToast(`✓ ${file.name} — ${d.chunks} passages indexed`);}
-    catch(e){errEl.textContent=`Failed: ${file.name} — ${e.message}`;errEl.classList.add('on');}
+    prog.textContent='Processing: '+file.name+'…';prog.classList.add('on');
+    try{const b64=await toB64(file);const d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,fileData:b64,docType:meta.docType,party:meta.party,docIssues:meta.docIssues});if(d)showToast('✓ '+file.name+' — '+d.chunks+' passages indexed');}
+    catch(e){errEl.textContent='Failed: '+file.name+' — '+e.message;errEl.classList.add('on');}
   }
   prog.classList.remove('on');await loadDocuments(currentMatter.id);await loadMatters();
 }

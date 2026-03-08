@@ -1017,8 +1017,6 @@ function switchLibTab(tab){
   });
   ['precedent','section'].forEach(function(t){
     var el=document.getElementById('libTab-'+t); if(el) el.style.display=t===tab?'':'none';
-  });  ['case-type','precedent','section'].forEach(t=>{
-    document.getElementById('libTab-'+t).style.display=t===tab?'':'none';
   });
 }
 

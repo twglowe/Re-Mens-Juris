@@ -1307,18 +1307,7 @@ async function _loadMostRecentToolResult(toolName){
       rerunBtn.title='Run again with current documents';
       rerunBtn.onclick=function(){bar.remove();promptTool(toolName);};
       bar.appendChild(rerunBtn);
-      // Delete current button
-      var delBtn=document.createElement('button');
-      delBtn.className='btn-secondary';
-      delBtn.style.cssText='font-size:.78rem;color:#c0392b;';
-      delBtn.textContent='Delete this result';
-      delBtn.onclick=function(){
-        if(!confirm('Delete this result?'))return;
-        api('/api/history?id='+latest.id,'DELETE').then(function(){
-          _loadMostRecentToolResult(toolName);
-        }).catch(function(e){showToast('Error: '+e.message);});
-      };
-      bar.appendChild(delBtn);
+
       // Previous version button
       if(prev){
         var prevBtn=document.createElement('button');
@@ -1558,10 +1547,15 @@ function renderToolHistoryBar(toolName,historyId,bubble){
       e.stopPropagation();
       if(!confirm('Delete this saved result?'))return;
       try{
-        await api(`/api/history?id=${h.id}`,'DELETE');
-        await loadHistory(currentMatter.id);
+        await api('/api/history?id='+h.id,'DELETE');
         item.remove();
         showToast('Deleted');
+        // If this was the current result, reload the tab
+        if(h.id===historyId){
+          var ws=document.querySelector('.tool-workspace[data-tool="'+toolName+'"]');
+          if(ws){var msgs=document.getElementById('msgs-'+toolName);if(msgs)msgs.innerHTML='';}
+          _loadMostRecentToolResult(toolName);
+        }
       }catch(err){showToast('Error: '+err.message);}
     });
     item.appendChild(lbl);item.appendChild(dt);item.appendChild(del);

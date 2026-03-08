@@ -1,12 +1,13 @@
 {
   "name": "mens-juris",
   "version": "2.0.0",
-  "description": "Ex Libris Juris — Offshore Legal Analysis System",
+  "description": "Ex Libris Juris \u2014 Offshore Legal Analysis System",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@supabase/supabase-js": "^2.39.0",
     "pdf-parse": "^1.1.1",
     "docx": "^8.5.0",
     "formidable": "^3.5.1"
-  }
+  },
+  "type": "module"
 }

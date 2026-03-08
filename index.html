@@ -228,6 +228,33 @@ textarea#chatInput::placeholder{color:var(--text-faint);font-weight:400}
 .upload-err{margin:.45rem .85rem 0;padding:.5rem .8rem;background:#fdf0f0;border:1.5px solid #f0b0b0;border-radius:5px;font-size:.8rem;font-weight:500;color:var(--error);display:none}
 .upload-err.on{display:block}
 select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-family:'Source Sans 3',sans-serif;font-size:.82rem;font-weight:600;color:var(--text-mid);background:var(--white)}
+.mode-toggle{display:flex;border:1.5px solid var(--border);border-radius:6px;overflow:hidden;}
+.mode-btn{padding:.3rem .85rem;font-size:.8rem;font-weight:600;border:none;background:var(--off-white);color:var(--text-faint);cursor:pointer;transition:all .15s;}
+.mode-btn.active{background:var(--navy-mid);color:#fff;}
+.drafting-workspace{display:flex;flex-direction:column;gap:1rem;padding:1rem;overflow-y:auto;}
+.draft-setup{background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:1rem;}
+.draft-setup-head{font-size:.72rem;font-weight:700;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.75rem;}
+.draft-fields{display:flex;flex-direction:column;gap:.6rem;}
+.draft-field-row{display:flex;gap:.6rem;flex-wrap:wrap;}
+.draft-field{flex:1;min-width:180px;display:flex;flex-direction:column;gap:.2rem;}
+.df-label{font-size:.72rem;font-weight:700;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;}
+.df-input{padding:.4rem .6rem;border:1.5px solid var(--border);border-radius:5px;font-size:.85rem;font-family:inherit;background:var(--off-white);}
+.df-input:focus{outline:none;border-color:var(--blue-light);}
+.draft-header-preview{margin-top:.75rem;background:var(--off-white);border:1px solid var(--border);border-radius:6px;padding:.75rem;}
+.dhp-label{font-size:.68rem;font-weight:700;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.4rem;}
+.dhp-text{font-family:Georgia,serif;font-size:.82rem;white-space:pre-wrap;margin:0;color:var(--text-dark);}
+.draft-sources{background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:1rem;}
+.draft-sources-note{font-size:.78rem;color:var(--text-faint);margin-bottom:.5rem;}
+.draft-source-list{display:flex;flex-direction:column;gap:.35rem;margin-bottom:.75rem;}
+.ds-item{display:flex;align-items:center;gap:.5rem;font-size:.85rem;cursor:pointer;}
+.ds-item input{accent-color:var(--blue);}
+.ds-status{font-size:.72rem;color:var(--text-faint);margin-left:auto;}
+.ds-status.run{color:#27ae60;}
+.draft-instructions-area{background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:1rem;}
+.draft-instructions-area .df-input{width:100%;box-sizing:border-box;resize:vertical;}
+.draft-actions{display:flex;gap:.5rem;}
+.draft-output{background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:1rem;}
+.draft-output-content{font-family:Georgia,serif;font-size:.9rem;line-height:1.7;white-space:pre-wrap;max-height:60vh;overflow-y:auto;border:1px solid var(--border);padding:.75rem;border-radius:5px;background:var(--off-white);}
 .upload-meta{padding:.5rem .75rem .25rem;border-bottom:1px solid var(--border);}
 .um-row{display:flex;flex-direction:column;margin-bottom:.45rem;}
 .um-label{font-size:.68rem;font-weight:700;color:var(--text-faint);letter-spacing:.07em;text-transform:uppercase;margin-bottom:.2rem;}
@@ -358,13 +385,10 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       <div class="chat-toolbar">
         <div class="chat-matter-title empty" id="chatTitle">Select or create a matter</div>
         <div class="toolbar-controls">
-          <select class="qtype" id="qtypeSelect">
-            <option value="Factual Analysis">Factual</option>
-            <option value="Legal Issues">Legal Issues</option>
-            <option value="Procedural Advice">Procedural</option>
-            <option value="Case Strategy">Strategy</option>
-            <option value="Document Drafting">Drafting</option>
-          </select>
+          <div class="mode-toggle">
+            <button class="mode-btn active" id="modeAnalysis" onclick="setMode('analysis')">Analysis</button>
+            <button class="mode-btn" id="modeDrafting" onclick="setMode('drafting')">Drafting</button>
+          </div>
           <button class="btn-t" id="histBtn" style="display:none" onclick="toggleHistory()">History</button>
           <button class="btn-t" onclick="clearChat()">Clear</button>
         </div>
@@ -378,7 +402,6 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <button class="tool-btn" onclick="openTool('issues')">⚖ Issue Tracker</button>
         <button class="tool-btn" onclick="openTool('citations')">📚 Citations</button>
         <button class="tool-btn" onclick="openTool('briefing')">📋 Briefing Note</button>
-        <button class="tool-btn" onclick="openTool('draft')">✍️ Draft</button>
       </div>
       <div class="progress-bar-wrap" id="progressWrap">
         <div class="progress-bar-label" id="progressLabel">Analysing documents…</div>
@@ -403,6 +426,106 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       </div>
       <!-- Tool workspaces injected here by JS -->
       <div id="toolWorkspaces" style="display:contents"></div>
+      <!-- Drafting workspace -->
+      <div id="ws-drafting" class="tab-workspace drafting-workspace" style="display:none">
+        <div class="draft-setup">
+          <div class="draft-setup-head">Document Setup</div>
+          <div class="draft-fields">
+            <div class="draft-field-row">
+              <div class="draft-field">
+                <label class="df-label">Court / Tribunal</label>
+                <input class="df-input" id="draftCourt" placeholder="e.g. Supreme Court of Bermuda">
+              </div>
+              <div class="draft-field">
+                <label class="df-label">Action / Cause Number</label>
+                <input class="df-input" id="draftActionNo" placeholder="e.g. 2024: No. 123">
+              </div>
+            </div>
+            <div class="draft-field-row">
+              <div class="draft-field">
+                <label class="df-label">Plaintiff / Petitioner / Applicant</label>
+                <input class="df-input" id="draftPlaintiff" placeholder="Full name">
+              </div>
+              <div class="draft-field">
+                <label class="df-label">Defendant / Respondent</label>
+                <input class="df-input" id="draftDefendant" placeholder="Full name">
+              </div>
+            </div>
+            <div class="draft-field-row">
+              <div class="draft-field">
+                <label class="df-label">Document Type</label>
+                <select class="df-input" id="draftDocType">
+                  <option value="">Select type…</option>
+                  <option>Skeleton Argument</option>
+                  <option>Pleading — Statement of Claim</option>
+                  <option>Pleading — Defence</option>
+                  <option>Pleading — Reply</option>
+                  <option>Memo of Grounds of Appeal</option>
+                  <option>Petition</option>
+                  <option>Originating Summons</option>
+                  <option>Affidavit</option>
+                  <option>Written Submissions</option>
+                  <option>Chronology</option>
+                  <option>Cast List</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div class="draft-field">
+                <label class="df-label">Drafted by / On behalf of</label>
+                <input class="df-input" id="draftOnBehalf" placeholder="e.g. Plaintiff">
+              </div>
+            </div>
+          </div>
+          <div class="draft-header-preview" id="draftHeaderPreview" style="display:none">
+            <div class="dhp-label">Header preview</div>
+            <pre class="dhp-text" id="draftHeaderText"></pre>
+          </div>
+          <button class="btn-secondary" style="margin-top:.5rem;font-size:.8rem" onclick="generateDraftHeader()">Preview header</button>
+        </div>
+
+        <div class="draft-sources">
+          <div class="draft-setup-head">Source material</div>
+          <div class="draft-sources-note">Tick outputs to include in the draft. Unticked tools will be run automatically if needed.</div>
+          <div id="draftSourceChecks" class="draft-source-list">
+            <label class="ds-item"><input type="checkbox" class="ds-cb" value="chronology"> <span>Chronology</span> <span class="ds-status" id="dss-chronology"></span></label>
+            <label class="ds-item"><input type="checkbox" class="ds-cb" value="persons"> <span>Persons &amp; Entities Index</span> <span class="ds-status" id="dss-persons"></span></label>
+            <label class="ds-item"><input type="checkbox" class="ds-cb" value="issues"> <span>Issue Tracker</span> <span class="ds-status" id="dss-issues"></span></label>
+            <label class="ds-item"><input type="checkbox" class="ds-cb" value="briefing"> <span>Briefing Note</span> <span class="ds-status" id="dss-briefing"></span></label>
+          </div>
+          <div class="draft-sources-note" style="margin-top:.5rem">Library</div>
+          <div id="draftLibSelector" style="margin-bottom:.75rem;padding:.75rem;background:#f0f4ff;border-radius:6px;border:1px solid #d0d8f0;">
+            <div style="font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem;">Precedents &amp; sections</div>
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem;">
+              <select id="draftCaseType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Case type...</option></select>
+              <select id="draftSubcategory" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Sub-category...</option></select>
+              <select id="draftDocType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Document type...</option></select>
+            </div>
+            <div id="draftLibItems" style="display:none;border-top:1px solid #d0d8f0;padding-top:.5rem;max-height:180px;overflow-y:auto;">
+              <div id="draftSectionsList"></div>
+              <div id="draftPrecedentsList"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="draft-instructions-area">
+          <div class="draft-setup-head">Instructions to AI</div>
+          <textarea class="df-input" id="draftInstructions" rows="5" placeholder="Describe what you want drafted. e.g.: Draft a skeleton argument for the Plaintiff addressing limitation, jurisdiction and quantum. Use the Cayman Islands Companies Act 2023 as the primary statutory authority. The key argument is that the defendant's indemnity obligation was triggered by the US judgment."></textarea>
+        </div>
+
+        <div class="draft-actions">
+          <button class="btn-primary" id="draftGenerateBtn" onclick="runDraftWorkflow()">Generate draft</button>
+        </div>
+
+        <div id="draftOutputArea" class="draft-output" style="display:none">
+          <div class="draft-setup-head">Draft output</div>
+          <div id="draftOutputContent" class="draft-output-content"></div>
+          <div style="display:flex;gap:.5rem;margin-top:.75rem;flex-wrap:wrap;">
+            <button class="btn-secondary" onclick="downloadDraftWord()">⬇ Word</button>
+            <button class="btn-secondary" onclick="runDraftWorkflow()">Re-generate</button>
+          </div>
+        </div>
+      </div>
+
       <div class="input-area">
         <div class="input-row">
           <textarea id="chatInput" placeholder="Ask a legal question about this matter…" rows="1"></textarea>
@@ -953,6 +1076,7 @@ function switchLeftPanel(panel){
   document.getElementById('toggleMatters').classList.toggle('active', panel==='matters');
   document.getElementById('toggleLibrary').classList.toggle('active', panel==='library');
   if(panel==='library') loadLibrary();
+  if(_appMode==='drafting') _refreshDraftSourceStatuses();
 }
 
 async function loadLibrary(){
@@ -1534,7 +1658,7 @@ async function findReferences(bubble,toolName){
       matterId:currentMatter.id,matterName:currentMatter.name,
       matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',
       messages:[{role:'user',content:`For each statement in the following edited text that is NOT already attributed to a source document, search the matter documents and add a source reference if one exists. Return the full text with source references added in the format *(Source: [Document Name])*. If no source exists for a statement, leave it unchanged.\n\nEDITED TEXT:\n${editedText}`}],
-      jurisdiction,queryType:'Factual Analysis',focusAreas:[]
+      jurisdiction,queryType:(_appMode==='drafting'?'Document Drafting':'Factual Analysis'),focusAreas:[]
     });
     if(d?.result){
       // Insert the result as a new message below
@@ -1567,7 +1691,7 @@ async function showBundleIndex(referencedDocs){
       matterId:currentMatter.id,matterName:currentMatter.name,
       matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',
       messages:[{role:'user',content:`Produce a document bundle index for the matter "${currentMatter.name}". For each document listed below, provide:\n1. A sequential bundle number\n2. The document name\n3. The document type\n4. A one-line description of what the document is\n5. The approximate date of the document if determinable from its name\n\nSort the documents in chronological order where possible (oldest first). Return as a JSON array with fields: num, name, type, description, date.\n\nDOCUMENTS:\n${docList}`}],
-      jurisdiction,queryType:'Factual Analysis',focusAreas:[]
+      jurisdiction,queryType:(_appMode==='drafting'?'Document Drafting':'Factual Analysis'),focusAreas:[]
     });
 
     let rows=[];
@@ -1830,6 +1954,211 @@ function buildLibraryContext(){
   return{caseTypeName:ctName,subcategoryName:(subSel&&subSel.value&&subSel.selectedOptions[0])?subSel.selectedOptions[0].getAttribute('data-name')||'':'',docTypeName:(dtSel&&dtSel.value&&dtSel.selectedOptions[0])?dtSel.selectedOptions[0].getAttribute('data-name')||'':'',selectedSections:secs,selectedPrecedentIds:precs};
 }
 // END DRAFT-LIB-INTEGRATION
+
+// ── MODE SWITCH ───────────────────────────────────────────────────────────────
+var _appMode = 'analysis';
+function setMode(mode){
+  _appMode = mode;
+  document.getElementById('modeAnalysis').classList.toggle('active', mode==='analysis');
+  document.getElementById('modeDrafting').classList.toggle('active', mode==='drafting');
+  document.getElementById('toolsBar').style.display = (mode==='analysis' && currentMatter) ? '' : 'none';
+  var dws = document.getElementById('ws-drafting');
+  if(mode==='drafting'){
+    dws.style.display = '';
+    if(currentMatter) _refreshDraftSourceStatuses();
+    if(currentMatter) loadDraftLibrary();
+  } else {
+    dws.style.display = 'none';
+  }
+}
+
+// ── DRAFT HEADER PREVIEW ──────────────────────────────────────────────────────
+function generateDraftHeader(){
+  var court = document.getElementById('draftCourt').value.trim();
+  var actionNo = document.getElementById('draftActionNo').value.trim();
+  var plaintiff = document.getElementById('draftPlaintiff').value.trim();
+  var defendant = document.getElementById('draftDefendant').value.trim();
+  var docType = document.getElementById('draftDocType').value;
+  var onBehalf = document.getElementById('draftOnBehalf').value.trim();
+  var jur = currentMatter ? (currentMatter.jurisdiction || '') : '';
+
+  var lines = [];
+  if(court) lines.push('IN THE ' + court.toUpperCase());
+  if(jur) lines.push(jur.toUpperCase());
+  if(actionNo) lines.push('
+Cause No. ' + actionNo);
+  lines.push('
+BETWEEN:');
+  if(plaintiff) lines.push('
+' + plaintiff.toUpperCase());
+  lines.push('                                                    Plaintiff');
+  lines.push('
+- and -
+');
+  if(defendant) lines.push(defendant.toUpperCase());
+  lines.push('                                                  Defendant');
+  if(docType) lines.push('
+
+' + docType.toUpperCase());
+  if(onBehalf) lines.push('
+(On behalf of the ' + onBehalf + ')');
+
+  var text = lines.join('
+');
+  document.getElementById('draftHeaderText').textContent = text;
+  document.getElementById('draftHeaderPreview').style.display = '';
+}
+
+// ── DRAFT SOURCE STATUSES ─────────────────────────────────────────────────────
+var _draftToolResults = {};
+async function _refreshDraftSourceStatuses(){
+  if(!currentMatter) return;
+  var tok = localStorage.getItem('elj_token');
+  try{
+    var r = await fetch('/api/history?matter_id='+encodeURIComponent(currentMatter.id), {headers:{'Authorization':'Bearer '+tok}});
+    if(!r.ok) return;
+    var h = await r.json();
+    var tools = ['chronology','persons','issues','briefing'];
+    _draftToolResults = {};
+    tools.forEach(function(t){
+      var results = (h.history||[]).filter(function(x){return x.tool_name===t;})
+        .sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
+      if(results.length > 0){
+        _draftToolResults[t] = results[0].answer;
+        var el = document.getElementById('dss-'+t);
+        if(el){el.textContent='Already run'; el.className='ds-status run';}
+      } else {
+        var el = document.getElementById('dss-'+t);
+        if(el){el.textContent='Not yet run'; el.className='ds-status';}
+      }
+    });
+  }catch(e){}
+}
+
+// ── RUN DRAFT WORKFLOW ────────────────────────────────────────────────────────
+async function runDraftWorkflow(){
+  if(!currentMatter){showToast('Select a matter first');return;}
+  var instructions = document.getElementById('draftInstructions').value.trim();
+  if(!instructions){showToast('Please enter instructions for the draft');return;}
+
+  var btn = document.getElementById('draftGenerateBtn');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  document.getElementById('draftOutputArea').style.display = 'none';
+
+  try{
+    // Build header text to prepend
+    generateDraftHeader();
+    var headerText = document.getElementById('draftHeaderText').textContent || '';
+
+    // Collect checked source tools
+    var checkedTools = Array.from(document.querySelectorAll('.ds-cb:checked')).map(function(cb){return cb.value;});
+
+    // Run any checked tools that haven't been run yet
+    for(var i=0; i<checkedTools.length; i++){
+      var t = checkedTools[i];
+      if(!_draftToolResults[t]){
+        showToast('Running '+t+'…');
+        var tok = localStorage.getItem('elj_token');
+        var tr = await fetch('/api/tools', {
+          method:'POST',
+          headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
+          body: JSON.stringify({
+            tool: t,
+            matterId: currentMatter.id,
+            matterName: currentMatter.name,
+            matterNature: currentMatter.nature||'',
+            matterIssues: currentMatter.issues||'',
+            jurisdiction: currentMatter.jurisdiction||'Bermuda',
+            anchorDocNames: [],
+            instructions: ''
+          })
+        });
+        if(tr.ok){
+          var td = await tr.json();
+          if(td.result) _draftToolResults[t] = td.result;
+        }
+      }
+    }
+
+    // Build enriched instructions
+    var fullInstructions = instructions;
+    if(headerText.trim()){
+      fullInstructions += '
+
+DOCUMENT HEADER (use this exactly at the top of the draft):
+' + headerText;
+    }
+    checkedTools.forEach(function(t){
+      if(_draftToolResults[t]){
+        var label = {chronology:'CHRONOLOGY',persons:'PERSONS & ENTITIES INDEX',issues:'ISSUE TRACKER',briefing:'BRIEFING NOTE'}[t]||t.toUpperCase();
+        fullInstructions += '
+
+--- ' + label + ' ---
+' + _draftToolResults[t];
+      }
+    });
+
+    // Library context
+    var libCtx = buildLibraryContext();
+
+    // Call draft tool
+    var tok = localStorage.getItem('elj_token');
+    var payload = {
+      tool: 'draft',
+      matterId: currentMatter.id,
+      matterName: currentMatter.name,
+      matterNature: currentMatter.nature||'',
+      matterIssues: currentMatter.issues||'',
+      jurisdiction: currentMatter.jurisdiction||'Bermuda',
+      anchorDocNames: [],
+      instructions: fullInstructions
+    };
+    if(libCtx) payload.libraryContext = libCtx;
+
+    showToast('Drafting document…');
+    var res = await fetch('/api/tools', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error(await res.text());
+    var data = await res.json();
+    if(data.result){
+      _lastDraftResult = data.result;
+      document.getElementById('draftOutputContent').textContent = data.result;
+      document.getElementById('draftOutputArea').style.display = '';
+      showToast('Draft complete');
+    } else {
+      throw new Error(data.error||'No result');
+    }
+  }catch(e){
+    showToast('Error: '+e.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Generate draft';
+  }
+}
+
+var _lastDraftResult = '';
+async function downloadDraftWord(){
+  if(!_lastDraftResult){showToast('No draft to download');return;}
+  var court = document.getElementById('draftCourt').value.trim();
+  var docType = document.getElementById('draftDocType').value || 'Draft';
+  var fileName = (currentMatter?currentMatter.name:'Draft') + ' — ' + docType;
+  try{
+    var tok = localStorage.getItem('elj_token');
+    var r = await fetch('/api/export', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
+      body: JSON.stringify({content:_lastDraftResult, title:fileName, matter:currentMatter?currentMatter.name:''})
+    });
+    if(!r.ok) throw new Error(await r.text());
+    var blob = await r.blob();
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href=url; a.download=fileName+'.docx'; a.click();
+    URL.revokeObjectURL(url);
+  }catch(e){showToast('Download failed: '+e.message);}
+}
+// END MODE/DRAFT JS
 </script>
     <!-- DRAFT-LIB-SELECTOR -->
     <div id="draftLibSelector" style="display:none;margin-bottom:.75rem;padding:.75rem;background:#f0f4ff;border-radius:6px;border:1px solid #d0d8f0;">

@@ -289,41 +289,39 @@ export default async function handler(req, res) {
     }
 
     // ── DRAFT GENERATOR ───────────────────────────────────────────────────────
-    // DRAFT-LIB-EXTRACTION
-    const libraryContext = req.body?.libraryContext || null;
-    let libraryText = '';
-    if (libraryContext) {
-      const libParts = [];
-      if (libraryContext.selectedSections && libraryContext.selectedSections.length > 0) {
-        const secText = libraryContext.selectedSections
-          .map(s => '=== STANDARD SECTION: ' + s.title + ' ===\n' + s.content)
-          .join('\n\n');
-        libParts.push('## STANDARD SECTIONS TO INCORPORATE\n\nIncorporate these sections with only minor contextual adaptation:\n\n' + secText);
-      }
-      if (libraryContext.selectedPrecedentIds && libraryContext.selectedPrecedentIds.length > 0) {
-        const precTexts = [];
-        for (const docId of libraryContext.selectedPrecedentIds) {
-          const { data: pChunks } = await supabase
-            .from('precedent_chunks')
-            .select('content, chunk_index')
-            .eq('doc_id', docId)
-            .order('chunk_index')
-            .limit(120);
-          if (pChunks && pChunks.length > 0) {
-            precTexts.push(pChunks.map(c => c.content).join('\n\n'));
+    else if (tool === "draft") {
+      const libraryContext = req.body?.libraryContext || null;
+      let libraryText = '';
+      if (libraryContext) {
+        const libParts = [];
+        if (libraryContext.selectedSections && libraryContext.selectedSections.length > 0) {
+          const secText = libraryContext.selectedSections
+            .map(s => '=== STANDARD SECTION: ' + s.title + ' ===\n' + s.content)
+            .join('\n\n');
+          libParts.push('## STANDARD SECTIONS TO INCORPORATE\n\nIncorporate these sections with only minor contextual adaptation:\n\n' + secText);
+        }
+        if (libraryContext.selectedPrecedentIds && libraryContext.selectedPrecedentIds.length > 0) {
+          const precTexts = [];
+          for (const docId of libraryContext.selectedPrecedentIds) {
+            const { data: pChunks } = await supabase
+              .from('precedent_chunks')
+              .select('content, chunk_index')
+              .eq('precedent_doc_id', docId)
+              .order('chunk_index')
+              .limit(120);
+            if (pChunks && pChunks.length > 0) {
+              precTexts.push(pChunks.map(c => c.content).join('\n\n'));
+            }
+          }
+          if (precTexts.length > 0) {
+            libParts.push('## PRECEDENT DOCUMENTS\n\nUse these precedents for structure, style and legal arguments:\n\n' + precTexts.join('\n\n---\n\n'));
           }
         }
-        if (precTexts.length > 0) {
-          libParts.push('## PRECEDENT DOCUMENTS\n\nUse these precedents for structure, style and legal arguments:\n\n' + precTexts.join('\n\n---\n\n'));
+        if (libParts.length > 0) {
+          const ctLabel = [libraryContext.caseTypeName, libraryContext.subcategoryName, libraryContext.docTypeName].filter(Boolean).join(' — ');
+          libraryText = '\n\n# LIBRARY CONTEXT (' + ctLabel + ')\n\n' + libParts.join('\n\n');
         }
       }
-      if (libParts.length > 0) {
-        const ctLabel = [libraryContext.caseTypeName, libraryContext.subcategoryName, libraryContext.docTypeName].filter(Boolean).join(' — ');
-        libraryText = '\n\n# LIBRARY CONTEXT (' + ctLabel + ')\n\n' + libParts.join('\n\n');
-      }
-    }
-
-    else if (tool === "draft") {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
       const systemBase = `You are a senior litigation counsel in ${jur} drafting a legal document for "${matterName}". Apply ${jur} law, procedure, and drafting conventions.\n${matterContext}${libraryText}`;

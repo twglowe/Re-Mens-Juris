@@ -1071,7 +1071,7 @@ function renderLibrary(){
     return `<div class="lib-section">
       <div class="lib-section-title">
         <span>${esc(ct.name)}${ct.jurisdiction?' · '+esc(ct.jurisdiction):''}</span>
-        <button class="btn-icon" onclick="deleteCaseType('${ct.id}')" title="Delete case type">🗑</button>
+        <button class="btn-icon" onclick="editCaseType('${ct.id}')" title="Edit case type" style="margin-right:.2rem">✏️</button><button class="btn-icon" onclick="deleteCaseType('${ct.id}')" title="Delete case type">🗑</button>
       </div>
       ${subs.length ? `<div style="font-size:.72rem;color:var(--text-faint);margin-bottom:.3rem">Sub-cats: ${subs.map(s=>esc(s.name)).join(', ')}</div>` : ''}
       ${docs.length ? `<div style="font-size:.72rem;color:var(--text-faint);margin-bottom:.5rem">Doc types: ${docs.map(d=>esc(d.name)).join(', ')}</div>` : ''}
@@ -1095,6 +1095,8 @@ function renderLibrary(){
 }
 
 function openLibraryModal(){
+  _editingCaseTypeId=null;
+  document.getElementById('libModalTitle').textContent='Add to Library';
   pendingSubcats=[];
   pendingDocTypes=[];
   document.getElementById('libSubcatList').innerHTML='';
@@ -1170,15 +1172,30 @@ async function saveLibraryEntry(){
       if(pendingSub)pendingSubcats.push(pendingSub);
       const pendingDoc=document.getElementById('libNewDocType').value.trim();
       if(pendingDoc)pendingDocTypes.push(pendingDoc);
-      await api('/api/library','POST',{
-        action:'create_case_type',
-        name,
-        jurisdiction:document.getElementById('libCaseTypeJur').value,
-        description:document.getElementById('libCaseTypeDesc').value,
-        subcats:pendingSubcats,
-        docTypes:pendingDocTypes,
-      });
-      showToast('Case type saved');
+      if(_editingCaseTypeId){
+        // Adding new subcats/doctypes to existing case type
+        await api('/api/library','POST',{
+          action:'add_to_case_type',
+          id:_editingCaseTypeId,
+          name,
+          jurisdiction:document.getElementById('libCaseTypeJur').value,
+          description:document.getElementById('libCaseTypeDesc').value,
+          subcats:pendingSubcats,
+          docTypes:pendingDocTypes,
+        });
+        _editingCaseTypeId=null;
+        showToast('Case type updated');
+      } else {
+        await api('/api/library','POST',{
+          action:'create_case_type',
+          name,
+          jurisdiction:document.getElementById('libCaseTypeJur').value,
+          description:document.getElementById('libCaseTypeDesc').value,
+          subcats:pendingSubcats,
+          docTypes:pendingDocTypes,
+        });
+        showToast('Case type saved');
+      }
     }
     else if(activeLibTab==='precedent'){
       const name=document.getElementById('libPrecName').value.trim();
@@ -1690,29 +1707,18 @@ init();
 
 // DRAFT-LIB-INTEGRATION
 var _dls={sections:[],precedents:[],selSec:new Set(),selPrec:new Set()};
-
 function loadDraftLibrary(){
-  var tok=localStorage.getItem('elj_token');
-  if(!tok)return;
+  var tok=localStorage.getItem('elj_token');if(!tok)return;
   fetch('/api/library_fetch?action=getCaseTypes',{headers:{'Authorization':'Bearer '+tok}})
-    .then(function(r){return r.json();})
-    .then(function(d){
-      var sel=document.getElementById('draftCaseType');
-      if(!sel)return;
+    .then(function(r){return r.json();}).then(function(d){
+      var sel=document.getElementById('draftCaseType');if(!sel)return;
       sel.innerHTML='<option value="">Case type...</option>';
-      (d.caseTypes||[]).forEach(function(ct){
-        var o=document.createElement('option');
-        o.value=ct.id;o.setAttribute('data-name',ct.name);o.textContent=ct.name;
-        sel.appendChild(o);
-      });
-      var ls=document.getElementById('draftLibSelector');
-      if(ls)ls.style.display='';
+      (d.caseTypes||[]).forEach(function(ct){var o=document.createElement('option');o.value=ct.id;o.setAttribute('data-name',ct.name);o.textContent=ct.name;sel.appendChild(o);});
+      var ls=document.getElementById('draftLibSelector');if(ls)ls.style.display='';
     }).catch(function(e){console.warn('loadDraftLibrary:',e);});
 }
-
 document.addEventListener('change',function(e){
-  var tok=localStorage.getItem('elj_token');
-  if(!tok)return;
+  var tok=localStorage.getItem('elj_token');if(!tok)return;
   if(e.target.id==='draftCaseType'){
     var ctId=e.target.value;
     document.getElementById('draftSubcategory').innerHTML='<option value="">Sub-category...</option>';
@@ -1733,90 +1739,71 @@ document.addEventListener('change',function(e){
   }
   if(e.target.id==='draftSubcategory'||e.target.id==='draftDocType'){
     var ctId=document.getElementById('draftCaseType').value;
-    if(ctId)_loadDraftItems(
-      ctId,
-      document.getElementById('draftSubcategory').value||null,
-      document.getElementById('draftDocType').value||null
-    );
+    if(ctId)_loadDraftItems(ctId,document.getElementById('draftSubcategory').value||null,document.getElementById('draftDocType').value||null);
   }
 });
-
 function _loadDraftItems(ctId,subId,dtId){
   var tok=localStorage.getItem('elj_token');
   var url='/api/library_fetch?action=getDraftContext&caseTypeId='+ctId;
-  if(subId)url+='&subcategoryId='+subId;
-  if(dtId)url+='&docTypeId='+dtId;
-  fetch(url,{headers:{'Authorization':'Bearer '+tok}})
-    .then(function(r){return r.json();})
-    .then(function(d){_dls.sections=d.sections||[];_dls.precedents=d.precedents||[];_renderDraftItems();});
+  if(subId)url+='&subcategoryId='+subId;if(dtId)url+='&docTypeId='+dtId;
+  fetch(url,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){_dls.sections=d.sections||[];_dls.precedents=d.precedents||[];_renderDraftItems();});
 }
-
 function _renderDraftItems(){
-  var wrap=document.getElementById('draftLibItems');
-  var sd=document.getElementById('draftSectionsList');
-  var pd=document.getElementById('draftPrecedentsList');
+  var wrap=document.getElementById('draftLibItems');var sd=document.getElementById('draftSectionsList');var pd=document.getElementById('draftPrecedentsList');
   if(!_dls.sections.length&&!_dls.precedents.length){if(wrap)wrap.style.display='none';return;}
   if(wrap)wrap.style.display='';
-  if(sd){
-    sd.innerHTML='';
-    if(_dls.sections.length){
-      var hd=document.createElement('div');
-      hd.style.cssText='font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin:.4rem 0 .2rem;';
-      hd.textContent='Standard Sections';sd.appendChild(hd);
-      _dls.sections.forEach(function(s){
-        var lbl=document.createElement('label');
-        lbl.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';
-        var cb=document.createElement('input');cb.type='checkbox';cb.value=s.id;
-        cb.setAttribute('data-title',s.title);
-        cb.setAttribute('data-content',encodeURIComponent(s.content||''));
-        cb.className='draft-sec-cb';
-        if(_dls.selSec.has(s.id))cb.checked=true;
-        cb.onchange=function(){if(this.checked)_dls.selSec.add(this.value);else _dls.selSec.delete(this.value);};
-        lbl.appendChild(cb);lbl.appendChild(document.createTextNode(' '+s.title));sd.appendChild(lbl);
-      });
-    }
-  }
-  if(pd){
-    pd.innerHTML='';
-    if(_dls.precedents.length){
-      var hd=document.createElement('div');
-      hd.style.cssText='font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin:.4rem 0 .2rem;';
-      hd.textContent='Precedent Documents';pd.appendChild(hd);
-      _dls.precedents.forEach(function(p){
-        var lbl=document.createElement('label');
-        lbl.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';
-        var cb=document.createElement('input');cb.type='checkbox';cb.value=p.id;
-        cb.className='draft-prec-cb';
-        if(_dls.selPrec.has(p.id))cb.checked=true;
-        cb.onchange=function(){if(this.checked)_dls.selPrec.add(this.value);else _dls.selPrec.delete(this.value);};
-        lbl.appendChild(cb);lbl.appendChild(document.createTextNode(' '+p.title));pd.appendChild(lbl);
-      });
-    }
-  }
+  if(sd){sd.innerHTML='';if(_dls.sections.length){var hd=document.createElement('div');hd.style.cssText='font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin:.4rem 0 .2rem;';hd.textContent='Standard Sections';sd.appendChild(hd);_dls.sections.forEach(function(s){var lbl=document.createElement('label');lbl.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';var cb=document.createElement('input');cb.type='checkbox';cb.value=s.id;cb.setAttribute('data-title',s.title);cb.setAttribute('data-content',encodeURIComponent(s.content||''));cb.className='draft-sec-cb';if(_dls.selSec.has(s.id))cb.checked=true;cb.onchange=function(){if(this.checked)_dls.selSec.add(this.value);else _dls.selSec.delete(this.value);};lbl.appendChild(cb);lbl.appendChild(document.createTextNode(' '+s.title));sd.appendChild(lbl);});}}
+  if(pd){pd.innerHTML='';if(_dls.precedents.length){var hd=document.createElement('div');hd.style.cssText='font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin:.4rem 0 .2rem;';hd.textContent='Precedent Documents';pd.appendChild(hd);_dls.precedents.forEach(function(p){var lbl=document.createElement('label');lbl.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';var cb=document.createElement('input');cb.type='checkbox';cb.value=p.id;cb.className='draft-prec-cb';if(_dls.selPrec.has(p.id))cb.checked=true;cb.onchange=function(){if(this.checked)_dls.selPrec.add(this.value);else _dls.selPrec.delete(this.value);};lbl.appendChild(cb);lbl.appendChild(document.createTextNode(' '+p.title));pd.appendChild(lbl);});}}
 }
-
 function buildLibraryContext(){
-  var ctSel=document.getElementById('draftCaseType');
-  if(!ctSel||!ctSel.value)return null;
-  var ctName=(ctSel.selectedOptions[0]&&ctSel.selectedOptions[0].getAttribute('data-name'))||'';
-  if(!ctName)return null;
-  var subSel=document.getElementById('draftSubcategory');
-  var dtSel=document.getElementById('draftDocType');
-  var secs=[];
-  document.querySelectorAll('.draft-sec-cb:checked').forEach(function(cb){
-    secs.push({id:cb.value,title:cb.getAttribute('data-title'),content:decodeURIComponent(cb.getAttribute('data-content')||'')});
-  });
-  var precs=[];
-  document.querySelectorAll('.draft-prec-cb:checked').forEach(function(cb){precs.push(cb.value);});
-  return {
-    caseTypeName:ctName,
-    subcategoryName:(subSel&&subSel.value&&subSel.selectedOptions[0])?subSel.selectedOptions[0].getAttribute('data-name')||'':'',
-    docTypeName:(dtSel&&dtSel.value&&dtSel.selectedOptions[0])?dtSel.selectedOptions[0].getAttribute('data-name')||'':'',
-    selectedSections:secs,
-    selectedPrecedentIds:precs
-  };
+  var ctSel=document.getElementById('draftCaseType');if(!ctSel||!ctSel.value)return null;
+  var ctName=(ctSel.selectedOptions[0]&&ctSel.selectedOptions[0].getAttribute('data-name'))||'';if(!ctName)return null;
+  var subSel=document.getElementById('draftSubcategory');var dtSel=document.getElementById('draftDocType');
+  var secs=[];document.querySelectorAll('.draft-sec-cb:checked').forEach(function(cb){secs.push({id:cb.value,title:cb.getAttribute('data-title'),content:decodeURIComponent(cb.getAttribute('data-content')||'')});});
+  var precs=[];document.querySelectorAll('.draft-prec-cb:checked').forEach(function(cb){precs.push(cb.value);});
+  return{caseTypeName:ctName,subcategoryName:(subSel&&subSel.value&&subSel.selectedOptions[0])?subSel.selectedOptions[0].getAttribute('data-name')||'':'',docTypeName:(dtSel&&dtSel.value&&dtSel.selectedOptions[0])?dtSel.selectedOptions[0].getAttribute('data-name')||'':'',selectedSections:secs,selectedPrecedentIds:precs};
 }
 // END DRAFT-LIB-INTEGRATION
+
+// ── EDIT CASE TYPE ────────────────────────────────────────────────────────────
+var _editingCaseTypeId = null;
+
+function editCaseType(id){
+  _editingCaseTypeId = id;
+  const ct = libraryData.caseTypes.find(x=>x.id===id);
+  if(!ct) return;
+  pendingSubcats = [];
+  pendingDocTypes = [];
+  // Pre-fill fields
+  document.getElementById('libCaseTypeName').value = ct.name || '';
+  document.getElementById('libCaseTypeDesc').value = ct.description || '';
+  const jurSel = document.getElementById('libCaseTypeJur');
+  for(var i=0;i<jurSel.options.length;i++){
+    if(jurSel.options[i].value===ct.jurisdiction){jurSel.selectedIndex=i;break;}
+  }
+  // Show existing subcats and doc types as removable tags
+  const subList = document.getElementById('libSubcatList');
+  subList.innerHTML = '';
+  libraryData.subcats.filter(s=>s.case_type_id===id).forEach(function(s){
+    var div=document.createElement('div');
+    div.style.cssText='display:flex;align-items:center;gap:.4rem;';
+    div.innerHTML='<span style="flex:1;font-size:.84rem;">'+esc(s.name)+'</span>';
+    subList.appendChild(div);
+  });
+  const docList = document.getElementById('libDocTypeList');
+  docList.innerHTML = '';
+  libraryData.docTypes.filter(d=>d.case_type_id===id).forEach(function(d){
+    var div=document.createElement('div');
+    div.style.cssText='display:flex;align-items:center;gap:.4rem;';
+    div.innerHTML='<span style="flex:1;font-size:.84rem;">'+esc(d.name)+'</span>';
+    docList.appendChild(div);
+  });
+  // Change modal title
+  document.getElementById('libModalTitle').textContent = 'Edit: '+ct.name;
+  switchLibTab('case-type');
+  document.getElementById('libraryModal').style.display='flex';
+}
+// ── END EDIT CASE TYPE ────────────────────────────────────────────────────────
 </script>
 </body>
 </html>

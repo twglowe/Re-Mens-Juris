@@ -471,7 +471,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
             <div class="draft-field-row">
               <div class="draft-field">
                 <label class="df-label">Document Type</label>
-                <select class="df-input" id="draftSetupDocType">
+                <select class="df-input" id="draftSetupDocType" onchange="toggleDraftDocTypeCustom(this)">
                   <option value="">Select type...</option>
                   <option>Skeleton Argument</option>
                   <option>Pleading - Statement of Claim</option>
@@ -485,7 +485,9 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
                   <option>Chronology</option>
                   <option>Cast List</option>
                   <option>Other</option>
-                </select>
+                
+                  <option value="__custom__">Other — type your own...</option></select>
+                <input type="text" class="df-input" id="draftSetupDocTypeCustom" placeholder="Type document type" style="display:none;margin-top:.3rem">
               </div>
               <div class="draft-field">
                 <label class="df-label">Drafted on behalf of</label>
@@ -1983,13 +1985,28 @@ function setMode(mode){
   }
 }
 
+// ── DRAFT DOC TYPE CUSTOM ────────────────────────────────────────────────────
+function toggleDraftDocTypeCustom(sel){
+  var inp=document.getElementById('draftSetupDocTypeCustom');
+  if(inp)inp.style.display=sel.value==='__custom__'?'':'none';
+}
+function getDraftDocType(){
+  var sel=document.getElementById('draftSetupDocType');
+  if(!sel)return'';
+  if(sel.value==='__custom__'){
+    var inp=document.getElementById('draftSetupDocTypeCustom');
+    return inp?inp.value.trim():'';
+  }
+  return sel.value||'';
+}
+
 // ── DRAFT HEADER ──────────────────────────────────────────────────────────────
 function generateDraftHeader(){
   var court=(document.getElementById('draftCourt')||{}).value||'';
   var actionNo=(document.getElementById('draftActionNo')||{}).value||'';
   var plaintiff=(document.getElementById('draftPlaintiff')||{}).value||'';
   var defendant=(document.getElementById('draftDefendant')||{}).value||'';
-  var docType=(document.getElementById('draftSetupDocType')||{}).value||'';
+  var docType=getDraftDocType();
   var onBehalf=(document.getElementById('draftOnBehalf')||{}).value||'';
   var jur=currentMatter?(currentMatter.jurisdiction||''):'';
   var lines=[];
@@ -2121,7 +2138,7 @@ function _displayDraft(text){
   var matterEl=document.getElementById('draftOutputMatter');
   var docTypeEl=document.getElementById('draftOutputDocType');
   if(matterEl)matterEl.textContent=currentMatter?currentMatter.name:'';
-  var dt=(document.getElementById('draftSetupDocType')||{}).value||'Draft';
+  var dt=getDraftDocType()||'Draft';
   if(docTypeEl)docTypeEl.textContent=dt;
 
   // Render content
@@ -2220,7 +2237,7 @@ function _displayDraft(text){
 async function saveDraft(){
   if(!_lastDraftResult||!currentMatter)return;
   var tok=localStorage.getItem('elj_token');
-  var dt=(document.getElementById('draftSetupDocType')||{}).value||'Draft';
+  var dt=getDraftDocType()||'Draft';
   try{
     await fetch('/api/history',{method:'POST',
       headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},

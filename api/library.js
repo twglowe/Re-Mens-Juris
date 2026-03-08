@@ -224,6 +224,52 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
+    
+    if (action === "update_section") {
+      const { id, title, content, case_type_id, subcategory_id, doc_type_id, notes } = body;
+      const { error } = await supabase.from("standard_sections").update({
+        title, content,
+        case_type_id: case_type_id || null,
+        subcategory_id: subcategory_id || null,
+        doc_type_id: doc_type_id || null,
+        notes: notes || null,
+      }).eq("id", id).eq("user_id", user.id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ success: true });
+    }
+
+    if (action === "update_precedent_meta") {
+      const { id, name, case_type_id, subcategory_id, doc_type_id, jurisdiction, description } = body;
+      const { error } = await supabase.from("precedent_docs").update({
+        name,
+        case_type_id: case_type_id || null,
+        subcategory_id: subcategory_id || null,
+        doc_type_id: doc_type_id || null,
+        jurisdiction: jurisdiction || null,
+        description: description || null,
+      }).eq("id", id).eq("user_id", user.id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ success: true });
+    }
+
+    if (action === "add_to_case_type") {
+      const { id, name, jurisdiction, description, subcats = [], docTypes = [] } = body;
+      await supabase.from("case_types").update({
+        name, jurisdiction: jurisdiction || null, description: description || null,
+      }).eq("id", id).eq("user_id", user.id);
+      if (subcats.length) {
+        await supabase.from("case_subcategories").insert(
+          subcats.map(s => ({ user_id: user.id, case_type_id: id, name: s }))
+        );
+      }
+      if (docTypes.length) {
+        await supabase.from("doc_types").insert(
+          docTypes.map(d => ({ user_id: user.id, case_type_id: id, name: d }))
+        );
+      }
+      return res.status(200).json({ success: true });
+    }
+
         if (action === "create_case_type") {
       const { name, jurisdiction, description, subcats = [], docTypes = [] } = body;
       const { data: ct, error } = await supabase.from("case_types").insert({

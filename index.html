@@ -530,71 +530,30 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
   <div class="modal" style="max-width:540px;width:95%">
     <h3 id="libModalTitle">Add to Library</h3>
     <div class="lib-modal-tabs">
-      <button class="lib-modal-tab active" onclick="switchLibTab('case-type')">Case Types</button>
-      <button class="lib-modal-tab" onclick="switchLibTab('precedent')">Precedent Doc</button>
+      <button class="lib-modal-tab active" onclick="switchLibTab('precedent')">Precedent Doc</button>
       <button class="lib-modal-tab" onclick="switchLibTab('section')">Standard Section</button>
     </div>
 
-    <!-- Case type tab -->
-    <div id="libTab-case-type">
-      <div class="f-group">
-        <label class="f-label">Case Type Name *</label>
-        <input class="f-input" id="libCaseTypeName" placeholder="e.g. Winding Up, Foreign Law Opinion, Ordinary Action">
-      </div>
-      <div class="f-group">
-        <label class="f-label">Jurisdiction (optional)</label>
-        <select class="f-input" id="libCaseTypeJur">
-          <option value="">Any</option>
-          <option>Bermuda</option>
-          <option>Cayman Islands</option>
-          <option>British Virgin Islands</option>
-        </select>
-      </div>
-      <div class="f-group">
-        <label class="f-label">Description (optional)</label>
-        <input class="f-input" id="libCaseTypeDesc" placeholder="Brief description">
-      </div>
-      <div style="margin-top:.5rem">
-        <div style="font-size:.82rem;font-weight:600;color:var(--text-mid);margin-bottom:.4rem">Sub-categories</div>
-        <div id="libSubcatList" style="display:flex;flex-direction:column;gap:.3rem;margin-bottom:.4rem"></div>
-        <div style="display:flex;gap:.4rem">
-          <input class="f-input" id="libNewSubcat" placeholder="Add sub-category (e.g. Creditors Petition)" style="flex:1">
-          <button class="btn-secondary" onclick="addSubcatField()">+ Add</button>
-        </div>
-      </div>
-      <div style="margin-top:.75rem">
-        <div style="font-size:.82rem;font-weight:600;color:var(--text-mid);margin-bottom:.4rem">Document Types</div>
-        <div id="libDocTypeList" style="display:flex;flex-direction:column;gap:.3rem;margin-bottom:.4rem"></div>
-        <div style="display:flex;gap:.4rem">
-          <input class="f-input" id="libNewDocType" placeholder="Add document type (e.g. Skeleton Argument)" style="flex:1">
-          <button class="btn-secondary" onclick="addDocTypeField()">+ Add</button>
-        </div>
-      </div>
-    </div>
-
     <!-- Precedent doc tab -->
-    <div id="libTab-precedent" style="display:none">
+    <div id="libTab-precedent">
       <div class="f-group">
         <label class="f-label">Document Name *</label>
         <input class="f-input" id="libPrecName" placeholder="e.g. Skeleton — ABC v DEF (2024)">
       </div>
       <div class="f-group">
-        <label class="f-label">Case Type *</label>
-        <select class="f-input" id="libPrecCaseType" onchange="updatePrecSubcats()">
-          <option value="">Select case type…</option>
-        </select>
+        <label class="f-label">Case Type * <span style="font-weight:400;color:var(--text-faint)">(type to create or select existing)</span></label>
+        <input class="f-input" id="libPrecCaseTypeInput" placeholder="e.g. Winding Up, Writ Action" list="libPrecCaseTypeList" autocomplete="off">
+        <datalist id="libPrecCaseTypeList"></datalist>
       </div>
       <div class="f-group">
-        <label class="f-label">Sub-category</label>
-        <select class="f-input" id="libPrecSubcat">
-          <option value="">None</option>
-        </select>
+        <label class="f-label">Sub-category <span style="font-weight:400;color:var(--text-faint)">(optional)</span></label>
+        <input class="f-input" id="libPrecSubcatInput" placeholder="e.g. Creditors Petition" list="libPrecSubcatList" autocomplete="off">
+        <datalist id="libPrecSubcatList"></datalist>
       </div>
       <div class="f-group">
-        <label class="f-label">Document Type</label>
-        <select class="f-input" id="libPrecDocType">
-          <option value="">None</option>
-        </select>
+        <label class="f-label">Document Type <span style="font-weight:400;color:var(--text-faint)">(optional)</span></label>
+        <input class="f-input" id="libPrecDocTypeInput" placeholder="e.g. Skeleton Argument" list="libPrecDocTypeList" autocomplete="off">
+        <datalist id="libPrecDocTypeList"></datalist>
       </div>
       <div class="f-group">
         <label class="f-label">Jurisdiction</label>
@@ -606,13 +565,13 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         </select>
       </div>
       <div class="f-group">
-        <label class="f-label">Description</label>
+        <label class="f-label">Description (optional)</label>
         <input class="f-input" id="libPrecDesc" placeholder="Brief description of this precedent">
       </div>
       <div class="f-group">
-        <label class="f-label">Upload Document (PDF)</label>
-        <input type="file" id="libPrecFile" accept=".pdf" class="f-input" style="padding:.3rem">
-        <div style="font-size:.75rem;color:var(--text-faint);margin-top:.2rem">The document will be chunked and stored in your library for drafting use.</div>
+        <label class="f-label">PDF Document *</label>
+        <input type="file" class="f-input" id="libPrecFile" accept=".pdf" style="padding:.3rem">
+        <div style="font-size:.75rem;color:var(--text-faint);margin-top:.2rem">The document will be chunked and stored for drafting use.</div>
       </div>
     </div>
 
@@ -623,22 +582,19 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <input class="f-input" id="libSecTitle" placeholder="e.g. Cayman Sources of Law, Introduction to Affidavit">
       </div>
       <div class="f-group">
-        <label class="f-label">Case Type</label>
-        <select class="f-input" id="libSecCaseType" onchange="updateSecSubcats()">
-          <option value="">Any case type</option>
-        </select>
+        <label class="f-label">Case Type <span style="font-weight:400;color:var(--text-faint)">(type to create or select existing)</span></label>
+        <input class="f-input" id="libSecCaseTypeInput" placeholder="e.g. Winding Up" list="libSecCaseTypeList" autocomplete="off">
+        <datalist id="libSecCaseTypeList"></datalist>
       </div>
       <div class="f-group">
-        <label class="f-label">Sub-category</label>
-        <select class="f-input" id="libSecSubcat">
-          <option value="">Any</option>
-        </select>
+        <label class="f-label">Sub-category <span style="font-weight:400;color:var(--text-faint)">(optional)</span></label>
+        <input class="f-input" id="libSecSubcatInput" placeholder="e.g. Creditors Petition" list="libSecSubcatList" autocomplete="off">
+        <datalist id="libSecSubcatList"></datalist>
       </div>
       <div class="f-group">
-        <label class="f-label">Document Type</label>
-        <select class="f-input" id="libSecDocType">
-          <option value="">Any</option>
-        </select>
+        <label class="f-label">Document Type <span style="font-weight:400;color:var(--text-faint)">(optional)</span></label>
+        <input class="f-input" id="libSecDocTypeInput" placeholder="e.g. Skeleton Argument" list="libSecDocTypeList" autocomplete="off">
+        <datalist id="libSecDocTypeList"></datalist>
       </div>
       <div class="f-group">
         <label class="f-label">Section Text *</label>
@@ -647,10 +603,6 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       <div class="f-group">
         <label class="f-label">Notes (optional)</label>
         <input class="f-input" id="libSecNotes" placeholder="When to use this section, any caveats">
-      </div>
-      <div class="f-group">
-        <label class="f-label">Also apply to additional case types</label>
-        <div id="libSecExtraTags" style="display:flex;flex-direction:column;gap:.3rem"></div>
       </div>
     </div>
 
@@ -1071,7 +1023,7 @@ function renderLibrary(){
     return `<div class="lib-section">
       <div class="lib-section-title">
         <span>${esc(ct.name)}${ct.jurisdiction?' · '+esc(ct.jurisdiction):''}</span>
-        <button class="btn-icon" onclick="editCaseType('${ct.id}')" title="Edit case type" style="margin-right:.2rem">✏️</button><button class="btn-icon" onclick="deleteCaseType('${ct.id}')" title="Delete case type">🗑</button>
+        <button class="btn-icon" onclick="deleteCaseType('${ct.id}')" title="Delete case type">🗑</button>
       </div>
       ${subs.length ? `<div style="font-size:.72rem;color:var(--text-faint);margin-bottom:.3rem">Sub-cats: ${subs.map(s=>esc(s.name)).join(', ')}</div>` : ''}
       ${docs.length ? `<div style="font-size:.72rem;color:var(--text-faint);margin-bottom:.5rem">Doc types: ${docs.map(d=>esc(d.name)).join(', ')}</div>` : ''}
@@ -1094,35 +1046,51 @@ function renderLibrary(){
   }).join('');
 }
 
-function openLibraryModal(){
-  _editingCaseTypeId=null;
-  document.getElementById('libModalTitle').textContent='Add to Library';
-  pendingSubcats=[];
-  pendingDocTypes=[];
-  document.getElementById('libSubcatList').innerHTML='';
-  document.getElementById('libDocTypeList').innerHTML='';
-  document.getElementById('libCaseTypeName').value='';
-  document.getElementById('libCaseTypeDesc').value='';
-  // Populate case type dropdowns
-  const opts = '<option value="">Select case type…</option>'+
-    libraryData.caseTypes.map(ct=>`<option value="${ct.id}">${esc(ct.name)}</option>`).join('');
-  ['libPrecCaseType','libSecCaseType'].forEach(id=>{
-    document.getElementById(id).innerHTML = id==='libSecCaseType'
-      ? '<option value="">Any case type</option>'+libraryData.caseTypes.map(ct=>`<option value="${ct.id}">${esc(ct.name)}</option>`).join('')
-      : opts;
+function openLibraryModal(defaultTab){
+  _editingLibId = null;
+  _editingLibType = null;
+  // Clear fields
+  ['libPrecName','libPrecCaseTypeInput','libPrecSubcatInput','libPrecDocTypeInput','libPrecDesc','libSecTitle','libSecCaseTypeInput','libSecSubcatInput','libSecDocTypeInput','libSecContent','libSecNotes'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value='';
   });
-  switchLibTab('case-type');
+  var jur=document.getElementById('libPrecJur'); if(jur) jur.selectedIndex=0;
+  var pf=document.getElementById('libPrecFile'); if(pf) pf.value='';
+  document.getElementById('libModalTitle').textContent='Add to Library';
+  // Populate datalists with existing values
+  _populateLibDataLists();
+  switchLibTab(defaultTab||'precedent');
   document.getElementById('libraryModal').style.display='flex';
+}
+
+function _populateLibDataLists(){
+  var ctNames = libraryData.caseTypes.map(function(ct){return ct.name;});
+  var subNames = libraryData.subcats.map(function(s){return s.name;});
+  var dtNames  = libraryData.docTypes.map(function(d){return d.name;});
+  // Deduplicate
+  subNames = subNames.filter(function(v,i,a){return a.indexOf(v)===i;});
+  dtNames  = dtNames.filter(function(v,i,a){return a.indexOf(v)===i;});
+  ['libPrecCaseTypeList','libSecCaseTypeList'].forEach(function(id){
+    var dl=document.getElementById(id); if(!dl)return;
+    dl.innerHTML=ctNames.map(function(n){return '<option value="'+esc(n)+'">';}).join('');
+  });
+  ['libPrecSubcatList','libSecSubcatList'].forEach(function(id){
+    var dl=document.getElementById(id); if(!dl)return;
+    dl.innerHTML=subNames.map(function(n){return '<option value="'+esc(n)+'">';}).join('');
+  });
+  ['libPrecDocTypeList','libSecDocTypeList'].forEach(function(id){
+    var dl=document.getElementById(id); if(!dl)return;
+    dl.innerHTML=dtNames.map(function(n){return '<option value="'+esc(n)+'">';}).join('');
+  });
 }
 
 function switchLibTab(tab){
   activeLibTab=tab;
-  document.querySelectorAll('.lib-modal-tab').forEach((t,i)=>{
-    const tabs=['case-type','precedent','section'];
-    t.classList.toggle('active',tabs[i]===tab);
+  document.querySelectorAll('.lib-modal-tab').forEach(function(btn,i){
+    var tabs=['precedent','section'];
+    btn.classList.toggle('active',tabs[i]===tab);
   });
-  ['case-type','precedent','section'].forEach(t=>{
-    document.getElementById('libTab-'+t).style.display=t===tab?'':'none';
+  ['precedent','section'].forEach(function(t){
+    var el=document.getElementById('libTab-'+t); if(el) el.style.display=t===tab?'':'none';
   });
 }
 
@@ -1164,79 +1132,124 @@ async function saveLibraryEntry(){
   const btn=document.getElementById('libSaveBtn');
   btn.disabled=true; btn.textContent='Saving…';
   try{
-    if(activeLibTab==='case-type'){
-      const name=document.getElementById('libCaseTypeName').value.trim();
-      if(!name){showToast('Case type name required');return;}
-      // Also pick up any unsaved subcat/doctype input
-      const pendingSub=document.getElementById('libNewSubcat').value.trim();
-      if(pendingSub)pendingSubcats.push(pendingSub);
-      const pendingDoc=document.getElementById('libNewDocType').value.trim();
-      if(pendingDoc)pendingDocTypes.push(pendingDoc);
-      if(_editingCaseTypeId){
-        // Adding new subcats/doctypes to existing case type
-        await api('/api/library','POST',{
-          action:'add_to_case_type',
-          id:_editingCaseTypeId,
-          name,
-          jurisdiction:document.getElementById('libCaseTypeJur').value,
-          description:document.getElementById('libCaseTypeDesc').value,
-          subcats:pendingSubcats,
-          docTypes:pendingDocTypes,
-        });
-        _editingCaseTypeId=null;
-        showToast('Case type updated');
-      } else {
-        await api('/api/library','POST',{
-          action:'create_case_type',
-          name,
-          jurisdiction:document.getElementById('libCaseTypeJur').value,
-          description:document.getElementById('libCaseTypeDesc').value,
-          subcats:pendingSubcats,
-          docTypes:pendingDocTypes,
-        });
-        showToast('Case type saved');
-      }
-    }
-    else if(activeLibTab==='precedent'){
+    if(activeLibTab==='precedent'){
       const name=document.getElementById('libPrecName').value.trim();
-      const caseTypeId=document.getElementById('libPrecCaseType').value;
+      const caseTypeName=document.getElementById('libPrecCaseTypeInput').value.trim();
       const file=document.getElementById('libPrecFile').files[0];
-      if(!name||!caseTypeId){showToast('Name and case type required');return;}
-      if(!file){showToast('Please upload a PDF document');return;}
-      // Upload via FormData
-      const fd=new FormData();
-      fd.append('action','create_precedent');
-      fd.append('name',name);
-      fd.append('case_type_id',caseTypeId);
-      fd.append('subcategory_id',document.getElementById('libPrecSubcat').value||'');
-      fd.append('doc_type_id',document.getElementById('libPrecDocType').value||'');
-      fd.append('jurisdiction',document.getElementById('libPrecJur').value||'');
-      fd.append('description',document.getElementById('libPrecDesc').value||'');
-      fd.append('file',file);
-      const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd});
-      if(!r.ok) throw new Error(await r.text());
-      showToast('Precedent document saved and indexed');
+      if(!name){showToast('Document name required');return;}
+      if(!file && !_editingLibId){showToast('Please upload a PDF document');return;}
+      // Resolve or create case type / subcat / doctype
+      const ids = await _resolveLibraryTaxonomy(
+        caseTypeName,
+        document.getElementById('libPrecSubcatInput').value.trim(),
+        document.getElementById('libPrecDocTypeInput').value.trim()
+      );
+      if(file){
+        const fd=new FormData();
+        fd.append('name',name);
+        fd.append('case_type_id',ids.caseTypeId||'');
+        fd.append('subcategory_id',ids.subcatId||'');
+        fd.append('doc_type_id',ids.docTypeId||'');
+        fd.append('jurisdiction',document.getElementById('libPrecJur').value||'');
+        fd.append('description',document.getElementById('libPrecDesc').value||'');
+        fd.append('file',file);
+        if(_editingLibId) fd.append('replace_id',_editingLibId);
+        const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
+        if(!r.ok) throw new Error(await r.text());
+        showToast('Precedent document saved and indexed');
+      } else if(_editingLibId){
+        // Update metadata only
+        await api('/api/library','POST',{
+          action:'update_precedent_meta',
+          id:_editingLibId,
+          name,
+          case_type_id:ids.caseTypeId||null,
+          subcategory_id:ids.subcatId||null,
+          doc_type_id:ids.docTypeId||null,
+          jurisdiction:document.getElementById('libPrecJur').value||null,
+          description:document.getElementById('libPrecDesc').value||null,
+        });
+        showToast('Precedent updated');
+      }
     }
     else if(activeLibTab==='section'){
       const title=document.getElementById('libSecTitle').value.trim();
       const content=document.getElementById('libSecContent').value.trim();
       if(!title||!content){showToast('Title and section text required');return;}
-      await api('/api/library','POST',{
-        action:'create_section',
-        title,
-        content,
-        case_type_id:document.getElementById('libSecCaseType').value||null,
-        subcategory_id:document.getElementById('libSecSubcat').value||null,
-        doc_type_id:document.getElementById('libSecDocType').value||null,
-        notes:document.getElementById('libSecNotes').value||'',
-      });
-      showToast('Standard section saved');
+      const ids = await _resolveLibraryTaxonomy(
+        document.getElementById('libSecCaseTypeInput').value.trim(),
+        document.getElementById('libSecSubcatInput').value.trim(),
+        document.getElementById('libSecDocTypeInput').value.trim()
+      );
+      if(_editingLibId){
+        await api('/api/library','POST',{
+          action:'update_section',
+          id:_editingLibId,
+          title, content,
+          case_type_id:ids.caseTypeId||null,
+          subcategory_id:ids.subcatId||null,
+          doc_type_id:ids.docTypeId||null,
+          notes:document.getElementById('libSecNotes').value||'',
+        });
+        showToast('Section updated');
+      } else {
+        await api('/api/library','POST',{
+          action:'create_section',
+          title, content,
+          case_type_id:ids.caseTypeId||null,
+          subcategory_id:ids.subcatId||null,
+          doc_type_id:ids.docTypeId||null,
+          notes:document.getElementById('libSecNotes').value||'',
+        });
+        showToast('Standard section saved');
+      }
     }
     await loadLibrary();
     closeModal('libraryModal');
   }catch(e){showToast('Error: '+e.message);}
   finally{btn.disabled=false;btn.textContent='Save';}
 }
+
+// Resolve or create case type, subcat, doc type by name
+// Returns {caseTypeId, subcatId, docTypeId}
+async function _resolveLibraryTaxonomy(caseTypeName, subcatName, docTypeName){
+  let caseTypeId=null, subcatId=null, docTypeId=null;
+  if(caseTypeName){
+    const existing=libraryData.caseTypes.find(function(ct){return ct.name.toLowerCase()===caseTypeName.toLowerCase();});
+    if(existing){
+      caseTypeId=existing.id;
+    } else {
+      const r=await api('/api/library','POST',{action:'create_case_type',name:caseTypeName,subcats:[],docTypes:[]});
+      caseTypeId=r.id;
+    }
+  }
+  if(subcatName && caseTypeId){
+    const existing=libraryData.subcats.find(function(s){return s.case_type_id===caseTypeId && s.name.toLowerCase()===subcatName.toLowerCase();});
+    if(existing){
+      subcatId=existing.id;
+    } else {
+      const r=await api('/api/library','POST',{action:'add_to_case_type',id:caseTypeId,name:caseTypeName,subcats:[subcatName],docTypes:[]});
+      // Reload to get new IDs
+      await loadLibrary();
+      const fresh=libraryData.subcats.find(function(s){return s.case_type_id===caseTypeId && s.name.toLowerCase()===subcatName.toLowerCase();});
+      if(fresh) subcatId=fresh.id;
+    }
+  }
+  if(docTypeName && caseTypeId){
+    const existing=libraryData.docTypes.find(function(d){return d.case_type_id===caseTypeId && d.name.toLowerCase()===docTypeName.toLowerCase();});
+    if(existing){
+      docTypeId=existing.id;
+    } else {
+      await api('/api/library','POST',{action:'add_to_case_type',id:caseTypeId,name:caseTypeName,subcats:[],docTypes:[docTypeName]});
+      await loadLibrary();
+      const fresh=libraryData.docTypes.find(function(d){return d.case_type_id===caseTypeId && d.name.toLowerCase()===docTypeName.toLowerCase();});
+      if(fresh) docTypeId=fresh.id;
+    }
+  }
+  return {caseTypeId, subcatId, docTypeId};
+}
+
+var _editingLibId=null, _editingLibType=null;
 
 async function deleteCaseType(id){
   if(!confirm('Delete this case type and all its sub-categories, document types, precedents and sections?'))return;
@@ -1245,21 +1258,42 @@ async function deleteCaseType(id){
   showToast('Deleted');
 }
 
-function viewLibItem(type, id){
+function viewLibItem(type,id){
   if(type==='sec'){
-    const s=libraryData.sections.find(x=>x.id===id);
+    const s=libraryData.sections.find(function(x){return x.id===id;});
     if(!s)return;
-    document.getElementById('libDetailTitle').textContent=s.title;
-    document.getElementById('libDetailBody').textContent=s.content;
-    document.getElementById('libDetailUseBtn').onclick=()=>useLibItemInDraft(type,id);
-    document.getElementById('libDetailModal').style.display='flex';
+    _editingLibId=id; _editingLibType='section';
+    document.getElementById('libModalTitle').textContent='Edit Section';
+    _populateLibDataLists();
+    document.getElementById('libSecTitle').value=s.title||'';
+    document.getElementById('libSecContent').value=s.content||'';
+    document.getElementById('libSecNotes').value=s.notes||'';
+    const ct=libraryData.caseTypes.find(function(x){return x.id===s.case_type_id;});
+    document.getElementById('libSecCaseTypeInput').value=ct?ct.name:'';
+    const sub=libraryData.subcats.find(function(x){return x.id===s.subcategory_id;});
+    document.getElementById('libSecSubcatInput').value=sub?sub.name:'';
+    const dt=libraryData.docTypes.find(function(x){return x.id===s.doc_type_id;});
+    document.getElementById('libSecDocTypeInput').value=dt?dt.name:'';
+    switchLibTab('section');
+    document.getElementById('libraryModal').style.display='flex';
   } else {
-    const p=libraryData.precedents.find(x=>x.id===id);
+    const p=libraryData.precedents.find(function(x){return x.id===id;});
     if(!p)return;
-    document.getElementById('libDetailTitle').textContent=p.name;
-    document.getElementById('libDetailBody').textContent=p.description||'Precedent document — click "Use in Current Draft" to incorporate into your next draft.';
-    document.getElementById('libDetailUseBtn').onclick=()=>useLibItemInDraft(type,id);
-    document.getElementById('libDetailModal').style.display='flex';
+    _editingLibId=id; _editingLibType='precedent';
+    document.getElementById('libModalTitle').textContent='Edit Precedent';
+    _populateLibDataLists();
+    document.getElementById('libPrecName').value=p.name||'';
+    document.getElementById('libPrecDesc').value=p.description||'';
+    const ct=libraryData.caseTypes.find(function(x){return x.id===p.case_type_id;});
+    document.getElementById('libPrecCaseTypeInput').value=ct?ct.name:'';
+    const sub=libraryData.subcats.find(function(x){return x.id===p.subcategory_id;});
+    document.getElementById('libPrecSubcatInput').value=sub?sub.name:'';
+    const dt=libraryData.docTypes.find(function(x){return x.id===p.doc_type_id;});
+    document.getElementById('libPrecDocTypeInput').value=dt?dt.name:'';
+    const jurSel=document.getElementById('libPrecJur');
+    for(var i=0;i<jurSel.options.length;i++){if(jurSel.options[i].value===p.jurisdiction){jurSel.selectedIndex=i;break;}}
+    switchLibTab('precedent');
+    document.getElementById('libraryModal').style.display='flex';
   }
 }
 
@@ -1764,46 +1798,6 @@ function buildLibraryContext(){
   return{caseTypeName:ctName,subcategoryName:(subSel&&subSel.value&&subSel.selectedOptions[0])?subSel.selectedOptions[0].getAttribute('data-name')||'':'',docTypeName:(dtSel&&dtSel.value&&dtSel.selectedOptions[0])?dtSel.selectedOptions[0].getAttribute('data-name')||'':'',selectedSections:secs,selectedPrecedentIds:precs};
 }
 // END DRAFT-LIB-INTEGRATION
-
-// ── EDIT CASE TYPE ────────────────────────────────────────────────────────────
-var _editingCaseTypeId = null;
-
-function editCaseType(id){
-  _editingCaseTypeId = id;
-  const ct = libraryData.caseTypes.find(x=>x.id===id);
-  if(!ct) return;
-  pendingSubcats = [];
-  pendingDocTypes = [];
-  // Pre-fill fields
-  document.getElementById('libCaseTypeName').value = ct.name || '';
-  document.getElementById('libCaseTypeDesc').value = ct.description || '';
-  const jurSel = document.getElementById('libCaseTypeJur');
-  for(var i=0;i<jurSel.options.length;i++){
-    if(jurSel.options[i].value===ct.jurisdiction){jurSel.selectedIndex=i;break;}
-  }
-  // Show existing subcats and doc types as removable tags
-  const subList = document.getElementById('libSubcatList');
-  subList.innerHTML = '';
-  libraryData.subcats.filter(s=>s.case_type_id===id).forEach(function(s){
-    var div=document.createElement('div');
-    div.style.cssText='display:flex;align-items:center;gap:.4rem;';
-    div.innerHTML='<span style="flex:1;font-size:.84rem;">'+esc(s.name)+'</span>';
-    subList.appendChild(div);
-  });
-  const docList = document.getElementById('libDocTypeList');
-  docList.innerHTML = '';
-  libraryData.docTypes.filter(d=>d.case_type_id===id).forEach(function(d){
-    var div=document.createElement('div');
-    div.style.cssText='display:flex;align-items:center;gap:.4rem;';
-    div.innerHTML='<span style="flex:1;font-size:.84rem;">'+esc(d.name)+'</span>';
-    docList.appendChild(div);
-  });
-  // Change modal title
-  document.getElementById('libModalTitle').textContent = 'Edit: '+ct.name;
-  switchLibTab('case-type');
-  document.getElementById('libraryModal').style.display='flex';
-}
-// ── END EDIT CASE TYPE ────────────────────────────────────────────────────────
 </script>
 </body>
 </html>

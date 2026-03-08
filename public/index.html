@@ -1399,18 +1399,23 @@ function openTool(t){
 
 async function _loadMostRecentToolResult(toolName){
   try{
-    const h=await api('/api/history?matter_id='+currentMatter.id,'GET');
-    const results=(h.history||[]).filter(function(x){return x.tool_name===toolName;});
+    var mid=currentMatter&&currentMatter.id;
+    if(!mid){promptTool(toolName);return;}
+    var tok=localStorage.getItem('elj_token');
+    var r=await fetch('/api/history?matter_id='+encodeURIComponent(mid),{
+      headers:{'Authorization':'Bearer '+tok}
+    });
+    if(!r.ok){console.warn('History fetch failed:',r.status);promptTool(toolName);return;}
+    var h=await r.json();
+    var results=(h.history||[]).filter(function(x){return x.tool_name===toolName;});
     if(results.length>0){
-      // Show most recent result
-      const latest=results[results.length-1];
-      const msgsArea=showToolResult(toolName);
-      const isProp=toolName==='proposition';
+      var latest=results[results.length-1];
+      var msgsArea=showToolResult(toolName);
+      var isProp=toolName==='proposition';
       appendMsgTo(msgsArea,'assistant',latest.answer,isProp?'prop':'tool',latest.question,null,toolName,latest.id);
-      // Add re-run button
-      const rerunBar=document.createElement('div');
-      rerunBar.style.cssText='text-align:center;padding:.5rem;';
-      const rerunBtn=document.createElement('button');
+      var rerunBar=document.createElement('div');
+      rerunBar.style.cssText='text-align:center;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;';
+      var rerunBtn=document.createElement('button');
       rerunBtn.className='btn-secondary';
       rerunBtn.textContent='🔄 Re-run';
       rerunBtn.title='Run again with current documents';
@@ -1418,9 +1423,13 @@ async function _loadMostRecentToolResult(toolName){
       rerunBar.appendChild(rerunBtn);
       msgsArea.appendChild(rerunBar);
     } else {
-      // No history — prompt to run
       promptTool(toolName);
     }
+  }catch(e){
+    console.warn('_loadMostRecentToolResult error:',e);
+    promptTool(toolName);
+  }
+}
   }catch(e){
     // If history check fails just prompt normally
     promptTool(toolName);

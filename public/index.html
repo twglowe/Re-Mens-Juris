@@ -1289,19 +1289,46 @@ async function _loadMostRecentToolResult(toolName){
     var r=await fetch('/api/history?matter_id='+encodeURIComponent(mid),{headers:{'Authorization':'Bearer '+tok}});
     if(!r.ok){promptTool(toolName);return;}
     var h=await r.json();
-    var results=(h.history||[]).filter(function(x){return x.tool_name===toolName;});
+    // Get results for this tool, newest first
+    var results=(h.history||[]).filter(function(x){return x.tool_name===toolName;})
+      .sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
     if(results.length>0){
-      var latest=results[results.length-1];
+      var latest=results[0];
+      var prev=results.length>1?results[1]:null;
       var msgsArea=showToolResult(toolName);
       appendMsgTo(msgsArea,'assistant',latest.answer,toolName==='proposition'?'prop':'tool',latest.question,null,toolName,latest.id);
-      var rerunBar=document.createElement('div');
-      rerunBar.style.cssText='text-align:center;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;';
+      // Footer bar
+      var bar=document.createElement('div');
+      bar.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;flex-wrap:wrap;';
+      // Re-run button
       var rerunBtn=document.createElement('button');
       rerunBtn.className='btn-secondary';
       rerunBtn.textContent='Re-run';
-      rerunBtn.onclick=function(){rerunBar.remove();promptTool(toolName);};
-      rerunBar.appendChild(rerunBtn);
-      msgsArea.appendChild(rerunBar);
+      rerunBtn.title='Run again with current documents';
+      rerunBtn.onclick=function(){bar.remove();promptTool(toolName);};
+      bar.appendChild(rerunBtn);
+      // Previous version button
+      if(prev){
+        var prevBtn=document.createElement('button');
+        prevBtn.className='btn-secondary';
+        prevBtn.style.fontSize='.78rem';
+        prevBtn.textContent='View previous version';
+        prevBtn.onclick=function(){
+          var prevArea=showToolResult(toolName);
+          prevArea.innerHTML='';
+          appendMsgTo(prevArea,'assistant',prev.answer,toolName==='proposition'?'prop':'tool','Previous: '+prev.question,null,toolName,prev.id);
+          var backBar=document.createElement('div');
+          backBar.style.cssText='text-align:center;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;';
+          var backBtn=document.createElement('button');
+          backBtn.className='btn-secondary';
+          backBtn.textContent='Back to current version';
+          backBtn.onclick=function(){_loadMostRecentToolResult(toolName);};
+          backBar.appendChild(backBtn);
+          prevArea.appendChild(backBar);
+        };
+        bar.appendChild(prevBtn);
+      }
+      msgsArea.appendChild(bar);
     } else {
       promptTool(toolName);
     }

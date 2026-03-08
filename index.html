@@ -1307,6 +1307,18 @@ async function _loadMostRecentToolResult(toolName){
       rerunBtn.title='Run again with current documents';
       rerunBtn.onclick=function(){bar.remove();promptTool(toolName);};
       bar.appendChild(rerunBtn);
+      // Delete current button
+      var delBtn=document.createElement('button');
+      delBtn.className='btn-secondary';
+      delBtn.style.cssText='font-size:.78rem;color:#c0392b;';
+      delBtn.textContent='Delete this result';
+      delBtn.onclick=function(){
+        if(!confirm('Delete this result?'))return;
+        api('/api/history?id='+latest.id,'DELETE').then(function(){
+          _loadMostRecentToolResult(toolName);
+        }).catch(function(e){showToast('Error: '+e.message);});
+      };
+      bar.appendChild(delBtn);
       // Previous version button
       if(prev){
         var prevBtn=document.createElement('button');
@@ -1318,7 +1330,19 @@ async function _loadMostRecentToolResult(toolName){
           prevArea.innerHTML='';
           appendMsgTo(prevArea,'assistant',prev.answer,toolName==='proposition'?'prop':'tool','Previous: '+prev.question,null,toolName,prev.id);
           var backBar=document.createElement('div');
-          backBar.style.cssText='text-align:center;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;';
+          backBar.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;flex-wrap:wrap;';
+          // Delete previous button
+          var delPrevBtn=document.createElement('button');
+          delPrevBtn.className='btn-secondary';
+          delPrevBtn.style.cssText='font-size:.78rem;color:#c0392b;';
+          delPrevBtn.textContent='Delete previous version';
+          delPrevBtn.onclick=function(){
+            if(!confirm('Delete previous version?'))return;
+            api('/api/history?id='+prev.id,'DELETE').then(function(){
+              _loadMostRecentToolResult(toolName);
+            }).catch(function(e){showToast('Error: '+e.message);});
+          };
+          backBar.appendChild(delPrevBtn);
           var backBtn=document.createElement('button');
           backBtn.className='btn-secondary';
           backBtn.textContent='Back to current version';

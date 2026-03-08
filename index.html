@@ -1389,13 +1389,42 @@ function openTool(t){
   if(!currentMatter){showToast('Select a matter first');return;}
   const isNew=getOrCreateToolTab(t);
   if(!isNew){
-    // Tab already exists — just switch to it, don't re-run
+    // Tab already exists — just switch to it
     return;
   }
   if(t==='draft'){setTimeout(loadDraftLibrary,150);}
+  // New tab — check history for most recent result first
+  _loadMostRecentToolResult(t);
+}
 
-  // New tab — auto-open the config modal
-  promptTool(t);
+async function _loadMostRecentToolResult(toolName){
+  try{
+    const h=await api('/api/history?matter_id='+currentMatter.id,'GET');
+    const results=(h.history||[]).filter(function(x){return x.tool_name===toolName;});
+    if(results.length>0){
+      // Show most recent result
+      const latest=results[results.length-1];
+      const msgsArea=showToolResult(toolName);
+      const isProp=toolName==='proposition';
+      appendMsgTo(msgsArea,'assistant',latest.answer,isProp?'prop':'tool',latest.question,null,toolName,latest.id);
+      // Add re-run button
+      const rerunBar=document.createElement('div');
+      rerunBar.style.cssText='text-align:center;padding:.5rem;';
+      const rerunBtn=document.createElement('button');
+      rerunBtn.className='btn-secondary';
+      rerunBtn.textContent='🔄 Re-run';
+      rerunBtn.title='Run again with current documents';
+      rerunBtn.onclick=function(){rerunBar.remove();promptTool(toolName);};
+      rerunBar.appendChild(rerunBtn);
+      msgsArea.appendChild(rerunBar);
+    } else {
+      // No history — prompt to run
+      promptTool(toolName);
+    }
+  }catch(e){
+    // If history check fails just prompt normally
+    promptTool(toolName);
+  }
 }
 
 function promptTool(t){

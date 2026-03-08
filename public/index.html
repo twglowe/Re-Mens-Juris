@@ -910,6 +910,11 @@ document.getElementById('chatInput').addEventListener('input',function(){this.st
 function clearChat(){clearMessages();if(currentMatter)sysMsg('Chat cleared. Documents remain indexed.');}
 
 const toolDefs={
+      <div id="draftLibItems" style="display:none;border-top:1px solid #d0d8f0;padding-top:.5rem;max-height:180px;overflow-y:auto;">
+        <div id="draftSectionsList"></div>
+        <div id="draftPrecedentsList"></div>
+      </div>
+    </div>
     <!-- DRAFT-LIB-SELECTOR -->
     <div id="draftLibSelector" style="display:none;margin-bottom:.75rem;padding:.75rem;background:#f0f4ff;border-radius:6px;border:1px solid #d0d8f0;">
       <div style="font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem;">Library</div>

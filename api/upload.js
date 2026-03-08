@@ -54,7 +54,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
-  const { matterId, fileName, fileData, docType } = req.body;
+  const { matterId, fileName, fileData, docType, party, docIssues } = req.body;
   if (!matterId || !fileName || !fileData) return res.status(400).json({ error: "Missing fields" });
   const allowed = await canEdit(user.id, matterId);
   if (!allowed) return res.status(403).json({ error: "No edit permission" });
@@ -72,13 +72,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No readable text found. This PDF may be a scanned image — please OCR it first at ilovepdf.com." });
     }
     const { data: doc, error: docError } = await supabase.from("documents")
-      .insert({ matter_id: matterId, name: fileName, doc_type: docType || "Other", char_count: extractedText.length, chunk_count: 0 })
+      .insert({ matter_id: matterId, name: fileName, doc_type: docType || "Other", party: party || null, doc_issues: docIssues || null, char_count: extractedText.length, chunk_count: 0 })
       .select().single();
     if (docError) throw docError;
     const chunks = chunkText(extractedText);
     const chunkRows = chunks.map((text, index) => ({
       matter_id: matterId, document_id: doc.id, document_name: fileName,
-      doc_type: docType || "Other", chunk_index: index, content: text,
+      doc_type: docType || "Other", party: party || null, doc_issues: docIssues || null, chunk_index: index, content: text,
     }));
     for (let i = 0; i < chunkRows.length; i += 50) {
       const { error } = await supabase.from("chunks").insert(chunkRows.slice(i, i + 50));

@@ -32,7 +32,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ history: data || [] });
     }
 
-    // POST — save a message pair, return the new row id
+    // POST — save a message pair, keep max 2 per tool per matter
     if (req.method === "POST") {
       const { matter_id, question, answer, tool_name } = req.body;
       const access = await canAccess(user.id, matter_id);
@@ -41,6 +41,19 @@ export default async function handler(req, res) {
         .insert({ matter_id, user_id: user.id, question, answer, tool_name: tool_name || null })
         .select("id").single();
       if (error) throw error;
+      // Keep only 2 most recent records per tool per matter
+      if (tool_name) {
+        const { data: all } = await supabase.from("conversation_history")
+          .select("id, created_at")
+          .eq("matter_id", matter_id)
+          .eq("user_id", user.id)
+          .eq("tool_name", tool_name)
+          .order("created_at", { ascending: false });
+        if (all && all.length > 2) {
+          const toDelete = all.slice(2).map(r => r.id);
+          await supabase.from("conversation_history").delete().in("id", toDelete);
+        }
+      }
       return res.status(201).json({ success: true, id: data?.id || null });
     }
 

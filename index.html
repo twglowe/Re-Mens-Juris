@@ -533,79 +533,23 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       <button class="lib-modal-tab active" onclick="switchLibTab('precedent')">Precedent Doc</button>
       <button class="lib-modal-tab" onclick="switchLibTab('section')">Standard Section</button>
     </div>
-
-    <!-- Precedent doc tab -->
     <div id="libTab-precedent">
-      <div class="f-group">
-        <label class="f-label">Document Name *</label>
-        <input class="f-input" id="libPrecName" placeholder="e.g. Skeleton — ABC v DEF (2024)">
-      </div>
-      <div class="f-group">
-        <label class="f-label">Case Type * <span style="font-weight:400;color:var(--text-faint)">(type to create or select existing)</span></label>
-        <input class="f-input" id="libPrecCaseTypeInput" placeholder="e.g. Winding Up, Writ Action" list="libPrecCaseTypeList" autocomplete="off">
-        <datalist id="libPrecCaseTypeList"></datalist>
-      </div>
-      <div class="f-group">
-        <label class="f-label">Sub-category <span style="font-weight:400;color:var(--text-faint)">(optional)</span></label>
-        <input class="f-input" id="libPrecSubcatInput" placeholder="e.g. Creditors Petition" list="libPrecSubcatList" autocomplete="off">
-        <datalist id="libPrecSubcatList"></datalist>
-      </div>
-      <div class="f-group">
-        <label class="f-label">Document Type <span style="font-weight:400;color:var(--text-faint)">(optional)</span></label>
-        <input class="f-input" id="libPrecDocTypeInput" placeholder="e.g. Skeleton Argument" list="libPrecDocTypeList" autocomplete="off">
-        <datalist id="libPrecDocTypeList"></datalist>
-      </div>
-      <div class="f-group">
-        <label class="f-label">Jurisdiction</label>
-        <select class="f-input" id="libPrecJur">
-          <option value="">Any</option>
-          <option>Bermuda</option>
-          <option>Cayman Islands</option>
-          <option>British Virgin Islands</option>
-        </select>
-      </div>
-      <div class="f-group">
-        <label class="f-label">Description (optional)</label>
-        <input class="f-input" id="libPrecDesc" placeholder="Brief description of this precedent">
-      </div>
-      <div class="f-group">
-        <label class="f-label">PDF Document *</label>
-        <input type="file" class="f-input" id="libPrecFile" accept=".pdf" style="padding:.3rem">
-        <div style="font-size:.75rem;color:var(--text-faint);margin-top:.2rem">The document will be chunked and stored for drafting use.</div>
-      </div>
+      <div class="f-group"><label class="f-label">Document Name *</label><input class="f-input" id="libPrecName" placeholder="e.g. Skeleton - ABC v DEF (2024)"></div>
+      <div class="f-group"><label class="f-label">Case Type</label><input class="f-input" id="libPrecCaseTypeInput" placeholder="e.g. Winding Up" list="libPrecCaseTypeList" autocomplete="off"><datalist id="libPrecCaseTypeList"></datalist></div>
+      <div class="f-group"><label class="f-label">Sub-category (optional)</label><input class="f-input" id="libPrecSubcatInput" placeholder="e.g. Creditors Petition" list="libPrecSubcatList" autocomplete="off"><datalist id="libPrecSubcatList"></datalist></div>
+      <div class="f-group"><label class="f-label">Document Type (optional)</label><input class="f-input" id="libPrecDocTypeInput" placeholder="e.g. Skeleton Argument" list="libPrecDocTypeList" autocomplete="off"><datalist id="libPrecDocTypeList"></datalist></div>
+      <div class="f-group"><label class="f-label">Jurisdiction</label><select class="f-input" id="libPrecJur"><option value="">Any</option><option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option></select></div>
+      <div class="f-group"><label class="f-label">Description (optional)</label><input class="f-input" id="libPrecDesc" placeholder="Brief description"></div>
+      <div class="f-group"><label class="f-label">PDF Document *</label><input type="file" class="f-input" id="libPrecFile" accept=".pdf" style="padding:.3rem"></div>
     </div>
-
-    <!-- Standard section tab -->
     <div id="libTab-section" style="display:none">
-      <div class="f-group">
-        <label class="f-label">Section Title *</label>
-        <input class="f-input" id="libSecTitle" placeholder="e.g. Cayman Sources of Law, Introduction to Affidavit">
-      </div>
-      <div class="f-group">
-        <label class="f-label">Case Type <span style="font-weight:400;color:var(--text-faint)">(type to create or select existing)</span></label>
-        <input class="f-input" id="libSecCaseTypeInput" placeholder="e.g. Winding Up" list="libSecCaseTypeList" autocomplete="off">
-        <datalist id="libSecCaseTypeList"></datalist>
-      </div>
-      <div class="f-group">
-        <label class="f-label">Sub-category <span style="font-weight:400;color:var(--text-faint)">(optional)</span></label>
-        <input class="f-input" id="libSecSubcatInput" placeholder="e.g. Creditors Petition" list="libSecSubcatList" autocomplete="off">
-        <datalist id="libSecSubcatList"></datalist>
-      </div>
-      <div class="f-group">
-        <label class="f-label">Document Type <span style="font-weight:400;color:var(--text-faint)">(optional)</span></label>
-        <input class="f-input" id="libSecDocTypeInput" placeholder="e.g. Skeleton Argument" list="libSecDocTypeList" autocomplete="off">
-        <datalist id="libSecDocTypeList"></datalist>
-      </div>
-      <div class="f-group">
-        <label class="f-label">Section Text *</label>
-        <textarea class="lib-section-text" id="libSecContent" placeholder="Paste or type the standard section text here…"></textarea>
-      </div>
-      <div class="f-group">
-        <label class="f-label">Notes (optional)</label>
-        <input class="f-input" id="libSecNotes" placeholder="When to use this section, any caveats">
-      </div>
+      <div class="f-group"><label class="f-label">Section Title *</label><input class="f-input" id="libSecTitle" placeholder="e.g. Cayman Sources of Law"></div>
+      <div class="f-group"><label class="f-label">Case Type</label><input class="f-input" id="libSecCaseTypeInput" placeholder="e.g. Winding Up" list="libSecCaseTypeList" autocomplete="off"><datalist id="libSecCaseTypeList"></datalist></div>
+      <div class="f-group"><label class="f-label">Sub-category (optional)</label><input class="f-input" id="libSecSubcatInput" placeholder="e.g. Creditors Petition" list="libSecSubcatList" autocomplete="off"><datalist id="libSecSubcatList"></datalist></div>
+      <div class="f-group"><label class="f-label">Document Type (optional)</label><input class="f-input" id="libSecDocTypeInput" placeholder="e.g. Skeleton Argument" list="libSecDocTypeList" autocomplete="off"><datalist id="libSecDocTypeList"></datalist></div>
+      <div class="f-group"><label class="f-label">Section Text *</label><textarea class="lib-section-text" id="libSecContent" placeholder="Paste or type the standard section text here..."></textarea></div>
+      <div class="f-group"><label class="f-label">Notes (optional)</label><input class="f-input" id="libSecNotes" placeholder="When to use this section"></div>
     </div>
-
     <div class="modal-btns" style="margin-top:1.2rem">
       <button class="btn-secondary" onclick="closeModal('libraryModal')">Cancel</button>
       <button class="btn-primary" id="libSaveBtn" onclick="saveLibraryEntry()">Save</button>
@@ -910,24 +854,6 @@ document.getElementById('chatInput').addEventListener('input',function(){this.st
 function clearChat(){clearMessages();if(currentMatter)sysMsg('Chat cleared. Documents remain indexed.');}
 
 const toolDefs={
-      <div id="draftLibItems" style="display:none;border-top:1px solid #d0d8f0;padding-top:.5rem;max-height:180px;overflow-y:auto;">
-        <div id="draftSectionsList"></div>
-        <div id="draftPrecedentsList"></div>
-      </div>
-    </div>
-    <!-- DRAFT-LIB-SELECTOR -->
-    <div id="draftLibSelector" style="display:none;margin-bottom:.75rem;padding:.75rem;background:#f0f4ff;border-radius:6px;border:1px solid #d0d8f0;">
-      <div style="font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem;">Library</div>
-      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem;">
-        <select id="draftCaseType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Case type...</option></select>
-        <select id="draftSubcategory" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Sub-category...</option></select>
-        <select id="draftDocType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Document type...</option></select>
-      </div>
-      <div id="draftLibItems" style="display:none;border-top:1px solid #d0d8f0;padding-top:.5rem;max-height:180px;overflow-y:auto;">
-        <div id="draftSectionsList"></div>
-        <div id="draftPrecedentsList"></div>
-      </div>
-    </div>
   inconsistency:{title:'🔍 Inconsistency Tracker',body:()=>`<p class="tool-desc">Select anchor documents (your baseline factual position). The system finds all contradictions in the remaining documents.</p><div class="focus-label">Anchor Documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to compare all)</span></div><div class="anchor-list" id="anchorList">${documents.map(d=>`<label class="anchor-item"><input type="checkbox" value="${esc(d.name)}"> ${esc(d.name)} <span style="color:var(--text-faint);font-size:.72rem">[${d.doc_type}]</span></label>`).join('')||'<div style="font-size:.84rem;color:var(--text-faint)">No documents uploaded.</div>'}</div><div class="focus-label" style="margin-top:.85rem">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the dates of payments"></textarea>`},
   proposition:{title:'🎯 Proposition Evidence Finder',body:()=>`<p class="tool-desc">State a proposition or factual assertion. The system finds all evidence supporting or contradicting it and grades each reference by strength.</p><div class="focus-label">Proposition or Statement</div><textarea id="toolInstructions" placeholder="e.g. The defendant had knowledge of the transactions before 1 January 2023" style="min-height:80px"></textarea>`},
   chronology:{title:'📅 Chronology Builder',body:()=>`<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology. Disputed dates are flagged.</p><div class="focus-label">Focus or Date Range <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on events after January 2022, or limit to Issue 3 — the share transfer"></textarea>`},
@@ -1052,28 +978,23 @@ function renderLibrary(){
 }
 
 function openLibraryModal(defaultTab){
-  _editingLibId = null;
-  _editingLibType = null;
-  // Clear fields
-  ['libPrecName','libPrecCaseTypeInput','libPrecSubcatInput','libPrecDocTypeInput','libPrecDesc','libSecTitle','libSecCaseTypeInput','libSecSubcatInput','libSecDocTypeInput','libSecContent','libSecNotes'].forEach(function(id){
+  _editingLibId=null; _editingLibType=null;
+  ['libPrecName','libPrecCaseTypeInput','libPrecSubcatInput','libPrecDocTypeInput','libPrecDesc',
+   'libSecTitle','libSecCaseTypeInput','libSecSubcatInput','libSecDocTypeInput','libSecContent','libSecNotes'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.value='';
   });
   var jur=document.getElementById('libPrecJur'); if(jur) jur.selectedIndex=0;
   var pf=document.getElementById('libPrecFile'); if(pf) pf.value='';
   document.getElementById('libModalTitle').textContent='Add to Library';
-  // Populate datalists with existing values
   _populateLibDataLists();
   switchLibTab(defaultTab||'precedent');
   document.getElementById('libraryModal').style.display='flex';
 }
 
 function _populateLibDataLists(){
-  var ctNames = libraryData.caseTypes.map(function(ct){return ct.name;});
-  var subNames = libraryData.subcats.map(function(s){return s.name;});
-  var dtNames  = libraryData.docTypes.map(function(d){return d.name;});
-  // Deduplicate
-  subNames = subNames.filter(function(v,i,a){return a.indexOf(v)===i;});
-  dtNames  = dtNames.filter(function(v,i,a){return a.indexOf(v)===i;});
+  var ctNames=libraryData.caseTypes.map(function(ct){return ct.name;});
+  var subNames=libraryData.subcats.map(function(s){return s.name;}).filter(function(v,i,a){return a.indexOf(v)===i;});
+  var dtNames=libraryData.docTypes.map(function(d){return d.name;}).filter(function(v,i,a){return a.indexOf(v)===i;});
   ['libPrecCaseTypeList','libSecCaseTypeList'].forEach(function(id){
     var dl=document.getElementById(id); if(!dl)return;
     dl.innerHTML=ctNames.map(function(n){return '<option value="'+esc(n)+'">';}).join('');
@@ -1096,6 +1017,8 @@ function switchLibTab(tab){
   });
   ['precedent','section'].forEach(function(t){
     var el=document.getElementById('libTab-'+t); if(el) el.style.display=t===tab?'':'none';
+  });  ['case-type','precedent','section'].forEach(t=>{
+    document.getElementById('libTab-'+t).style.display=t===tab?'':'none';
   });
 }
 
@@ -1135,20 +1058,17 @@ function updateSecSubcats(){
 
 async function saveLibraryEntry(){
   const btn=document.getElementById('libSaveBtn');
-  btn.disabled=true; btn.textContent='Saving…';
+  btn.disabled=true; btn.textContent='Saving...';
   try{
     if(activeLibTab==='precedent'){
       const name=document.getElementById('libPrecName').value.trim();
-      const caseTypeName=document.getElementById('libPrecCaseTypeInput').value.trim();
       const file=document.getElementById('libPrecFile').files[0];
       if(!name){showToast('Document name required');return;}
-      if(!file && !_editingLibId){showToast('Please upload a PDF document');return;}
-      // Resolve or create case type / subcat / doctype
-      const ids = await _resolveLibraryTaxonomy(
-        caseTypeName,
+      if(!file&&!_editingLibId){showToast('Please upload a PDF document');return;}
+      const ids=await _resolveLibraryTaxonomy(
+        document.getElementById('libPrecCaseTypeInput').value.trim(),
         document.getElementById('libPrecSubcatInput').value.trim(),
-        document.getElementById('libPrecDocTypeInput').value.trim()
-      );
+        document.getElementById('libPrecDocTypeInput').value.trim());
       if(file){
         const fd=new FormData();
         fd.append('name',name);
@@ -1161,51 +1081,29 @@ async function saveLibraryEntry(){
         if(_editingLibId) fd.append('replace_id',_editingLibId);
         const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
         if(!r.ok) throw new Error(await r.text());
-        showToast('Precedent document saved and indexed');
+        showToast('Precedent saved and indexed');
       } else if(_editingLibId){
-        // Update metadata only
-        await api('/api/library','POST',{
-          action:'update_precedent_meta',
-          id:_editingLibId,
-          name,
-          case_type_id:ids.caseTypeId||null,
-          subcategory_id:ids.subcatId||null,
-          doc_type_id:ids.docTypeId||null,
+        await api('/api/library','POST',{action:'update_precedent_meta',id:_editingLibId,name,
+          case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,doc_type_id:ids.docTypeId||null,
           jurisdiction:document.getElementById('libPrecJur').value||null,
-          description:document.getElementById('libPrecDesc').value||null,
-        });
+          description:document.getElementById('libPrecDesc').value||null});
         showToast('Precedent updated');
       }
-    }
-    else if(activeLibTab==='section'){
+    } else if(activeLibTab==='section'){
       const title=document.getElementById('libSecTitle').value.trim();
       const content=document.getElementById('libSecContent').value.trim();
       if(!title||!content){showToast('Title and section text required');return;}
-      const ids = await _resolveLibraryTaxonomy(
+      const ids=await _resolveLibraryTaxonomy(
         document.getElementById('libSecCaseTypeInput').value.trim(),
         document.getElementById('libSecSubcatInput').value.trim(),
-        document.getElementById('libSecDocTypeInput').value.trim()
-      );
+        document.getElementById('libSecDocTypeInput').value.trim());
+      const payload={title,content,case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,
+        doc_type_id:ids.docTypeId||null,notes:document.getElementById('libSecNotes').value||''};
       if(_editingLibId){
-        await api('/api/library','POST',{
-          action:'update_section',
-          id:_editingLibId,
-          title, content,
-          case_type_id:ids.caseTypeId||null,
-          subcategory_id:ids.subcatId||null,
-          doc_type_id:ids.docTypeId||null,
-          notes:document.getElementById('libSecNotes').value||'',
-        });
+        await api('/api/library','POST',{action:'update_section',id:_editingLibId,...payload});
         showToast('Section updated');
       } else {
-        await api('/api/library','POST',{
-          action:'create_section',
-          title, content,
-          case_type_id:ids.caseTypeId||null,
-          subcategory_id:ids.subcatId||null,
-          doc_type_id:ids.docTypeId||null,
-          notes:document.getElementById('libSecNotes').value||'',
-        });
+        await api('/api/library','POST',{action:'create_section',...payload});
         showToast('Standard section saved');
       }
     }
@@ -1215,46 +1113,33 @@ async function saveLibraryEntry(){
   finally{btn.disabled=false;btn.textContent='Save';}
 }
 
-// Resolve or create case type, subcat, doc type by name
-// Returns {caseTypeId, subcatId, docTypeId}
-async function _resolveLibraryTaxonomy(caseTypeName, subcatName, docTypeName){
-  let caseTypeId=null, subcatId=null, docTypeId=null;
+async function _resolveLibraryTaxonomy(caseTypeName,subcatName,docTypeName){
+  let caseTypeId=null,subcatId=null,docTypeId=null;
   if(caseTypeName){
-    const existing=libraryData.caseTypes.find(function(ct){return ct.name.toLowerCase()===caseTypeName.toLowerCase();});
-    if(existing){
-      caseTypeId=existing.id;
-    } else {
-      const r=await api('/api/library','POST',{action:'create_case_type',name:caseTypeName,subcats:[],docTypes:[]});
-      caseTypeId=r.id;
-    }
+    const ex=libraryData.caseTypes.find(function(ct){return ct.name.toLowerCase()===caseTypeName.toLowerCase();});
+    if(ex){caseTypeId=ex.id;}
+    else{const r=await api('/api/library','POST',{action:'create_case_type',name:caseTypeName,subcats:[],docTypes:[]});caseTypeId=r.id;}
   }
-  if(subcatName && caseTypeId){
-    const existing=libraryData.subcats.find(function(s){return s.case_type_id===caseTypeId && s.name.toLowerCase()===subcatName.toLowerCase();});
-    if(existing){
-      subcatId=existing.id;
-    } else {
-      const r=await api('/api/library','POST',{action:'add_to_case_type',id:caseTypeId,name:caseTypeName,subcats:[subcatName],docTypes:[]});
-      // Reload to get new IDs
+  if(subcatName&&caseTypeId){
+    const ex=libraryData.subcats.find(function(s){return s.case_type_id===caseTypeId&&s.name.toLowerCase()===subcatName.toLowerCase();});
+    if(ex){subcatId=ex.id;}
+    else{await api('/api/library','POST',{action:'add_to_case_type',id:caseTypeId,name:caseTypeName,subcats:[subcatName],docTypes:[]});
       await loadLibrary();
-      const fresh=libraryData.subcats.find(function(s){return s.case_type_id===caseTypeId && s.name.toLowerCase()===subcatName.toLowerCase();});
-      if(fresh) subcatId=fresh.id;
-    }
+      const fr=libraryData.subcats.find(function(s){return s.case_type_id===caseTypeId&&s.name.toLowerCase()===subcatName.toLowerCase();});
+      if(fr)subcatId=fr.id;}
   }
-  if(docTypeName && caseTypeId){
-    const existing=libraryData.docTypes.find(function(d){return d.case_type_id===caseTypeId && d.name.toLowerCase()===docTypeName.toLowerCase();});
-    if(existing){
-      docTypeId=existing.id;
-    } else {
-      await api('/api/library','POST',{action:'add_to_case_type',id:caseTypeId,name:caseTypeName,subcats:[],docTypes:[docTypeName]});
+  if(docTypeName&&caseTypeId){
+    const ex=libraryData.docTypes.find(function(d){return d.case_type_id===caseTypeId&&d.name.toLowerCase()===docTypeName.toLowerCase();});
+    if(ex){docTypeId=ex.id;}
+    else{await api('/api/library','POST',{action:'add_to_case_type',id:caseTypeId,name:caseTypeName,subcats:[],docTypes:[docTypeName]});
       await loadLibrary();
-      const fresh=libraryData.docTypes.find(function(d){return d.case_type_id===caseTypeId && d.name.toLowerCase()===docTypeName.toLowerCase();});
-      if(fresh) docTypeId=fresh.id;
-    }
+      const fr=libraryData.docTypes.find(function(d){return d.case_type_id===caseTypeId&&d.name.toLowerCase()===docTypeName.toLowerCase();});
+      if(fr)docTypeId=fr.id;}
   }
-  return {caseTypeId, subcatId, docTypeId};
+  return{caseTypeId,subcatId,docTypeId};
 }
 
-var _editingLibId=null, _editingLibType=null;
+var _editingLibId=null,_editingLibType=null;
 
 async function deleteCaseType(id){
   if(!confirm('Delete this case type and all its sub-categories, document types, precedents and sections?'))return;
@@ -1393,12 +1278,8 @@ function closeTab(toolName){
 function openTool(t){
   if(!currentMatter){showToast('Select a matter first');return;}
   const isNew=getOrCreateToolTab(t);
-  if(!isNew){
-    // Tab already exists — just switch to it
-    return;
-  }
+  if(!isNew){return;}
   if(t==='draft'){setTimeout(loadDraftLibrary,150);}
-  // New tab — check history for most recent result first
   _loadMostRecentToolResult(t);
 }
 
@@ -1407,38 +1288,26 @@ async function _loadMostRecentToolResult(toolName){
     var mid=currentMatter&&currentMatter.id;
     if(!mid){promptTool(toolName);return;}
     var tok=localStorage.getItem('elj_token');
-    var r=await fetch('/api/history?matter_id='+encodeURIComponent(mid),{
-      headers:{'Authorization':'Bearer '+tok}
-    });
-    if(!r.ok){console.warn('History fetch failed:',r.status);promptTool(toolName);return;}
+    var r=await fetch('/api/history?matter_id='+encodeURIComponent(mid),{headers:{'Authorization':'Bearer '+tok}});
+    if(!r.ok){promptTool(toolName);return;}
     var h=await r.json();
     var results=(h.history||[]).filter(function(x){return x.tool_name===toolName;});
     if(results.length>0){
       var latest=results[results.length-1];
       var msgsArea=showToolResult(toolName);
-      var isProp=toolName==='proposition';
-      appendMsgTo(msgsArea,'assistant',latest.answer,isProp?'prop':'tool',latest.question,null,toolName,latest.id);
+      appendMsgTo(msgsArea,'assistant',latest.answer,toolName==='proposition'?'prop':'tool',latest.question,null,toolName,latest.id);
       var rerunBar=document.createElement('div');
       rerunBar.style.cssText='text-align:center;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;';
       var rerunBtn=document.createElement('button');
       rerunBtn.className='btn-secondary';
-      rerunBtn.textContent='🔄 Re-run';
-      rerunBtn.title='Run again with current documents';
+      rerunBtn.textContent='Re-run';
       rerunBtn.onclick=function(){rerunBar.remove();promptTool(toolName);};
       rerunBar.appendChild(rerunBtn);
       msgsArea.appendChild(rerunBar);
     } else {
       promptTool(toolName);
     }
-  }catch(e){
-    console.warn('_loadMostRecentToolResult error:',e);
-    promptTool(toolName);
-  }
-}
-  }catch(e){
-    // If history check fails just prompt normally
-    promptTool(toolName);
-  }
+  }catch(e){promptTool(toolName);}
 }
 
 function promptTool(t){
@@ -1842,5 +1711,18 @@ function buildLibraryContext(){
 }
 // END DRAFT-LIB-INTEGRATION
 </script>
+    <!-- DRAFT-LIB-SELECTOR -->
+    <div id="draftLibSelector" style="display:none;margin-bottom:.75rem;padding:.75rem;background:#f0f4ff;border-radius:6px;border:1px solid #d0d8f0;">
+      <div style="font-size:.72rem;font-weight:700;color:#7a8aaa;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem;">Library</div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem;">
+        <select id="draftCaseType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Case type...</option></select>
+        <select id="draftSubcategory" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Sub-category...</option></select>
+        <select id="draftDocType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Document type...</option></select>
+      </div>
+      <div id="draftLibItems" style="display:none;border-top:1px solid #d0d8f0;padding-top:.5rem;max-height:180px;overflow-y:auto;">
+        <div id="draftSectionsList"></div>
+        <div id="draftPrecedentsList"></div>
+      </div>
+    </div>
 </body>
 </html>

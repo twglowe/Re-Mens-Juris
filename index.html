@@ -241,7 +241,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .mode-btn{padding:.3rem .85rem;font-size:.8rem;font-weight:600;border:none;background:var(--off-white);color:var(--text-faint);cursor:pointer;transition:all .15s;}
 .mode-btn.active{background:var(--navy-mid);color:#fff;}
 .drafting-workspace{display:flex;flex-direction:column;gap:1rem;padding:1rem;overflow-y:auto;}
-.draft-setup,.draft-sources,.draft-instructions-area,.draft-output{background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:1rem;}
+.draft-setup,.draft-sources,.draft-instructions-area,.draft-output-panel{background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:1rem;}
 .draft-setup-head{font-size:.72rem;font-weight:700;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.75rem;}
 .draft-fields{display:flex;flex-direction:column;gap:.6rem;}
 .draft-field-row{display:flex;gap:.6rem;flex-wrap:wrap;}
@@ -261,7 +261,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .draft-actions{display:flex;gap:.5rem;}
 .draft-instructions-wide{width:100%;box-sizing:border-box;}
 .draft-instructions-ta{width:100%;box-sizing:border-box;resize:vertical;min-height:90px;}
-.draft-output-panel{display:flex;flex-direction:column;border:1.5px solid var(--border);border-radius:8px;background:var(--white);overflow:hidden;flex:1;min-height:500px;}
+.draft-output-panel{display:flex;flex-direction:column;border:1.5px solid var(--border);border-radius:8px;background:var(--white);overflow:hidden;flex:1;min-height:500px;padding:0;}
 .draft-output-header{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;border-bottom:1.5px solid var(--border);background:var(--navy-mid);color:#fff;flex-wrap:wrap;gap:.5rem;}
 .doh-title{display:flex;flex-direction:column;gap:.15rem;}
 .doh-matter{font-size:.78rem;font-weight:700;opacity:.8;text-transform:uppercase;letter-spacing:.06em;}
@@ -280,7 +280,6 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .draft-revise-bar{border-top:1.5px solid var(--border);padding:.75rem 1rem;background:var(--off-white);display:flex;flex-direction:column;gap:.5rem;}
 .draft-revise-ta{width:100%;box-sizing:border-box;resize:vertical;min-height:72px;}
 .draft-revise-btns{display:flex;gap:.5rem;flex-wrap:wrap;}
-.draft-output-content{font-family:Georgia,serif;font-size:.9rem;line-height:1.7;white-space:pre-wrap;max-height:50vh;overflow-y:auto;border:1px solid var(--border);padding:.75rem;border-radius:5px;background:var(--off-white);}
 .upload-zone{margin:.55rem .85rem;border:2px dashed var(--border-strong);border-radius:8px;padding:1.2rem .85rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;flex-shrink:0}
 .upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue-light);background:var(--blue-faint)}
 .upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
@@ -449,49 +448,37 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
           <div class="draft-setup-head">Document Setup</div>
           <div class="draft-fields">
             <div class="draft-field-row">
-              <div class="draft-field">
-                <label class="df-label">Court / Tribunal</label>
-                <input class="df-input" id="draftCourt" placeholder="e.g. Supreme Court of Bermuda">
-              </div>
-              <div class="draft-field">
-                <label class="df-label">Action / Cause Number</label>
-                <input class="df-input" id="draftActionNo" placeholder="e.g. 2024: No. 123">
-              </div>
+              <div class="draft-field"><label class="df-label">Court / Tribunal</label><input class="df-input" id="draftCourt" placeholder="e.g. Supreme Court of Bermuda"></div>
+              <div class="draft-field"><label class="df-label">Action / Cause Number</label><input class="df-input" id="draftActionNo" placeholder="e.g. 2024: No. 123"></div>
             </div>
             <div class="draft-field-row">
-              <div class="draft-field">
-                <label class="df-label">Plaintiff / Petitioner / Applicant</label>
-                <input class="df-input" id="draftPlaintiff" placeholder="Full name">
-              </div>
-              <div class="draft-field">
-                <label class="df-label">Defendant / Respondent</label>
-                <input class="df-input" id="draftDefendant" placeholder="Full name">
-              </div>
+              <div class="draft-field"><label class="df-label">Plaintiff / Petitioner / Applicant</label><input class="df-input" id="draftPlaintiff" placeholder="Full name"></div>
+              <div class="draft-field"><label class="df-label">Defendant / Respondent</label><input class="df-input" id="draftDefendant" placeholder="Full name"></div>
             </div>
             <div class="draft-field-row">
               <div class="draft-field">
                 <label class="df-label">Document Type</label>
                 <select class="df-input" id="draftSetupDocType" onchange="toggleDraftDocTypeCustom(this)">
                   <option value="">Select type...</option>
-                  <option>Skeleton Argument</option>
-                  <option>Pleading - Statement of Claim</option>
-                  <option>Pleading - Defence</option>
-                  <option>Pleading - Reply</option>
-                  <option>Memo of Grounds of Appeal</option>
-                  <option>Petition</option>
-                  <option>Originating Summons</option>
-                  <option>Affidavit</option>
-                  <option>Written Submissions</option>
-                  <option>Chronology</option>
-                  <option>Cast List</option>
-                  <option>Other</option>
-                
-                  <option value="__custom__">Other — type your own...</option></select>
+                  <option>Skeleton Argument</option><option>Pleading - Statement of Claim</option>
+                  <option>Pleading - Defence</option><option>Pleading - Reply</option>
+                  <option>Memo of Grounds of Appeal</option><option>Petition</option>
+                  <option>Originating Summons</option><option>Affidavit</option>
+                  <option>Written Submissions</option><option>Chronology</option>
+                  <option>Cast List</option><option>Advice</option><option>Expert Opinion</option>
+                  <option>Other</option><option value="__custom__">Other — type your own...</option>
+                </select>
                 <input type="text" class="df-input" id="draftSetupDocTypeCustom" placeholder="Type document type" style="display:none;margin-top:.3rem">
               </div>
+              <div class="draft-field"><label class="df-label">Firm Name</label><input class="df-input" id="draftOnBehalf" placeholder="e.g. Walkers, Campbells, Mourant"></div>
               <div class="draft-field">
-                <label class="df-label">Drafted on behalf of</label>
-                <input class="df-input" id="draftOnBehalf" placeholder="e.g. Plaintiff">
+                <label class="df-label">Counsel for</label>
+                <select class="df-input" id="draftCounselFor">
+                  <option value="">— select —</option>
+                  <option>Plaintiff</option><option>Defendant</option><option>Petitioner</option>
+                  <option>Respondent</option><option>Applicant</option><option>Appellant</option>
+                  <option>First Defendant</option><option>Second Defendant</option>
+                </select>
               </div>
             </div>
           </div>
@@ -525,7 +512,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         </div>
         <div class="draft-instructions-area draft-instructions-wide">
           <div class="draft-setup-head">Instructions to AI</div>
-          <textarea class="df-input draft-instructions-ta" id="draftInstructions" rows="5" placeholder="Describe what you want drafted. e.g.: Draft a skeleton argument for the Plaintiff addressing limitation, jurisdiction and quantum. Use the Cayman Islands Companies Act 2023 as the primary statutory authority."></textarea>
+          <textarea class="df-input draft-instructions-ta" id="draftInstructions" rows="5" placeholder="Describe what you want drafted. e.g.: Draft a skeleton argument for the Plaintiff addressing limitation, jurisdiction and quantum."></textarea>
           <div class="draft-actions" style="margin-top:.6rem">
             <button class="btn-primary" id="draftGenerateBtn" onclick="runDraftWorkflow()">Generate draft</button>
           </div>
@@ -537,8 +524,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
               <span id="draftOutputDocType" class="doh-doctype"></span>
             </div>
             <div class="doh-actions">
-              <button class="btn-secondary doh-btn" onclick="saveDraft()">Save</button>
-              <button class="btn-secondary doh-btn" onclick="downloadDraftWord()">Download Word</button>
+              <button class="btn-secondary doh-btn" onclick="openDraftSaveModal()">Save &amp; Download</button>
             </div>
           </div>
           <div class="draft-output-body">
@@ -551,7 +537,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
             </div>
           </div>
           <div class="draft-revise-bar">
-            <textarea class="df-input draft-revise-ta" id="draftAmendInstructions" rows="3" placeholder="Give further instructions — amend specific sections, change the argument, add content — or leave blank and click Re-generate to start fresh..."></textarea>
+            <textarea class="df-input draft-revise-ta" id="draftAmendInstructions" rows="3" placeholder="Give further instructions to amend, revise specific sections, or change the argument. Leave blank and click Re-generate to start fresh."></textarea>
             <div class="draft-revise-btns">
               <button class="btn-primary" onclick="amendOrRegenerateDraft()">Revise / Re-generate</button>
             </div>
@@ -575,12 +561,8 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
           <div class="um-combo">
             <select id="docPartySelect" onchange="syncCombo(this,'docPartyCustom')">
               <option value="">— optional —</option>
-              <option>Plaintiff</option>
-              <option>Defendant</option>
-              <option>Petitioner</option>
-              <option>Respondent</option>
-              <option>Applicant</option>
-              <option>Appellant</option>
+              <option>Plaintiff</option><option>Defendant</option><option>Petitioner</option>
+              <option>Respondent</option><option>Applicant</option><option>Appellant</option>
               <option value="__custom__">Other...</option>
             </select>
             <input type="text" id="docPartyCustom" class="um-custom" placeholder="Type party name" style="display:none">
@@ -591,21 +573,11 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
           <div class="um-combo">
             <select id="docTypeSelect" onchange="syncCombo(this,'docTypeCustom')">
               <option value="">— optional —</option>
-              <option>Pleading</option>
-              <option>Skeleton Argument</option>
-              <option>Memo of Grounds of Appeal</option>
-              <option>Petition</option>
-              <option>Witness Statement</option>
-              <option>Affidavit</option>
-              <option>Exhibit</option>
-              <option>Discovery</option>
-              <option>Instructions</option>
-              <option>Opinion</option>
-              <option>Case Law</option>
-              <option>Statute / Regulation</option>
-              <option>Correspondence</option>
-              <option>Expert Report</option>
-              <option>Other</option>
+              <option>Pleading</option><option>Skeleton Argument</option><option>Memo of Grounds of Appeal</option>
+              <option>Petition</option><option>Witness Statement</option><option>Affidavit</option>
+              <option>Exhibit</option><option>Discovery</option><option>Instructions</option>
+              <option>Opinion</option><option>Case Law</option><option>Statute / Regulation</option>
+              <option>Correspondence</option><option>Expert Report</option><option>Other</option>
               <option value="__custom__">Custom...</option>
             </select>
             <input type="text" id="docTypeCustom" class="um-custom" placeholder="Type document type" style="display:none">
@@ -616,12 +588,8 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
           <div class="um-combo">
             <select id="docIssuesSelect" onchange="addIssueChip(this.value);this.selectedIndex=0;">
               <option value="">Add issue...</option>
-              <option>Liability</option>
-              <option>Quantum</option>
-              <option>Jurisdiction</option>
-              <option>Limitation</option>
-              <option>Evidence</option>
-              <option>Procedure</option>
+              <option>Liability</option><option>Quantum</option><option>Jurisdiction</option>
+              <option>Limitation</option><option>Evidence</option><option>Procedure</option>
               <option value="__custom__">Other...</option>
             </select>
           </div>
@@ -754,9 +722,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         </select>
         <div id="libContextDocWrap" style="display:none">
           <label class="f-label" style="margin-top:.4rem">Context document — select existing or upload</label>
-          <select class="f-input" id="libContextDocSelect" style="margin-bottom:.35rem">
-            <option value="">— select from library —</option>
-          </select>
+          <select class="f-input" id="libContextDocSelect" style="margin-bottom:.35rem"><option value="">— select from library —</option></select>
           <div style="font-size:.75rem;color:var(--text-faint);margin-bottom:.3rem;text-align:center">— or upload a new context PDF —</div>
           <input type="file" class="f-input" id="libContextFile" accept=".pdf" style="padding:.3rem">
           <input type="text" class="f-input" id="libContextDesc" placeholder="Brief description of context doc (optional)" style="margin-top:.35rem">
@@ -1033,18 +999,14 @@ function getUploadMeta(){
   var issues=Array.from(chips).map(function(c){return c.getAttribute('data-v');}).join(', ');
   return{party:party||null,docType:docType||'Other',docIssues:issues||null};
 }
-function syncCombo(sel,customId){
-  var el=document.getElementById(customId);
-  if(el) el.style.display=sel.value==='__custom__'?'':'none';
-}
+function syncCombo(sel,customId){var el=document.getElementById(customId);if(el)el.style.display=sel.value==='__custom__'?'':'none';}
 function addIssueChip(val){
   if(!val)return;
   if(val==='__custom__'){val=prompt('Enter issue:');if(!val||!val.trim())return;val=val.trim();}
   var container=document.getElementById('issueChips');if(!container)return;
   var existing=Array.from(container.querySelectorAll('.issue-chip')).map(function(c){return c.getAttribute('data-v').toLowerCase();});
   if(existing.indexOf(val.toLowerCase())!==-1)return;
-  var chip=document.createElement('span');
-  chip.className='issue-chip';chip.setAttribute('data-v',val);
+  var chip=document.createElement('span');chip.className='issue-chip';chip.setAttribute('data-v',val);
   chip.innerHTML=val+' <button onclick="this.parentElement.remove()" title="Remove">x</button>';
   container.appendChild(chip);
 }
@@ -1121,10 +1083,6 @@ function switchLeftPanel(panel){
   document.getElementById('toggleMatters').classList.toggle('active', panel==='matters');
   document.getElementById('toggleLibrary').classList.toggle('active', panel==='library');
   if(panel==='library') loadLibrary();
-
-  // Show/hide right panel based on active tab
-  var rp=document.getElementById('rightPanel');
-  if(rp)rp.style.display=panel==='library'?'none':'';
 }
 
 async function loadLibrary(){
@@ -1234,17 +1192,13 @@ function openLibraryModal(defaultTab){
   });
   var jur=document.getElementById('libPrecJur');if(jur)jur.selectedIndex=0;
   var pf=document.getElementById('libPrecFile');if(pf)pf.value='';
+  var relSel=document.getElementById('libPrecRelationship');if(relSel)relSel.selectedIndex=0;
+  var wrap=document.getElementById('libContextDocWrap');if(wrap)wrap.style.display='none';
+  var cf=document.getElementById('libContextFile');if(cf)cf.value='';
+  var cd=document.getElementById('libContextDesc');if(cd)cd.value='';
   document.getElementById('libModalTitle').textContent='Add to Library';
   _populateLibDataLists();
   _populateContextDocSelect();
-  var relSel=document.getElementById('libPrecRelationship');
-  if(relSel)relSel.selectedIndex=0;
-  var wrap=document.getElementById('libContextDocWrap');
-  if(wrap)wrap.style.display='none';
-  var cf=document.getElementById('libContextFile');
-  if(cf)cf.value='';
-  var cd=document.getElementById('libContextDesc');
-  if(cd)cd.value='';
   switchLibTab(defaultTab||'precedent');
   document.getElementById('libraryModal').style.display='flex';
 }
@@ -1256,6 +1210,12 @@ function _populateLibDataLists(){
   ['libPrecSubcatList','libSecSubcatList'].forEach(function(id){var dl=document.getElementById(id);if(!dl)return;dl.innerHTML=subNames.map(function(n){return '<option value="'+n+'">';}).join('');});
   ['libPrecDocTypeList','libSecDocTypeList'].forEach(function(id){var dl=document.getElementById(id);if(!dl)return;dl.innerHTML=dtNames.map(function(n){return '<option value="'+n+'">';}).join('');});
 }
+function _populateContextDocSelect(){
+  var sel=document.getElementById('libContextDocSelect');if(!sel)return;
+  sel.innerHTML='<option value="">— select from library —</option>';
+  (libraryData.precedents||[]).forEach(function(p){var o=document.createElement('option');o.value=p.id;o.textContent=p.name+(p.description?' - '+p.description:'');sel.appendChild(o);});
+}
+function toggleContextDoc(val){var wrap=document.getElementById('libContextDocWrap');if(wrap)wrap.style.display=val?'':'none';}
 var _editingLibId=null,_editingLibType=null;
 
 function switchLibTab(tab){
@@ -1307,6 +1267,7 @@ async function saveLibraryEntry(){
   const btn=document.getElementById('libSaveBtn');
   btn.disabled=true;btn.textContent='Saving...';
   try{
+    var tok=localStorage.getItem('elj_token');
     if(activeLibTab==='precedent'){
       const name=document.getElementById('libPrecName').value.trim();
       const file=document.getElementById('libPrecFile').files[0];
@@ -1332,7 +1293,7 @@ async function saveLibraryEntry(){
         if(ctxFile&&ctxFile.files[0])fd.append('context_file',ctxFile.files[0]);
         fd.append('file',file);
         if(_editingLibId)fd.append('replace_id',_editingLibId);
-        const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
+        const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd});
         if(!r.ok)throw new Error(await r.text());
         showToast('Precedent saved and indexed');
       } else if(_editingLibId){
@@ -1392,8 +1353,7 @@ async function _resolveLibraryTaxonomy(caseTypeName,subcatName,docTypeName){
 }
 function viewLibItem(type,id){
   if(type==='sec'){
-    const s=libraryData.sections.find(function(x){return x.id===id;});
-    if(!s)return;
+    const s=libraryData.sections.find(function(x){return x.id===id;});if(!s)return;
     _editingLibId=id;_editingLibType='section';
     document.getElementById('libModalTitle').textContent='Edit Section';
     _populateLibDataLists();
@@ -1406,14 +1366,12 @@ function viewLibItem(type,id){
     document.getElementById('libSecSubcatInput').value=sub?sub.name:'';
     const dt=libraryData.docTypes.find(function(x){return x.id===s.doc_type_id;});
     document.getElementById('libSecDocTypeInput').value=dt?dt.name:'';
-    switchLibTab('section');
-    document.getElementById('libraryModal').style.display='flex';
+    switchLibTab('section');document.getElementById('libraryModal').style.display='flex';
   } else {
-    const p=libraryData.precedents.find(function(x){return x.id===id;});
-    if(!p)return;
+    const p=libraryData.precedents.find(function(x){return x.id===id;});if(!p)return;
     _editingLibId=id;_editingLibType='precedent';
     document.getElementById('libModalTitle').textContent='Edit Precedent';
-    _populateLibDataLists();
+    _populateLibDataLists();_populateContextDocSelect();
     document.getElementById('libPrecName').value=p.name||'';
     document.getElementById('libPrecDesc').value=p.description||'';
     const ct=libraryData.caseTypes.find(function(x){return x.id===p.case_type_id;});
@@ -1424,8 +1382,7 @@ function viewLibItem(type,id){
     document.getElementById('libPrecDocTypeInput').value=dt?dt.name:'';
     const jurSel=document.getElementById('libPrecJur');
     for(var i=0;i<jurSel.options.length;i++){if(jurSel.options[i].value===p.jurisdiction){jurSel.selectedIndex=i;break;}}
-    switchLibTab('precedent');
-    document.getElementById('libraryModal').style.display='flex';
+    switchLibTab('precedent');document.getElementById('libraryModal').style.display='flex';
   }
 }
 async function deleteCaseType(id){
@@ -1547,7 +1504,6 @@ function openTool(t){
   if(!isNew){return;}
   _loadMostRecentToolResult(t);
 }
-
 async function _loadMostRecentToolResult(toolName){
   try{
     var mid=currentMatter&&currentMatter.id;
@@ -1559,50 +1515,29 @@ async function _loadMostRecentToolResult(toolName){
     var results=(h.history||[]).filter(function(x){return x.tool_name===toolName;})
       .sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
     if(results.length>0){
-      var latest=results[0];
-      var prev=results.length>1?results[1]:null;
+      var latest=results[0];var prev=results.length>1?results[1]:null;
       var msgsArea=showToolResult(toolName);
       appendMsgTo(msgsArea,'assistant',latest.answer,toolName==='proposition'?'prop':'tool',latest.question,null,toolName,latest.id);
       var bar=document.createElement('div');
       bar.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;flex-wrap:wrap;';
-      var rerunBtn=document.createElement('button');
-      rerunBtn.className='btn-secondary';
-      rerunBtn.textContent='Re-run';
-      rerunBtn.onclick=function(){bar.remove();promptTool(toolName);};
-      bar.appendChild(rerunBtn);
+      var rerunBtn=document.createElement('button');rerunBtn.className='btn-secondary';rerunBtn.textContent='Re-run';
+      rerunBtn.onclick=function(){bar.remove();promptTool(toolName);};bar.appendChild(rerunBtn);
       if(prev){
-        var prevBtn=document.createElement('button');
-        prevBtn.className='btn-secondary';
-        prevBtn.style.fontSize='.78rem';
-        prevBtn.textContent='View previous version';
+        var prevBtn=document.createElement('button');prevBtn.className='btn-secondary';prevBtn.style.fontSize='.78rem';prevBtn.textContent='View previous version';
         prevBtn.onclick=function(){
-          var prevArea=showToolResult(toolName);
-          prevArea.innerHTML='';
+          var prevArea=showToolResult(toolName);prevArea.innerHTML='';
           appendMsgTo(prevArea,'assistant',prev.answer,toolName==='proposition'?'prop':'tool','Previous: '+prev.question,null,toolName,prev.id);
-          var backBar=document.createElement('div');
-          backBar.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;flex-wrap:wrap;';
-          var delPrevBtn=document.createElement('button');
-          delPrevBtn.className='btn-secondary';
-          delPrevBtn.style.cssText='font-size:.78rem;color:#c0392b;';
-          delPrevBtn.textContent='Delete previous version';
-          delPrevBtn.onclick=function(){
-            if(!confirm('Delete previous version?'))return;
-            api('/api/history?id='+prev.id,'DELETE').then(function(){_loadMostRecentToolResult(toolName);}).catch(function(e){showToast('Error: '+e.message);});
-          };
+          var backBar=document.createElement('div');backBar.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;flex-wrap:wrap;';
+          var delPrevBtn=document.createElement('button');delPrevBtn.className='btn-secondary';delPrevBtn.style.cssText='font-size:.78rem;color:#c0392b;';delPrevBtn.textContent='Delete previous version';
+          delPrevBtn.onclick=function(){if(!confirm('Delete previous version?'))return;api('/api/history?id='+prev.id,'DELETE').then(function(){_loadMostRecentToolResult(toolName);}).catch(function(e){showToast('Error: '+e.message);});};
           backBar.appendChild(delPrevBtn);
-          var backBtn=document.createElement('button');
-          backBtn.className='btn-secondary';
-          backBtn.textContent='Back to current version';
-          backBtn.onclick=function(){_loadMostRecentToolResult(toolName);};
-          backBar.appendChild(backBtn);
+          var backBtn=document.createElement('button');backBtn.className='btn-secondary';backBtn.textContent='Back to current version';
+          backBtn.onclick=function(){_loadMostRecentToolResult(toolName);};backBar.appendChild(backBtn);
           prevArea.appendChild(backBar);
-        };
-        bar.appendChild(prevBtn);
+        };bar.appendChild(prevBtn);
       }
       msgsArea.appendChild(bar);
-    } else {
-      promptTool(toolName);
-    }
+    } else {promptTool(toolName);}
   }catch(e){promptTool(toolName);}
 }
 
@@ -1947,6 +1882,17 @@ document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{
 function showToast(msg){document.querySelector('.toast')?.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3200);}
 init();
 
+// ── LIBRARY TAB PANEL CONTROL ─────────────────────────────────────────────────
+var _origSwitchLeftPanel = null;
+(function(){
+  var _orig = switchLeftPanel;
+  switchLeftPanel = function(panel){
+    _orig(panel);
+    var rp=document.getElementById('rightPanel');
+    if(rp)rp.style.display=panel==='library'?'none':'';
+  };
+})();
+
 // ── LIBRARY DRAFT INTEGRATION ──────────────────────────────────────────────
 var _dls={sections:[],precedents:[],selSec:new Set(),selPrec:new Set()};
 function loadDraftLibrary(){
@@ -1991,8 +1937,7 @@ function _loadDraftItems(ctId,subId,dtId){
 }
 function _renderDraftItems(){
   var wrap=document.getElementById('draftLibItems');
-  var sd=document.getElementById('draftSectionsList');
-  var pd=document.getElementById('draftPrecedentsList');
+  var sd=document.getElementById('draftSectionsList');var pd=document.getElementById('draftPrecedentsList');
   if(!_dls.sections.length&&!_dls.precedents.length){if(wrap)wrap.style.display='none';return;}
   if(wrap)wrap.style.display='';
   if(sd){sd.innerHTML='';if(_dls.sections.length){var hd=document.createElement('div');hd.style.cssText='font-size:.72rem;font-weight:700;color:#7a8aaa;text-transform:uppercase;margin:.4rem 0 .2rem;';hd.textContent='Standard Sections';sd.appendChild(hd);_dls.sections.forEach(function(s){var lbl=document.createElement('label');lbl.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';var cb=document.createElement('input');cb.type='checkbox';cb.value=s.id;cb.setAttribute('data-title',s.title);cb.setAttribute('data-content',encodeURIComponent(s.content||''));cb.className='draft-sec-cb';if(_dls.selSec.has(s.id))cb.checked=true;cb.onchange=function(){if(this.checked)_dls.selSec.add(this.value);else _dls.selSec.delete(this.value);};lbl.appendChild(cb);lbl.appendChild(document.createTextNode(' '+s.title));sd.appendChild(lbl);});}}
@@ -2001,8 +1946,7 @@ function _renderDraftItems(){
 function buildLibraryContext(){
   var ctSel=document.getElementById('draftCaseType');if(!ctSel||!ctSel.value)return null;
   var ctName=(ctSel.selectedOptions[0]&&ctSel.selectedOptions[0].getAttribute('data-name'))||'';if(!ctName)return null;
-  var subSel=document.getElementById('draftSubcategory');
-  var dtSel=document.getElementById('draftLibDocType');
+  var subSel=document.getElementById('draftSubcategory');var dtSel=document.getElementById('draftLibDocType');
   var secs=[];document.querySelectorAll('.draft-sec-cb:checked').forEach(function(cb){secs.push({id:cb.value,title:cb.getAttribute('data-title'),content:decodeURIComponent(cb.getAttribute('data-content')||'')});});
   var precs=[];document.querySelectorAll('.draft-prec-cb:checked').forEach(function(cb){precs.push(cb.value);});
   return{caseTypeName:ctName,subcategoryName:(subSel&&subSel.value&&subSel.selectedOptions[0])?subSel.selectedOptions[0].getAttribute('data-name')||'':'',docTypeName:(dtSel&&dtSel.value&&dtSel.selectedOptions[0])?dtSel.selectedOptions[0].getAttribute('data-name')||'':'',selectedSections:secs,selectedPrecedentIds:precs};
@@ -2014,45 +1958,16 @@ function setMode(mode){
   _appMode=mode;
   document.getElementById('modeAnalysis').classList.toggle('active',mode==='analysis');
   document.getElementById('modeDrafting').classList.toggle('active',mode==='drafting');
-  var tb=document.getElementById('toolsBar');
-  if(tb)tb.style.display=(mode==='analysis'&&currentMatter)?'':'none';
-  var dws=document.getElementById('ws-drafting');
-  if(dws)dws.style.display=mode==='drafting'?'':'none';
-  if(mode==='drafting'&&currentMatter){
-    _refreshDraftSourceStatuses();
-    loadDraftLibrary();
-  }
-}
-
-// ── LIBRARY CONTEXT DOC ─────────────────────────────────────────────────────
-function toggleContextDoc(val){
-  var wrap=document.getElementById('libContextDocWrap');
-  if(wrap)wrap.style.display=val?'':'none';
-}
-function _populateContextDocSelect(){
-  var sel=document.getElementById('libContextDocSelect');
-  if(!sel)return;
-  sel.innerHTML='<option value="">— select from library —</option>';
-  (libraryData.precedents||[]).forEach(function(p){
-    var o=document.createElement('option');
-    o.value=p.id;
-    o.textContent=p.name+(p.description?' — '+p.description:'');
-    sel.appendChild(o);
-  });
+  var tb=document.getElementById('toolsBar');if(tb)tb.style.display=(mode==='analysis'&&currentMatter)?'':'none';
+  var dws=document.getElementById('ws-drafting');if(dws)dws.style.display=mode==='drafting'?'':'none';
+  if(mode==='drafting'&&currentMatter){_refreshDraftSourceStatuses();loadDraftLibrary();}
 }
 
 // ── DRAFT DOC TYPE CUSTOM ────────────────────────────────────────────────────
-function toggleDraftDocTypeCustom(sel){
-  var inp=document.getElementById('draftSetupDocTypeCustom');
-  if(inp)inp.style.display=sel.value==='__custom__'?'':'none';
-}
+function toggleDraftDocTypeCustom(sel){var inp=document.getElementById('draftSetupDocTypeCustom');if(inp)inp.style.display=sel.value==='__custom__'?'':'none';}
 function getDraftDocType(){
-  var sel=document.getElementById('draftSetupDocType');
-  if(!sel)return'';
-  if(sel.value==='__custom__'){
-    var inp=document.getElementById('draftSetupDocTypeCustom');
-    return inp?inp.value.trim():'';
-  }
+  var sel=document.getElementById('draftSetupDocType');if(!sel)return'';
+  if(sel.value==='__custom__'){var inp=document.getElementById('draftSetupDocTypeCustom');return inp?inp.value.trim():'';}
   return sel.value||'';
 }
 
@@ -2063,22 +1978,41 @@ function generateDraftHeader(){
   var plaintiff=(document.getElementById('draftPlaintiff')||{}).value||'';
   var defendant=(document.getElementById('draftDefendant')||{}).value||'';
   var docType=getDraftDocType();
-  var onBehalf=(document.getElementById('draftOnBehalf')||{}).value||'';
+  var firmName=(document.getElementById('draftOnBehalf')||{}).value||'';
+  var counselFor=(document.getElementById('draftCounselFor')||{}).value||'';
   var jur=currentMatter?(currentMatter.jurisdiction||''):'';
+  var isCoA=court.toLowerCase().indexOf('appeal')!==-1;
   var lines=[];
-  if(court)lines.push('IN THE '+court.toUpperCase());
-  if(jur)lines.push(jur.toUpperCase());
-  if(actionNo)lines.push('\nCause No. '+actionNo);
-  lines.push('\nBETWEEN:');
-  if(plaintiff)lines.push('\n'+plaintiff.toUpperCase());
-  lines.push('                                                    Plaintiff');
-  lines.push('\n- and -\n');
+  if(isCoA){
+    if(actionNo)lines.push('Cause No. '+actionNo);
+    lines.push('');
+    lines.push('IN THE COURT OF APPEAL OF THE '+jur.toUpperCase());
+    lines.push('');
+    lines.push('On Appeal from the Grand Court, Financial Services Division');
+  } else {
+    if(court)lines.push('IN THE '+court.toUpperCase());
+    if(jur)lines.push(jur.toUpperCase());
+    if(actionNo){lines.push('');lines.push('Cause No. '+actionNo);}
+  }
+  lines.push('');lines.push('BETWEEN:');lines.push('');
+  if(plaintiff)lines.push(plaintiff.toUpperCase());
+  lines.push('                                                      Plaintiff');
+  lines.push('');lines.push('                        - and -');lines.push('');
   if(defendant)lines.push(defendant.toUpperCase());
-  lines.push('                                                  Defendant');
-  if(docType)lines.push('\n\n'+docType.toUpperCase());
-  if(onBehalf)lines.push('\n(On behalf of the '+onBehalf+')');
-  var text=lines.join('\n');
-  document.getElementById('draftHeaderText').textContent=text;
+  lines.push('                                                    Defendant');
+  if(docType){
+    var dt=docType.toUpperCase();
+    var tram='_____________________________________________________';
+    lines.push('');lines.push(tram);
+    var pad=Math.max(0,Math.floor((tram.length-dt.length)/2));
+    lines.push(' '.repeat(pad)+dt);lines.push(tram);
+  }
+  if(firmName||counselFor){
+    lines.push('');lines.push('');
+    if(firmName)lines.push('                                        '+firmName);
+    if(counselFor)lines.push('                             Counsel for the '+counselFor);
+  }
+  document.getElementById('draftHeaderText').textContent=lines.join('\n');
   document.getElementById('draftHeaderPreview').style.display='';
 }
 
@@ -2089,20 +2023,13 @@ async function _refreshDraftSourceStatuses(){
   var tok=localStorage.getItem('elj_token');
   try{
     var r=await fetch('/api/history?matter_id='+encodeURIComponent(currentMatter.id),{headers:{'Authorization':'Bearer '+tok}});
-    if(!r.ok)return;
-    var h=await r.json();
-    var tools=['chronology','persons','issues','briefing'];
-    _draftToolResults={};
+    if(!r.ok)return;var h=await r.json();
+    var tools=['chronology','persons','issues','briefing'];_draftToolResults={};
     tools.forEach(function(t){
-      var results=(h.history||[]).filter(function(x){return x.tool_name===t;})
-        .sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
+      var results=(h.history||[]).filter(function(x){return x.tool_name===t;}).sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
       var el=document.getElementById('dss-'+t);
-      if(results.length>0){
-        _draftToolResults[t]=results[0].answer;
-        if(el){el.textContent='Already run';el.className='ds-status run';}
-      } else {
-        if(el){el.textContent='Not yet run';el.className='ds-status';}
-      }
+      if(results.length>0){_draftToolResults[t]=results[0].answer;if(el){el.textContent='Already run';el.className='ds-status run';}}
+      else{if(el){el.textContent='Not yet run';el.className='ds-status';}}
     });
   }catch(e){}
 }
@@ -2112,8 +2039,7 @@ async function runDraftWorkflow(){
   if(!currentMatter){showToast('Select a matter first');return;}
   var instructions=(document.getElementById('draftInstructions')||{}).value||'';
   if(!instructions.trim()){showToast('Please enter instructions for the draft');return;}
-  var btn=document.getElementById('draftGenerateBtn');
-  btn.disabled=true;btn.textContent='Generating...';
+  var btn=document.getElementById('draftGenerateBtn');btn.disabled=true;btn.textContent='Generating...';
   document.getElementById('draftOutputArea').style.display='none';
   try{
     generateDraftHeader();
@@ -2125,9 +2051,7 @@ async function runDraftWorkflow(){
         showToast('Running '+t+'...');
         var tok=localStorage.getItem('elj_token');
         var tr=await fetch('/api/tools',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
-          body:JSON.stringify({tool:t,matterId:currentMatter.id,matterName:currentMatter.name,
-            matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',
-            jurisdiction:currentMatter.jurisdiction||'Bermuda',anchorDocNames:[],instructions:''})});
+          body:JSON.stringify({tool:t,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction:currentMatter.jurisdiction||'Bermuda',anchorDocNames:[],instructions:''})});
         if(tr.ok){var td=await tr.json();if(td.result)_draftToolResults[t]=td.result;}
       }
     }
@@ -2141,9 +2065,7 @@ async function runDraftWorkflow(){
     });
     var libCtx=buildLibraryContext();
     var tok=localStorage.getItem('elj_token');
-    var payload={tool:'draft',matterId:currentMatter.id,matterName:currentMatter.name,
-      matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',
-      jurisdiction:currentMatter.jurisdiction||'Bermuda',anchorDocNames:[],instructions:fullInstructions};
+    var payload={tool:'draft',matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction:currentMatter.jurisdiction||'Bermuda',anchorDocNames:[],instructions:fullInstructions};
     if(libCtx)payload.libraryContext=libCtx;
     var res=await fetch('/api/tools',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if(!res.ok)throw new Error(await res.text());
@@ -2163,158 +2085,96 @@ async function amendOrRegenerateDraft(){
   var amend=(document.getElementById('draftAmendInstructions')||{}).value||'';
   if(amend.trim()){
     var orig=(document.getElementById('draftInstructions')||{}).value||'';
-    document.getElementById('draftInstructions').value=orig+'\n\nAMENDMENTS: '+amend.trim();
+    document.getElementById('draftInstructions').value=orig+'\n\nAMENDMENTS REQUESTED: '+amend.trim();
     document.getElementById('draftAmendInstructions').value='';
   }
   await runDraftWorkflow();
 }
 
+// ── DRAFT DISPLAY WITH TOC ────────────────────────────────────────────────────
+function _displayDraft(text){
+  var matterEl=document.getElementById('draftOutputMatter');var docTypeEl=document.getElementById('draftOutputDocType');
+  if(matterEl)matterEl.textContent=currentMatter?currentMatter.name:'';
+  var dt=getDraftDocType()||'Draft';if(docTypeEl)docTypeEl.textContent=dt;
+  var contentEl=document.getElementById('draftOutputContent');if(!contentEl)return;contentEl.innerHTML='';
+  var lines=text.split('\n');var sections=[];var currentSection=null;var buf=[];
+  function _isHeading(line){var t=line.trim();if(!t)return false;if(/^[A-Z][A-Z0-9 ,&()\/\-]{4,}$/.test(t))return true;if(/^\d+\.\s+[A-Z]/.test(t))return true;if(/^[IVXLC]+\.\s+[A-Z]/.test(t))return true;return false;}
+  lines.forEach(function(line){if(_isHeading(line)){if(currentSection!==null)sections.push({heading:currentSection,lines:buf});currentSection=line.trim();buf=[];}else{buf.push(line);}});
+  if(buf.length||currentSection!==null)sections.push({heading:currentSection||'',lines:buf});
+  if(sections.length<=1){contentEl.textContent=text;document.getElementById('draftTocList').innerHTML='<div style="font-size:.78rem;color:var(--text-faint);padding:.3rem .75rem">No sections detected</div>';return;}
+  var tocList=document.getElementById('draftTocList');tocList.innerHTML='';
+  sections.forEach(function(sec,idx){
+    var anchor='draft-sec-'+idx;
+    if(sec.heading){var btn=document.createElement('button');btn.className='draft-toc-item';btn.textContent=sec.heading.length>38?sec.heading.substring(0,36)+'...':sec.heading;btn.title=sec.heading;btn.setAttribute('data-anchor',anchor);btn.onclick=function(){document.getElementById(anchor).scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.draft-toc-item').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');};tocList.appendChild(btn);}
+    var block=document.createElement('div');block.id=anchor;block.style.marginBottom='1.25rem';
+    if(sec.heading){var hEl=document.createElement('div');hEl.style.cssText='font-weight:700;font-size:.95rem;margin-bottom:.4rem;padding-bottom:.2rem;border-bottom:1px solid var(--border);';hEl.textContent=sec.heading;block.appendChild(hEl);}
+    var body=document.createElement('div');body.textContent=sec.lines.join('\n');block.appendChild(body);contentEl.appendChild(block);
+  });
+  var wrap=document.querySelector('.draft-content-wrap');
+  if(wrap){wrap.onscroll=function(){var scrollTop=wrap.scrollTop;var active=null;sections.forEach(function(sec,idx){var el=document.getElementById('draft-sec-'+idx);if(el&&el.offsetTop<=scrollTop+80)active='draft-sec-'+idx;});document.querySelectorAll('.draft-toc-item').forEach(function(btn){btn.classList.toggle('active',btn.getAttribute('data-anchor')===active);});};}
+}
+
+// ── SAVE DRAFT ────────────────────────────────────────────────────────────────
 var _lastDraftResult='';
+function openDraftSaveModal(){
+  if(!_lastDraftResult){showToast('No draft to save');return;}
+  var dt=getDraftDocType()||'Draft';var mName=currentMatter?currentMatter.name:'';
+  document.getElementById('draftSaveTitle').value=mName+(dt?' - '+dt:'');
+  document.getElementById('draftSaveFunction').selectedIndex=0;
+  document.getElementById('draftSaveNotes').value='';
+  document.getElementById('draftSaveModal').style.display='flex';
+}
+async function saveDraftOnly(){await saveDraft();closeModal('draftSaveModal');}
+async function saveDraftAndDownload(){await saveDraft();closeModal('draftSaveModal');await downloadDraftWord();}
+async function saveDraft(){
+  if(!_lastDraftResult||!currentMatter)return;
+  var tok=localStorage.getItem('elj_token');
+  var dt=getDraftDocType()||'Draft';
+  var titleEl=document.getElementById('draftSaveTitle');var funcEl=document.getElementById('draftSaveFunction');var notesEl=document.getElementById('draftSaveNotes');
+  var saveTitle=titleEl?titleEl.value.trim():'';var saveFunc=funcEl?funcEl.value:'';var saveNotes=notesEl?notesEl.value.trim():'';
+  var question='Draft: '+dt+(saveTitle?' | '+saveTitle:'')+(saveFunc?' ['+saveFunc+']':'');
+  if(saveNotes)question+=' - '+saveNotes;
+  try{
+    await fetch('/api/history',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
+      body:JSON.stringify({matter_id:currentMatter.id,question:question,answer:_lastDraftResult,tool_name:'draft'})});
+    showToast('Draft saved to matter');
+  }catch(e){console.warn('saveDraft:',e);}
+}
 async function downloadDraftWord(){
   if(!_lastDraftResult){showToast('No draft to download');return;}
-  var docType=(document.getElementById('draftSetupDocType')||{}).value||'Draft';
-  var fileName=(currentMatter?currentMatter.name:'Draft')+' - '+docType;
+  var dt=getDraftDocType()||'Draft';var fileName=(currentMatter?currentMatter.name:'Draft')+' - '+dt;
   try{
     var tok=localStorage.getItem('elj_token');
     var r=await fetch('/api/export',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
       body:JSON.stringify({content:_lastDraftResult,title:fileName,matter:currentMatter?currentMatter.name:''})});
     if(!r.ok)throw new Error(await r.text());
-    var blob=await r.blob();
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');a.href=url;a.download=fileName+'.docx';a.click();
-    URL.revokeObjectURL(url);
+    var blob=await r.blob();var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.download=fileName+'.docx';a.click();URL.revokeObjectURL(url);
   }catch(e){showToast('Download failed: '+e.message);}
 }
 // END DRAFTING JS
-
-// ── DRAFT DISPLAY WITH TOC ────────────────────────────────────────────────────
-function _displayDraft(text){
-  // Set header
-  var matterEl=document.getElementById('draftOutputMatter');
-  var docTypeEl=document.getElementById('draftOutputDocType');
-  if(matterEl)matterEl.textContent=currentMatter?currentMatter.name:'';
-  var dt=getDraftDocType()||'Draft';
-  if(docTypeEl)docTypeEl.textContent=dt;
-
-  // Render content
-  var contentEl=document.getElementById('draftOutputContent');
-  if(!contentEl)return;
-  contentEl.innerHTML='';
-
-  // Parse into sections by headings (ALL CAPS lines, numbered lines, or lines ending with colon)
-  var lines=text.split('\n');
-  var sections=[];
-  var currentSection=null;
-  var buf=[];
-
-  function _isHeading(line){
-    var t=line.trim();
-    if(!t)return false;
-    if(/^[A-Z][A-Z0-9 ,&()\/\-]{4,}$/.test(t))return true; // ALL CAPS
-    if(/^\d+\.\s+[A-Z]/.test(t))return true; // Numbered heading
-    if(/^[IVXLC]+\.\s+[A-Z]/.test(t))return true; // Roman numeral
-    return false;
-  }
-
-  lines.forEach(function(line){
-    if(_isHeading(line)){
-      if(currentSection!==null)sections.push({heading:currentSection,lines:buf});
-      currentSection=line.trim();
-      buf=[];
-    } else {
-      buf.push(line);
-    }
-  });
-  if(buf.length||currentSection!==null)sections.push({heading:currentSection||'',lines:buf});
-
-  // If no sections detected just show as plain text
-  if(sections.length<=1){
-    contentEl.textContent=text;
-    document.getElementById('draftTocList').innerHTML='<div style="font-size:.78rem;color:var(--text-faint);padding:.3rem .75rem">No sections detected</div>';
-    return;
-  }
-
-  // Build TOC and content
-  var tocList=document.getElementById('draftTocList');
-  tocList.innerHTML='';
-  sections.forEach(function(sec,idx){
-    var anchor='draft-sec-'+idx;
-
-    // TOC item
-    if(sec.heading){
-      var btn=document.createElement('button');
-      btn.className='draft-toc-item';
-      btn.textContent=sec.heading.length>38?sec.heading.substring(0,36)+'...':sec.heading;
-      btn.title=sec.heading;
-      btn.setAttribute('data-anchor',anchor);
-      btn.onclick=function(){
-        document.getElementById(anchor).scrollIntoView({behavior:'smooth',block:'start'});
-        document.querySelectorAll('.draft-toc-item').forEach(function(b){b.classList.remove('active');});
-        btn.classList.add('active');
-      };
-      tocList.appendChild(btn);
-    }
-
-    // Content block
-    var block=document.createElement('div');
-    block.id=anchor;
-    block.style.marginBottom='1.25rem';
-    if(sec.heading){
-      var hEl=document.createElement('div');
-      hEl.style.cssText='font-weight:700;font-size:.95rem;margin-bottom:.4rem;padding-bottom:.2rem;border-bottom:1px solid var(--border);';
-      hEl.textContent=sec.heading;
-      block.appendChild(hEl);
-    }
-    var body=document.createElement('div');
-    body.textContent=sec.lines.join('\n');
-    block.appendChild(body);
-    contentEl.appendChild(block);
-  });
-
-  // Scroll observer to highlight TOC
-  var wrap=document.querySelector('.draft-content-wrap');
-  if(wrap){
-    wrap.onscroll=function(){
-      var scrollTop=wrap.scrollTop;
-      var active=null;
-      sections.forEach(function(sec,idx){
-        var el=document.getElementById('draft-sec-'+idx);
-        if(el&&el.offsetTop<=scrollTop+80)active='draft-sec-'+idx;
-      });
-      document.querySelectorAll('.draft-toc-item').forEach(function(btn){
-        btn.classList.toggle('active',btn.getAttribute('data-anchor')===active);
-      });
-    };
-  }
-}
-
-// ── SAVE DRAFT ────────────────────────────────────────────────────────────────
-async function saveDraft(){
-  if(!_lastDraftResult||!currentMatter)return;
-  var tok=localStorage.getItem('elj_token');
-  var dt=getDraftDocType()||'Draft';
-  var titleEl=document.getElementById('draftSaveTitle');
-  var funcEl=document.getElementById('draftSaveFunction');
-  var notesEl=document.getElementById('draftSaveNotes');
-  var saveTitle=titleEl?titleEl.value.trim():'';
-  var saveFunc=funcEl?funcEl.value:'';
-  var saveNotes=notesEl?notesEl.value.trim():'';
-  var question='Draft: '+dt+(saveTitle?' | '+saveTitle:'')+(saveFunc?' ['+saveFunc+']':'');
-  if(saveNotes)question+=' - '+saveNotes;
-  try{
-    await fetch('/api/history',{method:'POST',
-      headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        matter_id:currentMatter.id,
-        question:question,
-        answer:_lastDraftResult,
-        tool_name:'draft'
-      })
-    });
-    showToast('Draft saved to matter');
-  }catch(e){console.warn('saveDraft:',e);}
-}
-// END DRAFT OUTPUT JS
 </script>
+<!-- Draft Save modal -->
+<div class="overlay" id="draftSaveModal" style="display:none">
+  <div class="modal" style="max-width:460px;width:95%">
+    <h3>Save &amp; Download Draft</h3>
+    <label class="f-label">Document title</label>
+    <input type="text" class="f-input" id="draftSaveTitle" placeholder="e.g. Skeleton Argument - ABC v DEF" style="margin-bottom:.75rem">
+    <label class="f-label">Function / Nature of document</label>
+    <select class="f-input" id="draftSaveFunction" style="margin-bottom:.75rem">
+      <option value="">— select —</option>
+      <option>First draft for review</option><option>Revised draft</option><option>Final draft</option>
+      <option>Filed document</option><option>Internal advice</option><option>Client advice</option>
+      <option>Court submission</option>
+    </select>
+    <label class="f-label">Notes (optional)</label>
+    <textarea class="f-input" id="draftSaveNotes" rows="3" placeholder="Any notes about this version..." style="margin-bottom:.75rem;width:100%;box-sizing:border-box;resize:vertical;"></textarea>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal('draftSaveModal')">Cancel</button>
+      <button class="btn-secondary" onclick="saveDraftOnly()">Save only</button>
+      <button class="btn-primary" onclick="saveDraftAndDownload()">Save &amp; Download Word</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

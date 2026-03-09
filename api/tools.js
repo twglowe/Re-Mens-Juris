@@ -301,26 +301,27 @@ export default async function handler(req, res) {
           libParts.push('## STANDARD SECTIONS TO INCORPORATE\n\nIncorporate these sections with only minor contextual adaptation:\n\n' + secText);
         }
         if (libraryContext.selectedPrecedentIds && libraryContext.selectedPrecedentIds.length > 0) {
-          const precTexts = [];
+          const ownTexts = [];
+          const thirdTexts = [];
           for (const docId of libraryContext.selectedPrecedentIds) {
-            // Fetch the precedent itself
             const { data: pChunks } = await supabase
               .from('precedent_chunks')
               .select('content, chunk_index')
               .eq('precedent_doc_id', docId)
               .order('chunk_index')
               .limit(80);
-            // Fetch metadata to get context doc relationship
             const { data: precMeta } = await supabase
               .from('precedent_docs')
-              .select('name, context_relationship, context_doc_id, context_description')
+              .select('name, context_relationship, context_doc_id, context_description, ai_instructions, is_own_style')
               .eq('id', docId)
               .single();
-            let precEntry = '';
             if (pChunks && pChunks.length > 0) {
               const label = precMeta ? precMeta.name : docId;
-              precEntry = '=== PRECEDENT: ' + label + ' ===\n' + pChunks.map(c => c.content).join('\n\n');
-              // Fetch context document if present
+              let precEntry = '=== PRECEDENT: ' + label + ' ===\n';
+              if (precMeta && precMeta.ai_instructions) {
+                precEntry += '[Author note: ' + precMeta.ai_instructions + ']\n\n';
+              }
+              precEntry += pChunks.map(c => c.content).join('\n\n');
               if (precMeta && precMeta.context_doc_id) {
                 const { data: ctxChunks } = await supabase
                   .from('precedent_chunks')
@@ -331,15 +332,26 @@ export default async function handler(req, res) {
                 if (ctxChunks && ctxChunks.length > 0) {
                   const rel = precMeta.context_relationship || 'relates to';
                   const ctxDesc = precMeta.context_description || 'context document';
-                  precEntry += '\n\n--- CONTEXT: this precedent ' + rel + ' the following document (' + ctxDesc + ') ---\n'
+                  precEntry += '\n\n--- CONTEXT: this precedent ' + rel + ' the following (' + ctxDesc + ') ---\n'
                     + ctxChunks.map(c => c.content).join('\n\n');
                 }
               }
-              precTexts.push(precEntry);
+              if (precMeta && precMeta.is_own_style) {
+                ownTexts.push(precEntry);
+              } else {
+                thirdTexts.push(precEntry);
+              }
             }
           }
+          const precTexts = [];
+          if (ownTexts.length > 0) {
+            precTexts.push('### MY DRAFTING STYLE\nLearn structure, argument sequence and language from all of these documents — draw on all of them, not just one:\n\n' + ownTexts.join('\n\n'));
+          }
+          if (thirdTexts.length > 0) {
+            precTexts.push('### THIRD PARTY PRECEDENTS\nUse all of these as high-quality benchmarks for structure and legal argument — draw on all of them:\n\n' + thirdTexts.join('\n\n'));
+          }
           if (precTexts.length > 0) {
-            libParts.push('## PRECEDENT DOCUMENTS\n\nUse these precedents for structure, style and legal arguments. Where a context document is shown, understand how the precedent responds to or relates to that document and apply the same approach:\n\n' + precTexts.join('\n\n---\n\n'));
+            libParts.push('## PRECEDENT DOCUMENTS\n\nStudy all of these precedents carefully. Draw on all documents of each type — do not rely on just one. Where my drafting style examples are provided, match that style. Where third party precedents are provided, use them as quality benchmarks. Where context documents are shown, understand how the precedent responds and apply the same approach.\n\n' + precTexts.join('\n\n---\n\n'));
           }
         }
         if (libParts.length > 0) {

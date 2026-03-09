@@ -303,18 +303,43 @@ export default async function handler(req, res) {
         if (libraryContext.selectedPrecedentIds && libraryContext.selectedPrecedentIds.length > 0) {
           const precTexts = [];
           for (const docId of libraryContext.selectedPrecedentIds) {
+            // Fetch the precedent itself
             const { data: pChunks } = await supabase
               .from('precedent_chunks')
               .select('content, chunk_index')
               .eq('precedent_doc_id', docId)
               .order('chunk_index')
-              .limit(120);
+              .limit(80);
+            // Fetch metadata to get context doc relationship
+            const { data: precMeta } = await supabase
+              .from('precedent_docs')
+              .select('name, context_relationship, context_doc_id, context_description')
+              .eq('id', docId)
+              .single();
+            let precEntry = '';
             if (pChunks && pChunks.length > 0) {
-              precTexts.push(pChunks.map(c => c.content).join('\n\n'));
+              const label = precMeta ? precMeta.name : docId;
+              precEntry = '=== PRECEDENT: ' + label + ' ===\n' + pChunks.map(c => c.content).join('\n\n');
+              // Fetch context document if present
+              if (precMeta && precMeta.context_doc_id) {
+                const { data: ctxChunks } = await supabase
+                  .from('precedent_chunks')
+                  .select('content, chunk_index')
+                  .eq('precedent_doc_id', precMeta.context_doc_id)
+                  .order('chunk_index')
+                  .limit(40);
+                if (ctxChunks && ctxChunks.length > 0) {
+                  const rel = precMeta.context_relationship || 'relates to';
+                  const ctxDesc = precMeta.context_description || 'context document';
+                  precEntry += '\n\n--- CONTEXT: this precedent ' + rel + ' the following document (' + ctxDesc + ') ---\n'
+                    + ctxChunks.map(c => c.content).join('\n\n');
+                }
+              }
+              precTexts.push(precEntry);
             }
           }
           if (precTexts.length > 0) {
-            libParts.push('## PRECEDENT DOCUMENTS\n\nUse these precedents for structure, style and legal arguments:\n\n' + precTexts.join('\n\n---\n\n'));
+            libParts.push('## PRECEDENT DOCUMENTS\n\nUse these precedents for structure, style and legal arguments. Where a context document is shown, understand how the precedent responds to or relates to that document and apply the same approach:\n\n' + precTexts.join('\n\n---\n\n'));
           }
         }
         if (libParts.length > 0) {

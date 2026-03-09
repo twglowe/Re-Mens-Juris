@@ -141,6 +141,9 @@ export default async function handler(req, res) {
       const contextRelationship= Array.isArray(fields.context_relationship) ? fields.context_relationship[0] : (fields.context_relationship || "");
       const contextDocId       = Array.isArray(fields.context_doc_id) ? fields.context_doc_id[0] : (fields.context_doc_id || "");
       const contextDescription = Array.isArray(fields.context_description) ? fields.context_description[0] : (fields.context_description || "");
+      const aiInstructions     = Array.isArray(fields.ai_instructions) ? fields.ai_instructions[0] : (fields.ai_instructions || "");
+      const isOwnStyleRaw      = Array.isArray(fields.is_own_style) ? fields.is_own_style[0] : (fields.is_own_style || "false");
+      const isOwnStyle         = isOwnStyleRaw === "true";
       const file               = Array.isArray(files.file) ? files.file[0] : files.file;
       const contextFile        = Array.isArray(files.context_file) ? files.context_file[0] : (files.context_file || null);
 
@@ -179,6 +182,8 @@ export default async function handler(req, res) {
         context_relationship: contextRelationship || null,
         context_doc_id: resolvedContextDocId || null,
         context_description: contextDescription || null,
+        ai_instructions: aiInstructions || null,
+        is_own_style: isOwnStyle,
       }).select("id").single();
 
       if (precErr) return res.status(500).json({ error: precErr.message });

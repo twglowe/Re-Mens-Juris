@@ -1169,12 +1169,17 @@ function switchLeftPanel(panel){
   var rp=document.getElementById('rightPanel');
   var ca=document.getElementById('chatMessages');
   var dws=document.getElementById('ws-drafting');
+  var ia=document.querySelector('.input-area');
+  var tb=document.getElementById('tabBar');
+  var mc=document.querySelector('.main-content');
   if(panel==='library'){
     if(lp) lp.style.display='none';
     if(lws) lws.style.display='flex';
     if(rp) rp.style.display='none';
     if(ca) ca.style.display='none';
     if(dws) dws.style.display='none';
+    if(ia) ia.style.display='none';
+    if(tb) tb.style.display='none';
     loadLibrary();
     wsPopulateCaseTypes();
     wsPopulateContextDocs();
@@ -1183,6 +1188,8 @@ function switchLeftPanel(panel){
     if(lws) lws.style.display='none';
     if(rp) rp.style.display='';
     if(ca) ca.style.display='';
+    if(ia) ia.style.display='';
+    if(tb) tb.style.display='';
   }
 }
 

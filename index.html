@@ -323,6 +323,19 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 @media(max-width:900px){.right-panel{display:none}.left-panel{width:240px}.source-panel{width:100%}}
 @media(max-width:640px){.left-panel{width:200px}.logo em{display:none}}
+.ws-type-btn{padding:.28rem .8rem;font-size:.8rem;font-weight:700;border:1.5px solid var(--border);border-radius:5px;background:var(--off-white);color:var(--text-faint);cursor:pointer}
+.ws-type-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.ws-style-btn{padding:.22rem .6rem;font-size:.73rem;font-weight:700;border:1.5px solid var(--border);border-radius:5px;background:var(--off-white);color:var(--text-faint);cursor:pointer}
+.ws-style-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.ws-input{width:100%;padding:.32rem .55rem;border:1.5px solid var(--border);border-radius:5px;background:var(--white);color:var(--text-mid);font-size:.82rem;font-family:'Source Sans 3',sans-serif;box-sizing:border-box}
+.ws-input:focus{outline:none;border-color:var(--blue)}
+.ws-tag-add{padding:.28rem .6rem;font-size:.78rem;font-weight:700;background:var(--blue);color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap}
+.ws-tags{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem}
+.ws-tag{display:inline-flex;align-items:center;gap:.3rem;padding:.18rem .55rem;background:var(--blue-light,#e8f0ff);color:var(--navy-mid);border-radius:4px;font-size:.75rem;font-weight:600}
+.ws-tag button{border:none;background:none;cursor:pointer;color:var(--text-faint);font-size:.85rem;padding:0;line-height:1}
+.ws-upload-btn{display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem 1rem;border:2px dashed var(--border);border-radius:7px;cursor:pointer;color:var(--blue);font-weight:600;font-size:.85rem;background:var(--off-white);transition:border-color .15s}
+.ws-upload-btn:hover{border-color:var(--blue)}
+.ws-upload-sm{padding:.4rem .75rem;font-size:.78rem}
 </style>
 </head>
 <body>
@@ -360,7 +373,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
     </div>
   </header>
   <div class="main-layout">
-    <div class="left-panel">
+    <div class="left-panel" id="leftPanel">
       <!-- Panel toggle -->
       <div class="panel-toggle-bar">
         <button class="panel-toggle active" id="toggleMatters" onclick="switchLeftPanel('matters')">Matters</button>
@@ -419,7 +432,148 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <button class="tool-btn" onclick="openTool('citations')">📚 Citations</button>
         <button class="tool-btn" onclick="openTool('briefing')">📋 Briefing Note</button>
       </div>
-      <div class="progress-bar-wrap" id="progressWrap">
+      <!-- Library inline workspace (shown when Library tab active) -->
+      <div id="libraryWorkspace" style="display:none;flex:1;flex-direction:column;overflow-y:auto;padding:1rem 1.25rem;gap:.85rem;background:var(--off-white)">
+
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+          <button class="ws-type-btn active" id="wsTypePrec" onclick="wsSetType('precedent')">Precedent Doc</button>
+          <button class="ws-type-btn" id="wsTypeSec" onclick="wsSetType('section')">Standard Section</button>
+          <button class="btn-secondary" onclick="wsClear()" style="font-size:.78rem;padding:.28rem .65rem;margin-left:.25rem">Clear</button>
+        </div>
+
+        <!-- Upload (precedent) -->
+        <div id="wsUploadSector" style="background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.85rem 1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
+            <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase">Document Upload</div>
+            <div style="display:flex;gap:.4rem;align-items:center">
+              <span style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Source:</span>
+              <button class="ws-style-btn active" id="wsStyleOwn" onclick="wsSetStyle('own')">My drafting</button>
+              <button class="ws-style-btn" id="wsStyleThird" onclick="wsSetStyle('third')">Third party</button>
+            </div>
+          </div>
+          <label class="ws-upload-btn" for="wsPrecFile">
+            <span style="font-size:1.4rem">&#128206;</span>
+            <span id="wsUploadLabel">Choose PDF to upload</span>
+          </label>
+          <input type="file" id="wsPrecFile" accept=".pdf" style="display:none" onchange="wsOnFile(this)">
+        </div>
+
+        <!-- Section text (section only) -->
+        <div id="wsSectionSector" style="display:none;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.85rem 1rem">
+          <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.6rem">Section Text</div>
+          <input type="text" class="ws-input" id="wsSecTitle" placeholder="Section title *" style="width:100%;margin-bottom:.6rem">
+          <textarea class="ws-input" id="wsSecContent" rows="6" placeholder="Paste or type the standard section text here..." style="width:100%;resize:vertical"></textarea>
+        </div>
+
+        <!-- Sectors 1-3 in a row -->
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+          <div style="flex:1;min-width:160px;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.75rem .85rem">
+            <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.5rem">1 &nbsp; Case Type</div>
+            <div style="display:flex;gap:.4rem;margin-bottom:.4rem">
+              <input type="text" class="ws-input" id="wsCaseTypeInput" placeholder="e.g. Winding Up" list="wsCaseTypeList" autocomplete="off" style="flex:1;min-width:0">
+              <datalist id="wsCaseTypeList"></datalist>
+              <button class="ws-tag-add" onclick="wsAddTag('caseType')">Add</button>
+            </div>
+            <div id="wsCaseTypeTags" class="ws-tags"></div>
+          </div>
+          <div style="flex:1;min-width:160px;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.75rem .85rem">
+            <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.5rem">2 &nbsp; Procedural Stage</div>
+            <div style="display:flex;gap:.4rem;margin-bottom:.4rem">
+              <input type="text" class="ws-input" id="wsStageInput" placeholder="e.g. Trial, Appeal" list="wsStageList" autocomplete="off" style="flex:1;min-width:0">
+              <datalist id="wsStageList">
+                <option>Trial</option><option>Interlocutory Application</option><option>Appeal</option>
+                <option>Arbitration</option><option>Winding Up Petition</option>
+                <option>Summary Judgment</option><option>Strike Out</option><option>Discovery</option>
+              </datalist>
+              <button class="ws-tag-add" onclick="wsAddTag('stage')">Add</button>
+            </div>
+            <div id="wsStageTags" class="ws-tags"></div>
+          </div>
+          <div style="flex:1;min-width:160px;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.75rem .85rem">
+            <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.5rem">3 &nbsp; Document Type</div>
+            <div style="display:flex;gap:.4rem;margin-bottom:.4rem">
+              <input type="text" class="ws-input" id="wsDocTypeInput" placeholder="e.g. Skeleton Argument" list="wsDocTypeList" autocomplete="off" style="flex:1;min-width:0">
+              <datalist id="wsDocTypeList">
+                <option>Skeleton Argument</option><option>Pleading - Statement of Claim</option>
+                <option>Pleading - Defence</option><option>Pleading - Reply</option>
+                <option>Memo of Grounds of Appeal</option><option>Petition</option>
+                <option>Originating Summons</option><option>Affidavit</option>
+                <option>Written Submissions</option><option>Chronology</option>
+                <option>Cast List</option><option>Advice</option><option>Expert Opinion</option>
+              </datalist>
+              <button class="ws-tag-add" onclick="wsAddTag('docType')">Add</button>
+            </div>
+            <div id="wsDocTypeTags" class="ws-tags"></div>
+            <div style="margin-top:.5rem;display:flex;gap:.5rem;align-items:center">
+              <label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Jurisdiction</label>
+              <select class="ws-input" id="wsPrecJur" style="width:auto;padding:.25rem .45rem;font-size:.78rem">
+                <option value="">Any</option>
+                <option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sector 4: Contextual Document -->
+        <div style="background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.85rem 1rem">
+          <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.4rem">4 &nbsp; Contextual Document</div>
+          <div style="font-size:.78rem;color:var(--text-faint);margin-bottom:.65rem">The document this precedent responds to or relates to — e.g. the Statement of Claim the Defence answers, or the Judgment the Skeleton appeals from.</div>
+          <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+            <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:.35rem">
+              <label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Select existing library doc</label>
+              <select class="ws-input" id="wsContextDocSelect" style="width:100%"><option value="">-- none --</option></select>
+            </div>
+            <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:.35rem">
+              <label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Or upload new context PDF</label>
+              <label class="ws-upload-btn ws-upload-sm" for="wsContextFile">
+                <span>&#128206;</span><span id="wsContextFileLabel">Choose PDF</span>
+              </label>
+              <input type="file" id="wsContextFile" accept=".pdf" style="display:none" onchange="document.getElementById('wsContextFileLabel').textContent=this.files[0]?this.files[0].name:'Choose PDF'">
+            </div>
+            <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:.35rem">
+              <label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Context doc type</label>
+              <input type="text" class="ws-input" id="wsContextDocType" placeholder="e.g. Pleading - Statement of Claim" list="wsContextDocTypeList" autocomplete="off">
+              <datalist id="wsContextDocTypeList">
+                <option>Skeleton Argument</option><option>Pleading - Statement of Claim</option>
+                <option>Pleading - Defence</option><option>Pleading - Reply</option>
+                <option>Memo of Grounds of Appeal</option><option>Judgment</option>
+                <option>Petition</option><option>Affidavit</option><option>Expert Opinion</option>
+              </datalist>
+            </div>
+          </div>
+          <div style="margin-top:.6rem;display:flex;gap:.75rem;flex-wrap:wrap">
+            <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:.3rem">
+              <label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Relationship</label>
+              <select class="ws-input" id="wsPrecRelationship">
+                <option value="">-- none --</option>
+                <option value="responds_to">Responds to</option>
+                <option value="replies_to">Replies to</option>
+                <option value="appeals">Appeals from</option>
+                <option value="supports">Supports / relies on</option>
+                <option value="opposes">Opposes</option>
+              </select>
+            </div>
+            <div style="flex:2;min-width:180px;display:flex;flex-direction:column;gap:.3rem">
+              <label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Description of link</label>
+              <input type="text" class="ws-input" id="wsContextDesc" placeholder="e.g. Defence responding to Statement of Claim in ABC v DEF">
+            </div>
+          </div>
+        </div>
+
+        <!-- Sector 5: AI Instructions -->
+        <div style="background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.85rem 1rem">
+          <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.4rem">5 &nbsp; Instructions for AI</div>
+          <div style="font-size:.78rem;color:var(--text-faint);margin-bottom:.5rem">Tell the AI what to understand about this document — its purpose, approach, key arguments, and how future drafts should use it.</div>
+          <textarea class="ws-input" id="wsAiInstructions" rows="4" placeholder="e.g. This skeleton succeeded at the Court of Appeal. Follow its structure and argument sequence for similar matters." style="width:100%;resize:vertical"></textarea>
+          <input type="text" class="ws-input" id="wsNotes" placeholder="Short note for library list (optional)" style="width:100%;margin-top:.5rem">
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;padding-bottom:1rem">
+          <button class="btn-primary" id="wsSaveBtn" onclick="saveWorkspaceEntry()" style="padding:.5rem 1.5rem;font-size:.9rem">Save to Library</button>
+        </div>
+      </div>
+
+            <div class="progress-bar-wrap" id="progressWrap">
         <div class="progress-bar-label" id="progressLabel">Analysing documents…</div>
         <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
       </div>
@@ -525,6 +679,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
             </div>
             <div class="doh-actions">
               <button class="btn-secondary doh-btn" onclick="openDraftSaveModal()">Save &amp; Download</button>
+              <button class="btn-secondary doh-btn" id="enhanceBtn" onclick="enhanceDraft()" style="background:rgba(255,200,50,.18);border-color:rgba(255,180,50,.5)">Enhance</button>
             </div>
           </div>
           <div class="draft-output-body">
@@ -1082,7 +1237,26 @@ function switchLeftPanel(panel){
   document.getElementById('libraryPanel').style.display = panel==='library' ? 'flex' : 'none';
   document.getElementById('toggleMatters').classList.toggle('active', panel==='matters');
   document.getElementById('toggleLibrary').classList.toggle('active', panel==='library');
-  if(panel==='library') loadLibrary();
+  var lp=document.getElementById('leftPanel');
+  var lws=document.getElementById('libraryWorkspace');
+  var rp=document.getElementById('rightPanel');
+  var ca=document.getElementById('chatMessages');
+  var dws=document.getElementById('ws-drafting');
+  if(panel==='library'){
+    if(lp) lp.style.display='none';
+    if(lws) lws.style.display='flex';
+    if(rp) rp.style.display='none';
+    if(ca) ca.style.display='none';
+    if(dws) dws.style.display='none';
+    loadLibrary();
+    wsPopulateCaseTypes();
+    wsPopulateContextDocs();
+  } else {
+    if(lp) lp.style.display='';
+    if(lws) lws.style.display='none';
+    if(rp) rp.style.display='';
+    if(ca) ca.style.display='';
+  }
 }
 
 async function loadLibrary(){
@@ -2151,6 +2325,239 @@ async function downloadDraftWord(){
     var blob=await r.blob();var url=URL.createObjectURL(blob);
     var a=document.createElement('a');a.href=url;a.download=fileName+'.docx';a.click();URL.revokeObjectURL(url);
   }catch(e){showToast('Download failed: '+e.message);}
+}
+// ---- WORKSPACE LIBRARY JS (ws prefix — no collision with modal) ----
+var _wsType = 'precedent';
+var _wsIsOwnStyle = false;
+var _wsEditingId = null;
+var _wsTags = {caseType:[], stage:[], docType:[]};
+
+function wsSetType(t){
+  _wsType = t;
+  document.getElementById('wsTypePrec').classList.toggle('active', t==='precedent');
+  document.getElementById('wsTypeSec').classList.toggle('active', t==='section');
+  var up = document.getElementById('wsUploadSector');
+  var sec = document.getElementById('wsSectionSector');
+  if(up) up.style.display = t==='precedent' ? '' : 'none';
+  if(sec) sec.style.display = t==='section' ? '' : 'none';
+}
+
+function wsSetStyle(s){
+  _wsIsOwnStyle = (s==='own');
+  var ob=document.getElementById('wsStyleOwn');
+  var tb=document.getElementById('wsStyleThird');
+  if(ob) ob.classList.toggle('active', _wsIsOwnStyle);
+  if(tb) tb.classList.toggle('active', !_wsIsOwnStyle);
+}
+
+function wsOnFile(inp){
+  var lbl=document.getElementById('wsUploadLabel');
+  if(lbl && inp.files[0]) lbl.textContent=inp.files[0].name;
+}
+
+function wsAddTag(field){
+  var ids = {caseType:'wsCaseTypeInput', stage:'wsStageInput', docType:'wsDocTypeInput'};
+  var tagIds = {caseType:'wsCaseTypeTags', stage:'wsStageTags', docType:'wsDocTypeTags'};
+  var inp = document.getElementById(ids[field]);
+  if(!inp) return;
+  var val = inp.value.trim();
+  if(!val) return;
+  if(_wsTags[field].indexOf(val) === -1) _wsTags[field].push(val);
+  inp.value = '';
+  wsRenderTags(field);
+}
+
+function wsRenderTags(field){
+  var tagIds = {caseType:'wsCaseTypeTags', stage:'wsStageTags', docType:'wsDocTypeTags'};
+  var el = document.getElementById(tagIds[field]);
+  if(!el) return;
+  el.innerHTML = '';
+  _wsTags[field].forEach(function(v){
+    var span=document.createElement('span');
+    span.className='ws-tag';
+    span.innerHTML=v+' <button onclick="wsRemoveTag(''+field+'',''+v.replace(/'/g,"\'")+'')">&times;</button>';
+    el.appendChild(span);
+  });
+}
+
+function wsRemoveTag(field, val){
+  _wsTags[field] = _wsTags[field].filter(function(v){return v!==val;});
+  wsRenderTags(field);
+}
+
+function wsClear(){
+  _wsTags = {caseType:[], stage:[], docType:[]};
+  ['wsCaseTypeTags','wsStageTags','wsDocTypeTags'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.innerHTML='';
+  });
+  ['wsCaseTypeInput','wsStageInput','wsDocTypeInput','wsContextDocType','wsContextDesc','wsAiInstructions','wsNotes','wsSecTitle','wsSecContent'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value='';
+  });
+  var pf=document.getElementById('wsPrecFile'); if(pf) pf.value='';
+  var ul=document.getElementById('wsUploadLabel'); if(ul) ul.textContent='Choose PDF to upload';
+  var cf=document.getElementById('wsContextFile'); if(cf) cf.value='';
+  var cfl=document.getElementById('wsContextFileLabel'); if(cfl) cfl.textContent='Choose PDF';
+  var jr=document.getElementById('wsPrecJur'); if(jr) jr.selectedIndex=0;
+  var rl=document.getElementById('wsPrecRelationship'); if(rl) rl.selectedIndex=0;
+  var cs=document.getElementById('wsContextDocSelect'); if(cs) cs.selectedIndex=0;
+  wsSetStyle('third');
+  var sb=document.getElementById('wsSaveBtn'); if(sb) sb.textContent='Save to Library';
+  _wsEditingId=null;
+}
+
+function wsPopulateCaseTypes(){
+  var dl=document.getElementById('wsCaseTypeList');
+  if(!dl) return;
+  dl.innerHTML='';
+  (libraryData.caseTypes||[]).forEach(function(ct){
+    var o=document.createElement('option'); o.value=ct.name; dl.appendChild(o);
+  });
+}
+
+function wsPopulateContextDocs(){
+  var sel=document.getElementById('wsContextDocSelect');
+  if(!sel) return;
+  sel.innerHTML='<option value="">-- none --</option>';
+  (libraryData.precedents||[]).forEach(function(p){
+    var o=document.createElement('option');
+    o.value=p.id; o.textContent=p.name||p.title||p.id;
+    sel.appendChild(o);
+  });
+}
+
+async function saveWorkspaceEntry(){
+  var tok=localStorage.getItem('elj_token');
+  if(!tok){showToast('Not signed in');return;}
+  var btn=document.getElementById('wsSaveBtn');
+  if(btn){btn.disabled=true;btn.textContent='Saving...';}
+  try{
+    if(_wsType==='section'){
+      var title=document.getElementById('wsSecTitle').value.trim();
+      var content=document.getElementById('wsSecContent').value.trim();
+      if(!title||!content){showToast('Title and content required');return;}
+      var caseTypes=_wsTags.caseType; var stages=_wsTags.stage; var docTypes=_wsTags.docType;
+      var ids=await _resolveLibraryTaxonomy(caseTypes[0]||'',stages[0]||'',docTypes[0]||'');
+      var notes=document.getElementById('wsNotes').value.trim();
+      await api('/api/library','POST',{action:'add_section',title,content,
+        case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,
+        doc_type_id:ids.docTypeId||null,description:notes||''});
+      showToast('Section saved');
+      wsClear(); loadLibrary(); return;
+    }
+    var file=document.getElementById('wsPrecFile').files[0];
+    if(!file&&!_wsEditingId){showToast('Please upload a PDF document');return;}
+    var docTypes=_wsTags.docType;
+    if(!docTypes.length){showToast('Please add at least one Document Type tag');return;}
+    var caseTypes=_wsTags.caseType; var stages=_wsTags.stage;
+    var ids=await _resolveLibraryTaxonomy(caseTypes[0]||'',stages[0]||'',docTypes[0]||'');
+    var aiInstr=document.getElementById('wsAiInstructions').value.trim();
+    var notes=document.getElementById('wsNotes').value.trim();
+    var autoName=(docTypes[0]||'Precedent')+(caseTypes[0]?' - '+caseTypes[0]:'')+(stages[0]?' ('+stages[0]+')':'');
+    var desc=(notes||aiInstr||'').substring(0,500);
+    if(file){
+      var fd=new FormData();
+      fd.append('name',autoName);
+      fd.append('case_type_id',ids.caseTypeId||'');
+      fd.append('subcategory_id',ids.subcatId||'');
+      fd.append('doc_type_id',ids.docTypeId||'');
+      fd.append('jurisdiction',(document.getElementById('wsPrecJur')||{value:''}).value||'');
+      fd.append('description',desc);
+      fd.append('ai_instructions',aiInstr);
+      fd.append('is_own_style',_wsIsOwnStyle?'true':'false');
+      fd.append('context_relationship',(document.getElementById('wsPrecRelationship')||{value:''}).value||'');
+      fd.append('context_doc_type',(document.getElementById('wsContextDocType')||{value:''}).value||'');
+      var ctxSel=document.getElementById('wsContextDocSelect');
+      fd.append('context_doc_id',(ctxSel&&ctxSel.value)||'');
+      fd.append('context_description',(document.getElementById('wsContextDesc')||{value:''}).value||'');
+      var ctxFile=document.getElementById('wsContextFile');
+      if(ctxFile&&ctxFile.files[0]) fd.append('context_file',ctxFile.files[0]);
+      fd.append('file',file);
+      var r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd});
+      if(!r.ok) throw new Error(await r.text());
+      showToast('Precedent saved and indexed');
+    } else if(_wsEditingId){
+      await api('/api/library','POST',{action:'update_precedent_meta',id:_wsEditingId,
+        name:autoName,case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,
+        doc_type_id:ids.docTypeId||null,
+        jurisdiction:(document.getElementById('wsPrecJur')||{value:''}).value||null,
+        description:desc,is_own_style:_wsIsOwnStyle});
+      showToast('Precedent updated');
+    }
+    wsClear(); loadLibrary();
+  }catch(e){showToast('Save failed: '+e.message);console.error(e);}
+  finally{if(btn){btn.disabled=false;btn.textContent=_wsEditingId?'Update':'Save to Library';}}
+}
+
+// ---- ENHANCE DRAFT ----
+async function enhanceDraft(){
+  if(typeof _lastDraftResult === 'undefined' || !_lastDraftResult){showToast('No draft to enhance');return;}
+  if(!currentMatter){showToast('No matter selected');return;}
+  var btn=document.getElementById('enhanceBtn');
+  if(btn){btn.disabled=true;btn.textContent='Enhancing...';}
+  try{
+    var tok=localStorage.getItem('elj_token');
+    var jur=currentMatter.jurisdiction||'Bermuda';
+    var thirdPartyText='';
+    try{
+      var ctSel=document.getElementById('draftCaseType');
+      var ctId=ctSel?ctSel.value:'';
+      if(ctId){
+        var lr=await fetch('/api/library_fetch?action=getDraftContext&caseTypeId='+encodeURIComponent(ctId),
+          {headers:{'Authorization':'Bearer '+tok}});
+        if(lr.ok){
+          var ld=await lr.json();
+          var thirdPrecs=(ld.precedents||[]).filter(function(p){return !p.is_own_style;});
+          if(thirdPrecs.length){
+            var chunkResults=await Promise.all(thirdPrecs.slice(0,3).map(function(p){
+              return fetch('/api/library?type=prec_chunks&prec_id='+p.id,
+                {headers:{'Authorization':'Bearer '+tok}})
+                .then(function(r2){return r2.json();})
+                .then(function(d2){return{name:(p.name||p.title||'Precedent'),chunks:d2.data||[]};});
+            }));
+            thirdPartyText=chunkResults.map(function(r3){
+              return '=== THIRD PARTY PRECEDENT: '+r3.name+' ===
+'
+                +r3.chunks.map(function(c){return c.content;}).join('
+
+');
+            }).join('
+
+');
+          }
+        }
+      }
+    }catch(fetchErr){console.warn('Could not fetch precedents for enhance:',fetchErr);}
+    var prompt='You are a senior '+jur+' litigation counsel. Review the following draft:
+
+'
+      +_lastDraftResult+'
+
+';
+    if(thirdPartyText){
+      prompt+='For comparison, here are high-quality third party precedents of the same type:
+
+'
+        +thirdPartyText+'
+
+'
+        +'Please: (1) identify specific weaknesses compared to the precedents in structure, argument and language; '
+        +'(2) produce an enhanced version incorporating those improvements. '
+        +'Preserve all specific facts and arguments from the original draft.';
+    } else {
+      prompt+='Please review this draft critically, identify any weaknesses in structure, argument or '
+        +'language, and produce an enhanced version with those improvements applied.';
+    }
+    var res=await fetch('/api/tools',{method:'POST',
+      headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
+      body:JSON.stringify({tool:'draft',matterId:currentMatter.id,matterName:currentMatter.name,
+        matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',
+        jurisdiction:jur,anchorDocNames:[],instructions:prompt})});
+    if(!res.ok) throw new Error(await res.text());
+    var data=await res.json();
+    if(data.result){_lastDraftResult=data.result;_displayDraft(data.result);showToast('Draft enhanced');}
+    else throw new Error(data.error||'No result');
+  }catch(e){showToast('Enhance failed: '+e.message);console.error(e);}
+  finally{if(btn){btn.disabled=false;btn.textContent='Enhance';}}
 }
 // END DRAFTING JS
 </script>

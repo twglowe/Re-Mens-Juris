@@ -9,7 +9,6 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function getUser(req) {
-  // Try Bearer token first, then form field
   const authHeader = req.headers.authorization?.replace("Bearer ", "");
   if (authHeader) {
     const { data: { user }, error } = await supabase.auth.getUser(authHeader);
@@ -29,7 +28,6 @@ function chunkText(text, size = 1500, overlap = 150) {
 }
 
 async function extractPdfText(filePath) {
-  // Use same approach as upload.js — send PDF to Claude for text extraction
   const pdfBuffer = fs.readFileSync(filePath);
   const base64 = pdfBuffer.toString("base64");
   const response = await anthropic.messages.create({
@@ -53,7 +51,7 @@ export default async function handler(req, res) {
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-  // ── GET — fetch library data ──────────────────────────────────────────────
+  // ── GET ───────────────────────────────────────────────────────────────────
   if (req.method === "GET") {
     const { type } = req.query;
 
@@ -63,36 +61,30 @@ export default async function handler(req, res) {
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ data });
     }
-
     if (type === "subcats") {
       const { data, error } = await supabase.from("case_subcategories")
         .select("*").eq("user_id", user.id).order("name");
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ data });
     }
-
     if (type === "doc_types") {
       const { data, error } = await supabase.from("doc_types")
         .select("*").eq("user_id", user.id).order("name");
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ data });
     }
-
     if (type === "precedents") {
       const { data, error } = await supabase.from("precedent_docs")
         .select("*").eq("user_id", user.id).order("created_at", { ascending: false });
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ data });
     }
-
     if (type === "sections") {
       const { data, error } = await supabase.from("standard_sections")
         .select("*").eq("user_id", user.id).order("title");
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ data });
     }
-
-    // Fetch chunks for a precedent doc
     if (type === "prec_chunks") {
       const { prec_id } = req.query;
       const { data, error } = await supabase.from("precedent_chunks")
@@ -103,7 +95,6 @@ export default async function handler(req, res) {
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ data });
     }
-
     return res.status(400).json({ error: "Unknown type" });
   }
 
@@ -112,16 +103,11 @@ export default async function handler(req, res) {
     let body = await new Promise((resolve, reject) => {
       let raw = "";
       req.on("data", chunk => { raw += chunk; });
-      req.on("end", () => {
-        try { resolve(JSON.parse(raw)); }
-        catch(e) { reject(new Error("Invalid JSON body")); }
-      });
+      req.on("end", () => { try { resolve(JSON.parse(raw)); } catch(e) { reject(new Error("Invalid JSON")); } });
       req.on("error", reject);
     });
     const { action, id } = body;
-
     if (action === "delete_case_type") {
-      // Cascade deletes subcats, doc_types, precedent_docs (chunks cascade from there), sections
       await supabase.from("case_types").delete().eq("id", id).eq("user_id", user.id);
       return res.status(200).json({ success: true });
     }
@@ -138,32 +124,29 @@ export default async function handler(req, res) {
 
   // ── POST ──────────────────────────────────────────────────────────────────
   if (req.method === "POST") {
-    // Check content type to decide how to parse
     const contentType = req.headers["content-type"] || "";
 
     if (contentType.includes("multipart/form-data")) {
-      // Precedent document upload
       const form = formidable({ maxFileSize: 50 * 1024 * 1024 });
       const [fields, files] = await new Promise((resolve, reject) =>
         form.parse(req, (err, f, fi) => err ? reject(err) : resolve([f, fi]))
       );
 
-      const name              = Array.isArray(fields.name) ? fields.name[0] : fields.name;
-      const caseTypeId        = Array.isArray(fields.case_type_id) ? fields.case_type_id[0] : fields.case_type_id;
-      const subcatId          = Array.isArray(fields.subcategory_id) ? fields.subcategory_id[0] : fields.subcategory_id;
-      const docTypeId         = Array.isArray(fields.doc_type_id) ? fields.doc_type_id[0] : fields.doc_type_id;
-      const jurisdiction      = Array.isArray(fields.jurisdiction) ? fields.jurisdiction[0] : fields.jurisdiction;
-      const description       = Array.isArray(fields.description) ? fields.description[0] : fields.description;
-      const contextRelationship = Array.isArray(fields.context_relationship) ? fields.context_relationship[0] : (fields.context_relationship || '');
-      const contextDocId      = Array.isArray(fields.context_doc_id) ? fields.context_doc_id[0] : (fields.context_doc_id || '');
-      const contextDescription= Array.isArray(fields.context_description) ? fields.context_description[0] : (fields.context_description || '');
-      const file              = Array.isArray(files.file) ? files.file[0] : files.file;
-      const contextFile       = Array.isArray(files.context_file) ? files.context_file[0] : (files.context_file || null);
+      const name               = Array.isArray(fields.name) ? fields.name[0] : fields.name;
+      const caseTypeId         = Array.isArray(fields.case_type_id) ? fields.case_type_id[0] : fields.case_type_id;
+      const subcatId           = Array.isArray(fields.subcategory_id) ? fields.subcategory_id[0] : fields.subcategory_id;
+      const docTypeId          = Array.isArray(fields.doc_type_id) ? fields.doc_type_id[0] : fields.doc_type_id;
+      const jurisdiction       = Array.isArray(fields.jurisdiction) ? fields.jurisdiction[0] : fields.jurisdiction;
+      const description        = Array.isArray(fields.description) ? fields.description[0] : fields.description;
+      const contextRelationship= Array.isArray(fields.context_relationship) ? fields.context_relationship[0] : (fields.context_relationship || "");
+      const contextDocId       = Array.isArray(fields.context_doc_id) ? fields.context_doc_id[0] : (fields.context_doc_id || "");
+      const contextDescription = Array.isArray(fields.context_description) ? fields.context_description[0] : (fields.context_description || "");
+      const file               = Array.isArray(files.file) ? files.file[0] : files.file;
+      const contextFile        = Array.isArray(files.context_file) ? files.context_file[0] : (files.context_file || null);
 
       if (!file) return res.status(400).json({ error: "No file uploaded" });
 
-      // Insert precedent doc record
-      // If a context file was uploaded, insert it first as a precedent doc
+      // If a context file was uploaded, insert it first
       let resolvedContextDocId = contextDocId || null;
       if (contextFile) {
         const { data: ctxDoc } = await supabase.from("precedent_docs").insert({
@@ -200,51 +183,55 @@ export default async function handler(req, res) {
 
       if (precErr) return res.status(500).json({ error: precErr.message });
 
-      // Extract text and chunk it
       try {
         const text = await extractPdfText(file.filepath);
         const chunks = chunkText(text);
-        const chunkRows = chunks.map((c, i) => ({
-          precedent_doc_id: precDoc.id,
-          user_id: user.id,
-          content: c,
-          chunk_index: i,
-        }));
-        await supabase.from("precedent_chunks").insert(chunkRows);
-      } catch (e) {
-        console.error("Chunk error:", e);
-        // Don't fail — doc record exists, chunks can be retried
-      }
+        await supabase.from("precedent_chunks").insert(
+          chunks.map((c, i) => ({ precedent_doc_id: precDoc.id, user_id: user.id, content: c, chunk_index: i }))
+        );
+      } catch (e) { console.error("Chunk error:", e); }
 
       return res.status(201).json({ success: true, id: precDoc.id });
     }
 
-    // JSON body actions — bodyParser is disabled so read raw stream
+    // JSON body actions
     let body = await new Promise((resolve, reject) => {
       let raw = "";
       req.on("data", chunk => { raw += chunk; });
-      req.on("end", () => {
-        try { resolve(JSON.parse(raw)); }
-        catch(e) { reject(new Error("Invalid JSON body")); }
-      });
+      req.on("end", () => { try { resolve(JSON.parse(raw)); } catch(e) { reject(new Error("Invalid JSON body")); } });
       req.on("error", reject);
     });
     const { action } = body;
 
+    if (action === "create_case_type") {
+      const { name, jurisdiction, description, subcats = [], docTypes = [] } = body;
+      const { data: ct, error } = await supabase.from("case_types").insert({
+        user_id: user.id, name, jurisdiction: jurisdiction || null, description: description || null,
+      }).select("id").single();
+      if (error) return res.status(500).json({ error: error.message });
+      if (subcats.length) {
+        await supabase.from("case_subcategories").insert(
+          subcats.map(s => ({ user_id: user.id, case_type_id: ct.id, name: s }))
+        );
+      }
+      if (docTypes.length) {
+        await supabase.from("doc_types").insert(
+          docTypes.map(d => ({ user_id: user.id, case_type_id: ct.id, name: d }))
+        );
+      }
+      return res.status(201).json({ success: true, id: ct.id });
+    }
 
     if (action === "add_to_case_type") {
       const { id, name, jurisdiction, description, subcats = [], docTypes = [] } = body;
-      // Update case type name/description if changed
       await supabase.from("case_types").update({
         name, jurisdiction: jurisdiction || null, description: description || null,
       }).eq("id", id).eq("user_id", user.id);
-      // Insert new subcategories
       if (subcats.length) {
         await supabase.from("case_subcategories").insert(
           subcats.map(s => ({ user_id: user.id, case_type_id: id, name: s }))
         );
       }
-      // Insert new doc types
       if (docTypes.length) {
         await supabase.from("doc_types").insert(
           docTypes.map(d => ({ user_id: user.id, case_type_id: id, name: d }))
@@ -253,7 +240,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
-    
     if (action === "update_section") {
       const { id, title, content, case_type_id, subcategory_id, doc_type_id, notes } = body;
       const { error } = await supabase.from("standard_sections").update({
@@ -281,52 +267,11 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
-    if (action === "add_to_case_type") {
-      const { id, name, jurisdiction, description, subcats = [], docTypes = [] } = body;
-      await supabase.from("case_types").update({
-        name, jurisdiction: jurisdiction || null, description: description || null,
-      }).eq("id", id).eq("user_id", user.id);
-      if (subcats.length) {
-        await supabase.from("case_subcategories").insert(
-          subcats.map(s => ({ user_id: user.id, case_type_id: id, name: s }))
-        );
-      }
-      if (docTypes.length) {
-        await supabase.from("doc_types").insert(
-          docTypes.map(d => ({ user_id: user.id, case_type_id: id, name: d }))
-        );
-      }
-      return res.status(200).json({ success: true });
-    }
-
-        if (action === "create_case_type") {
-      const { name, jurisdiction, description, subcats = [], docTypes = [] } = body;
-      const { data: ct, error } = await supabase.from("case_types").insert({
-        user_id: user.id, name, jurisdiction: jurisdiction || null, description: description || null,
-      }).select("id").single();
-      if (error) return res.status(500).json({ error: error.message });
-
-      // Insert subcategories
-      if (subcats.length) {
-        await supabase.from("case_subcategories").insert(
-          subcats.map(s => ({ user_id: user.id, case_type_id: ct.id, name: s }))
-        );
-      }
-      // Insert doc types
-      if (docTypes.length) {
-        await supabase.from("doc_types").insert(
-          docTypes.map(d => ({ user_id: user.id, case_type_id: ct.id, name: d }))
-        );
-      }
-      return res.status(201).json({ success: true, id: ct.id });
-    }
-
     if (action === "create_section") {
       const { title, content, case_type_id, subcategory_id, doc_type_id, notes } = body;
       const { data: sec, error } = await supabase.from("standard_sections").insert({
         user_id: user.id,
-        title,
-        content,
+        title, content,
         case_type_id: case_type_id || null,
         subcategory_id: subcategory_id || null,
         doc_type_id: doc_type_id || null,
@@ -336,48 +281,46 @@ export default async function handler(req, res) {
       return res.status(201).json({ success: true, id: sec.id });
     }
 
-    // Fetch full chunks for a list of precedent IDs (called by tools.js)
     if (action === "get_precedent_chunks") {
       const { precedent_ids = [] } = body;
-      if (!precedent_ids.length) return res.status(200).json({ chunks: [] });
+      if (!precedent_ids.length) return res.status(200).json({ results: [] });
       const results = [];
       for (const pid of precedent_ids.slice(0, 5)) {
-        // Get precedent metadata
         const { data: prec } = await supabase.from("precedent_docs")
           .select("id, name, description, context_relationship, context_doc_id, context_description")
           .eq("id", pid).eq("user_id", user.id).single();
         if (!prec) continue;
-        // Get its chunks
         const { data: chunks } = await supabase.from("precedent_chunks")
           .select("content, chunk_index")
           .eq("precedent_doc_id", pid)
           .order("chunk_index").limit(60);
-        const text = (chunks || []).map(c => c.content).join("
-
-");
-        // Get context doc chunks if any
+        const text = (chunks || []).map(c => c.content).join("\n\n");
         let contextText = "";
         if (prec.context_doc_id) {
           const { data: ctxChunks } = await supabase.from("precedent_chunks")
             .select("content, chunk_index")
             .eq("precedent_doc_id", prec.context_doc_id)
             .order("chunk_index").limit(30);
-          contextText = (ctxChunks || []).map(c => c.content).join("
-
-");
+          contextText = (ctxChunks || []).map(c => c.content).join("\n\n");
         }
-        results.push({ id: prec.id, name: prec.name, text, contextRelationship: prec.context_relationship, contextText, contextDescription: prec.context_description });
+        results.push({
+          id: prec.id,
+          name: prec.name,
+          text,
+          contextRelationship: prec.context_relationship,
+          contextText,
+          contextDescription: prec.context_description,
+        });
       }
       return res.status(200).json({ results });
     }
 
-    // Fetch library content for drafting (called by tools.js)
     if (action === "get_for_draft") {
       const { case_type_id, subcategory_id, doc_type_id } = body;
       const [secRes, precRes] = await Promise.all([
         supabase.from("standard_sections").select("*")
           .eq("user_id", user.id)
-          .or(`case_type_id.eq.${case_type_id},case_type_id.is.null`)
+          .or("case_type_id.eq." + case_type_id + ",case_type_id.is.null")
           .limit(10),
         supabase.from("precedent_docs").select("id, name, description")
           .eq("user_id", user.id)
@@ -386,7 +329,6 @@ export default async function handler(req, res) {
       ]);
       const sections = secRes.data || [];
       const precedents = precRes.data || [];
-      // Fetch chunks for first precedent doc
       let precText = "";
       if (precedents.length) {
         const { data: chunks } = await supabase.from("precedent_chunks")

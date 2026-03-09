@@ -372,7 +372,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
     </div>
   </header>
   <div class="main-layout">
-    <div class="left-panel">
+    <div class="left-panel" id="leftPanel">
       <!-- Panel toggle -->
       <div class="panel-toggle-bar">
         <button class="panel-toggle active" id="toggleMatters" onclick="switchLeftPanel('matters')">Matters</button>
@@ -1254,11 +1254,13 @@ function switchLeftPanel(panel){
   document.getElementById('libraryPanel').style.display = panel==='library' ? 'flex' : 'none';
   document.getElementById('toggleMatters').classList.toggle('active', panel==='matters');
   document.getElementById('toggleLibrary').classList.toggle('active', panel==='library');
+  var lp  = document.getElementById('leftPanel');
   var lws = document.getElementById('libraryWorkspace');
   var rp  = document.getElementById('rightPanel');
   var chatArea = document.getElementById('chatMessages');
   var draftWs  = document.getElementById('ws-drafting');
   if(panel==='library'){
+    if(lp)  lp.style.display='none';
     if(lws) lws.style.display='flex';
     if(rp)  rp.style.display='none';
     if(chatArea) chatArea.style.display='none';
@@ -1267,6 +1269,7 @@ function switchLeftPanel(panel){
     _populateLibDataLists();
     _populateContextDocSelect();
   } else {
+    if(lp)  lp.style.display='';
     if(lws) lws.style.display='none';
     if(rp)  rp.style.display='';
     if(chatArea) chatArea.style.display='';
@@ -1631,7 +1634,7 @@ function viewLibItem(type,id){
   } else {
     var p=libraryData.precedents.find(function(x){return x.id===id;});if(!p)return;
     _editingLibId=id;setLibEntryType('precedent');
-    document.getElementById('libPrecName').value=p.name||'';
+    (document.getElementById('libPrecName')||{value:''}).value=p.name||'';
     document.getElementById('libSecNotes').value=p.description||'';
     var ct=libraryData.caseTypes.find(function(x){return x.id===p.case_type_id;});
     if(ct)_addTagDirect('libCaseTypeTags',ct.name);

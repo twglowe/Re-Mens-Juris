@@ -336,6 +336,8 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .ws-upload-btn{display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem 1rem;border:2px dashed var(--border);border-radius:7px;cursor:pointer;color:var(--blue);font-weight:600;font-size:.85rem;background:var(--off-white)}
 .ws-upload-sm{padding:.4rem .75rem;font-size:.78rem;justify-content:flex-start}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 </head>
 <body>
 <div class="login-screen" id="loginScreen">
@@ -438,22 +440,23 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
           <button class="ws-type-btn" id="wsTypeSec" onclick="wsSetType('section')">Standard Section</button>
           <button class="btn-secondary" onclick="wsClear()" style="font-size:.78rem;padding:.28rem .65rem;margin-left:.25rem">Clear</button>
         </div>
-        <div id="wsUploadSector" style="background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.85rem 1rem">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
-            <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase">Document Upload</div>
-            <div style="display:flex;gap:.4rem;align-items:center">
-              <span style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Source:</span>
-              <button class="ws-style-btn active" id="wsStyleOwn" onclick="wsSetStyle('own')">My drafting</button>
-              <button class="ws-style-btn" id="wsStyleThird" onclick="wsSetStyle('third')">Third party</button>
-            </div>
+        <div id="wsUploadSector" style="background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.5rem .85rem">
+          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+            <label class="ws-upload-btn" for="wsPrecFile" style="flex:1;min-width:160px;padding:.38rem .7rem;font-size:.82rem;justify-content:flex-start"><span>&#128206;</span><span id="wsUploadLabel">Choose PDF to upload</span></label>
+            <input type="file" id="wsPrecFile" accept=".pdf" style="display:none" onchange="wsOnFile(this)">
+            <span style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Source:</span>
+            <button class="ws-style-btn active" id="wsStyleOwn" onclick="wsSetStyle('own')">My drafting</button>
+            <button class="ws-style-btn" id="wsStyleThird" onclick="wsSetStyle('third')">Third party</button>
           </div>
-          <label class="ws-upload-btn" for="wsPrecFile"><span style="font-size:1.4rem">&#128206;</span><span id="wsUploadLabel">Choose PDF to upload</span></label>
-          <input type="file" id="wsPrecFile" accept=".pdf" style="display:none" onchange="wsOnFile(this)">
         </div>
         <div id="wsSectionSector" style="display:none;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.85rem 1rem">
-          <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.6rem">Section Text</div>
-          <input type="text" class="ws-input" id="wsSecTitle" placeholder="Section title" style="width:100%;margin-bottom:.6rem">
-          <textarea class="ws-input" id="wsSecContent" rows="6" placeholder="Paste or type the section text here..." style="width:100%;resize:vertical"></textarea>
+          <input type="text" class="ws-input" id="wsSecTitle" placeholder="Section title" style="width:100%;margin-bottom:.5rem">
+          <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.4rem;flex-wrap:wrap">
+            <label class="ws-upload-btn ws-upload-sm" for="wsSecFile" style="flex:none"><span>&#128206;</span><span id="wsSecFileLabel">Upload PDF to extract text</span></label>
+            <input type="file" id="wsSecFile" accept=".pdf" style="display:none" onchange="wsLoadSecFile(this)">
+            <span style="font-size:.75rem;color:var(--text-faint)">or paste below</span>
+          </div>
+          <textarea class="ws-input" id="wsSecContent" rows="6" placeholder="Paste section text here, or upload a PDF above to extract it..." style="width:100%;resize:vertical"></textarea>
         </div>
         <div style="display:flex;gap:.75rem;flex-wrap:wrap">
           <div style="flex:1;min-width:160px;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.75rem .85rem">
@@ -826,7 +829,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 <!-- Library: View precedent/section detail -->
 <div class="overlay" id="libDetailModal" style="display:none">
   <div class="modal" style="max-width:600px;width:95%">
-    <h3 id="libDetailTitle"></h3>
+    <div id="libDetailTitle" style="font-size:.95rem;font-weight:700;margin-bottom:.4rem;color:var(--text-dark)"></div>
     <div id="libDetailBody" style="max-height:400px;overflow-y:auto;font-size:.92rem;line-height:1.8;white-space:pre-wrap"></div>
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeModal('libDetailModal')">Close</button>
@@ -2275,6 +2278,28 @@ function wsSetStyle(s){
 function wsOnFile(inp){
   var lbl=document.getElementById('wsUploadLabel');
   if(lbl&&inp.files[0]) lbl.textContent=inp.files[0].name;
+}
+
+function wsLoadSecFile(inp){
+  if(!inp.files||!inp.files[0]) return;
+  var lbl=document.getElementById('wsSecFileLabel');
+  var file=inp.files[0];
+  if(lbl) lbl.textContent=file.name;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var arr=new Uint8Array(e.target.result);
+    if(typeof pdfjsLib==='undefined'){showToast('PDF.js not loaded — paste text directly');return;}
+    pdfjsLib.getDocument({data:arr}).promise.then(function(pdf){
+      var nums=[];for(var i=1;i<=pdf.numPages;i++) nums.push(i);
+      return Promise.all(nums.map(function(n){return pdf.getPage(n).then(function(pg){return pg.getTextContent();});}));
+    }).then(function(contents){
+      var text=contents.map(function(c){return c.items.map(function(it){return it.str;}).join(' ');}).join('\n\n');
+      var ta=document.getElementById('wsSecContent');
+      if(ta) ta.value=text;
+      showToast('Text extracted');
+    }).catch(function(err){showToast('Extraction failed: '+err.message);});
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 function wsOnContextFile(inp){

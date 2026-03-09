@@ -280,6 +280,20 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .draft-revise-bar{border-top:1.5px solid var(--border);padding:.75rem 1rem;background:var(--off-white);display:flex;flex-direction:column;gap:.5rem;}
 .draft-revise-ta{width:100%;box-sizing:border-box;resize:vertical;min-height:72px;}
 .draft-revise-btns{display:flex;gap:.5rem;flex-wrap:wrap;}
+.lib-type-btn{padding:.35rem .9rem;font-size:.82rem;font-weight:600;border:1.5px solid var(--border);border-radius:6px;background:var(--off-white);color:var(--text-faint);cursor:pointer;}
+.lib-type-btn.active{background:var(--navy-mid);color:#fff;border-color:var(--navy-mid);}
+.lib-sector{background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:1rem 1.25rem;}
+.lib-sector-head{font-size:.72rem;font-weight:800;color:var(--navy-mid);letter-spacing:.1em;text-transform:uppercase;margin-bottom:.75rem;}
+.lib-text-input{padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:5px;font-size:.85rem;font-family:inherit;background:var(--off-white);color:var(--text-dark);box-sizing:border-box;}
+.lib-text-input:focus{outline:none;border-color:var(--blue-light);}
+.lib-tag-row{display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;}
+.lib-add-tag-btn{padding:.35rem .8rem;font-size:.8rem;font-weight:700;border:1.5px solid var(--blue-light);border-radius:5px;background:var(--blue-pale);color:var(--blue);cursor:pointer;white-space:nowrap;}
+.lib-tags{display:flex;flex-wrap:wrap;gap:.35rem;min-height:1.5rem;}
+.lib-tag{display:inline-flex;align-items:center;gap:.3rem;background:var(--blue-pale);border:1px solid var(--blue-light);border-radius:12px;padding:.2rem .6rem;font-size:.78rem;color:var(--blue);font-weight:600;}
+.lib-tag button{background:none;border:none;color:var(--blue);cursor:pointer;padding:0;font-size:.9rem;line-height:1;font-weight:700;}
+.lib-upload-btn{display:inline-flex;align-items:center;justify-content:center;gap:.6rem;background:var(--blue);color:#fff;border:none;border-radius:8px;padding:.75rem 1.5rem;font-size:.95rem;font-weight:700;cursor:pointer;letter-spacing:.02em;transition:background .15s;width:100%;max-width:480px;}
+.lib-upload-btn:hover{background:var(--navy-mid);}
+.lib-upload-sm{padding:.4rem 1rem;font-size:.82rem;max-width:none;width:auto;border-radius:6px;}
 .upload-zone{margin:.55rem .85rem;border:2px dashed var(--border-strong);border-radius:8px;padding:1.2rem .85rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;flex-shrink:0}
 .upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue-light);background:var(--blue-faint)}
 .upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
@@ -329,7 +343,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 <div class="login-screen" id="loginScreen">
   <div class="login-box">
     <div class="login-logo"><span style="font-size:2.8rem;vertical-align:middle;margin-right:.2rem">⚖</span> Ex Libris Juris</div>
-    <div class="login-sub">Offshore Legal Analysis · Bermuda · Cayman · BVI</div>
+    <div class="login-sub">Offshore Legal Analysis</div>
     <div class="login-err" id="loginErr"></div>
     <label class="f-label">Email</label>
     <input class="f-input" type="email" id="loginEmail" placeholder="your@email.com" autocomplete="email">
@@ -347,11 +361,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
     <div class="hdr">
       <div class="logo"><span style="font-size:1.9rem;vertical-align:middle;margin-right:.25rem">⚖</span> Ex Libris Juris <em>Offshore Legal Analysis</em></div>
       <div class="hdr-right">
-        <div class="jur-tabs">
-          <button class="jur-tab active" data-jur="Bermuda">Bermuda</button>
-          <button class="jur-tab" data-jur="Cayman Islands">Cayman</button>
-          <button class="jur-tab" data-jur="British Virgin Islands">BVI</button>
-        </div>
+        
         <div class="user-pill" id="userPill" onclick="logout()">
           <span id="userLabel">—</span>
           <span style="opacity:.5;font-size:.72rem">Sign out</span>
@@ -376,25 +386,25 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <div class="matters-scroll" id="mattersList"><div class="empty-state">No matters yet.<br>Create one to begin.</div></div>
       </div>
 
-      <!-- Library panel -->
+      <!-- Library panel (list) -->
       <div id="libraryPanel" style="display:none;flex:1;flex-direction:column;overflow:hidden">
-        <div class="panel-head">
-          <span class="panel-head-title">Precedent Library</span>
-          <button class="btn-add" onclick="openLibraryModal()">+ New</button>
+        <div class="panel-head" style="padding:.5rem .75rem">
+          <span class="panel-head-title">Library</span>
         </div>
-        <!-- Filter bar -->
         <div class="lib-filter-bar">
           <select class="lib-filter" id="libFilterType" onchange="renderLibrary()">
             <option value="">All case types</option>
           </select>
           <select class="lib-filter" id="libFilterSub" onchange="renderLibrary()">
-            <option value="">All sub-categories</option>
+            <option value="">All stages</option>
           </select>
           <select class="lib-filter" id="libFilterDoc" onchange="renderLibrary()">
             <option value="">All doc types</option>
           </select>
         </div>
-        <div class="matters-scroll" id="libraryList"><div class="empty-state">No library entries yet.<br>Add case types to begin.</div></div>
+        <div class="matters-scroll" id="libraryList">
+          <div class="empty-state">No library entries yet.</div>
+        </div>
       </div>
     </div>
     <div class="centre-panel">
@@ -419,6 +429,149 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <button class="tool-btn" onclick="openTool('citations')">📚 Citations</button>
         <button class="tool-btn" onclick="openTool('briefing')">📋 Briefing Note</button>
       </div>
+      <!-- Library workspace — shown when Library tab is active -->
+      <div id="libraryWorkspace" style="display:none;flex:1;flex-direction:column;overflow-y:auto;padding:1.25rem;gap:1rem;background:var(--off-white)">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:.25rem">
+          <div>
+            <div style="font-size:1.15rem;font-weight:700;color:var(--navy-mid)">Precedent Library</div>
+            <div style="font-size:.8rem;color:var(--text-faint);margin-top:.2rem">Add precedents and standard sections. The AI will learn from these when drafting.</div>
+          </div>
+          <div style="display:flex;gap:.5rem">
+            <button class="lib-type-btn active" id="libTypePrec" onclick="setLibEntryType('precedent')">Precedent Doc</button>
+            <button class="lib-type-btn" id="libTypeSec" onclick="setLibEntryType('section')">Standard Section</button>
+          </div>
+        </div>
+
+        <!-- Upload button (precedent only) -->
+        <div id="libUploadSector" class="lib-sector">
+          <div class="lib-sector-head">DOCUMENT UPLOAD</div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:.75rem">
+            <label id="libUploadBtn" class="lib-upload-btn" for="libPrecFile">
+              <span style="font-size:1.5rem">📎</span>
+              <span id="libUploadLabel">Choose PDF to upload</span>
+            </label>
+            <input type="file" id="libPrecFile" accept=".pdf" style="display:none" onchange="onLibFileChosen(this)">
+            <input type="text" class="lib-text-input" id="libPrecName" placeholder="Document name *" style="width:100%;max-width:480px">
+          </div>
+        </div>
+
+        <!-- Section text (section only) -->
+        <div id="libSectionSector" class="lib-sector" style="display:none">
+          <div class="lib-sector-head">SECTION TEXT</div>
+          <input type="text" class="lib-text-input" id="libSecTitle" placeholder="Section title *" style="width:100%;margin-bottom:.6rem">
+          <textarea class="lib-text-input" id="libSecContent" rows="7" placeholder="Paste or type the standard section text here..." style="width:100%;resize:vertical"></textarea>
+        </div>
+
+        <!-- Sector 1: Case Type -->
+        <div class="lib-sector">
+          <div class="lib-sector-head">1 &nbsp; CASE TYPE</div>
+          <div class="lib-tag-row">
+            <input type="text" class="lib-text-input" id="libCaseTypeInput" placeholder="e.g. Winding Up, Shareholder Dispute" list="libCaseTypeList" autocomplete="off" style="flex:1">
+            <datalist id="libCaseTypeList"></datalist>
+            <button class="lib-add-tag-btn" onclick="addLibTag('caseType')">Add</button>
+          </div>
+          <div id="libCaseTypeTags" class="lib-tags"></div>
+        </div>
+
+        <!-- Sector 2: Procedural Stage -->
+        <div class="lib-sector">
+          <div class="lib-sector-head">2 &nbsp; PROCEDURAL STAGE</div>
+          <div class="lib-tag-row">
+            <input type="text" class="lib-text-input" id="libStageInput" placeholder="e.g. Trial, Interlocutory Application, Appeal" list="libStageList" autocomplete="off" style="flex:1">
+            <datalist id="libStageList">
+              <option>Trial</option>
+              <option>Interlocutory Application</option>
+              <option>Appeal</option>
+              <option>Arbitration</option>
+              <option>Winding Up Petition</option>
+              <option>Summary Judgment</option>
+              <option>Strike Out</option>
+              <option>Discovery</option>
+            </datalist>
+            <button class="lib-add-tag-btn" onclick="addLibTag('stage')">Add</button>
+          </div>
+          <div id="libStageTags" class="lib-tags"></div>
+        </div>
+
+        <!-- Sector 3: Doc Type -->
+        <div class="lib-sector">
+          <div class="lib-sector-head">3 &nbsp; DOCUMENT TYPE</div>
+          <div class="lib-tag-row">
+            <input type="text" class="lib-text-input" id="libDocTypeInput" placeholder="e.g. Skeleton Argument, Defence, Advice" list="libDocTypeList" autocomplete="off" style="flex:1">
+            <datalist id="libDocTypeList">
+              <option>Skeleton Argument</option>
+              <option>Pleading - Statement of Claim</option>
+              <option>Pleading - Defence</option>
+              <option>Pleading - Reply</option>
+              <option>Memo of Grounds of Appeal</option>
+              <option>Petition</option>
+              <option>Originating Summons</option>
+              <option>Affidavit</option>
+              <option>Written Submissions</option>
+              <option>Chronology</option>
+              <option>Cast List</option>
+              <option>Advice</option>
+              <option>Expert Opinion</option>
+            </datalist>
+            <button class="lib-add-tag-btn" onclick="addLibTag('docType')">Add</button>
+          </div>
+          <div id="libDocTypeTags" class="lib-tags"></div>
+          <div style="margin-top:.65rem;display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+            <label style="font-size:.78rem;color:var(--text-faint);font-weight:600">Jurisdiction</label>
+            <select class="lib-text-input" id="libPrecJur" style="width:auto;padding:.3rem .6rem">
+              <option value="">Any</option>
+              <option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Sector 4: Contextual Document -->
+        <div class="lib-sector">
+          <div class="lib-sector-head">4 &nbsp; CONTEXTUAL DOCUMENT</div>
+          <div style="font-size:.78rem;color:var(--text-faint);margin-bottom:.6rem">Upload the document this precedent responds to or relates to (e.g. the Statement of Claim that the Defence responds to, or the Judgment the Skeleton appeals from).</div>
+          <div style="display:flex;gap:.75rem;align-items:flex-start;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <label style="font-size:.72rem;font-weight:700;color:var(--text-faint);display:block;margin-bottom:.3rem">Select existing library doc</label>
+              <select class="lib-text-input" id="libContextDocSelect" style="width:100%">
+                <option value="">— none —</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:200px">
+              <label style="font-size:.72rem;font-weight:700;color:var(--text-faint);display:block;margin-bottom:.3rem">Or upload new context PDF</label>
+              <label class="lib-upload-btn lib-upload-sm" for="libContextFile">
+                <span id="libContextFileLabel">Choose PDF</span>
+              </label>
+              <input type="file" id="libContextFile" accept=".pdf" style="display:none" onchange="document.getElementById('libContextFileLabel').textContent=this.files[0]?this.files[0].name:'Choose PDF'">
+            </div>
+          </div>
+          <div style="margin-top:.6rem">
+            <label style="font-size:.72rem;font-weight:700;color:var(--text-faint);display:block;margin-bottom:.3rem">Relationship (describe how this precedent relates to the context doc)</label>
+            <select class="lib-text-input" id="libPrecRelationship" style="width:100%;margin-bottom:.4rem">
+              <option value="">— none —</option>
+              <option value="responds_to">Responds to (Defence responds to Statement of Claim)</option>
+              <option value="replies_to">Replies to (Reply responds to Defence)</option>
+              <option value="appeals">Appeals from (Skeleton responds to Judgment)</option>
+              <option value="supports">Supports / relies on</option>
+              <option value="opposes">Opposes</option>
+            </select>
+            <input type="text" class="lib-text-input" id="libContextDesc" placeholder="Brief description of context doc (optional)" style="width:100%">
+          </div>
+        </div>
+
+        <!-- Sector 5: AI Instructions -->
+        <div class="lib-sector">
+          <div class="lib-sector-head">5 &nbsp; INSTRUCTIONS FOR AI</div>
+          <div style="font-size:.78rem;color:var(--text-faint);margin-bottom:.5rem">Tell the AI what to understand about this document — its purpose, approach, particular strengths, or how it should inform future drafts.</div>
+          <textarea class="lib-text-input" id="libAiInstructions" rows="4" placeholder="e.g. This skeleton was successful at trial. It takes a narrow limitation point before addressing quantum. The structure should be followed for similar matters." style="width:100%;resize:vertical"></textarea>
+          <input type="text" class="lib-text-input" id="libSecNotes" placeholder="Short notes (optional — shown in library list)" style="width:100%;margin-top:.5rem">
+        </div>
+
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;padding-bottom:1rem">
+          <button class="btn-secondary" onclick="clearLibForm()">Clear</button>
+          <button class="btn-primary" id="libSaveBtn" onclick="saveLibraryEntry()">Save to Library</button>
+        </div>
+      </div>
+
       <div class="progress-bar-wrap" id="progressWrap">
         <div class="progress-bar-label" id="progressLabel">Analysing documents…</div>
         <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
@@ -1082,7 +1235,23 @@ function switchLeftPanel(panel){
   document.getElementById('libraryPanel').style.display = panel==='library' ? 'flex' : 'none';
   document.getElementById('toggleMatters').classList.toggle('active', panel==='matters');
   document.getElementById('toggleLibrary').classList.toggle('active', panel==='library');
-  if(panel==='library') loadLibrary();
+  var lws = document.getElementById('libraryWorkspace');
+  var rp  = document.getElementById('rightPanel');
+  var chatArea = document.getElementById('chatMessages');
+  var draftWs  = document.getElementById('ws-drafting');
+  if(panel==='library'){
+    if(lws) lws.style.display='flex';
+    if(rp)  rp.style.display='none';
+    if(chatArea) chatArea.style.display='none';
+    if(draftWs)  draftWs.style.display='none';
+    loadLibrary();
+    _populateLibDataLists();
+    _populateContextDocSelect();
+  } else {
+    if(lws) lws.style.display='none';
+    if(rp)  rp.style.display='';
+    if(chatArea) chatArea.style.display='';
+  }
 }
 
 async function loadLibrary(){
@@ -1206,6 +1375,13 @@ function _populateLibDataLists(){
   var ctNames=libraryData.caseTypes.map(function(ct){return ct.name;});
   var subNames=libraryData.subcats.map(function(s){return s.name;}).filter(function(v,i,a){return a.indexOf(v)===i;});
   var dtNames=libraryData.docTypes.map(function(d){return d.name;}).filter(function(v,i,a){return a.indexOf(v)===i;});
+  var ctDl=document.getElementById('libCaseTypeList');
+  if(ctDl)ctDl.innerHTML=ctNames.map(function(n){return '<option value="'+n+'">';}).join('');
+  var stDl=document.getElementById('libStageList');
+  if(stDl)stDl.innerHTML=subNames.map(function(n){return '<option value="'+n+'">';}).join('');
+  var dtDl=document.getElementById('libDocTypeList');
+  if(dtDl)dtDl.innerHTML=dtNames.map(function(n){return '<option value="'+n+'">';}).join('');
+  // Legacy datalists for modal (may still exist)
   ['libPrecCaseTypeList','libSecCaseTypeList'].forEach(function(id){var dl=document.getElementById(id);if(!dl)return;dl.innerHTML=ctNames.map(function(n){return '<option value="'+n+'">';}).join('');});
   ['libPrecSubcatList','libSecSubcatList'].forEach(function(id){var dl=document.getElementById(id);if(!dl)return;dl.innerHTML=subNames.map(function(n){return '<option value="'+n+'">';}).join('');});
   ['libPrecDocTypeList','libSecDocTypeList'].forEach(function(id){var dl=document.getElementById(id);if(!dl)return;dl.innerHTML=dtNames.map(function(n){return '<option value="'+n+'">';}).join('');});
@@ -1263,56 +1439,114 @@ function updateSecSubcats(){
   document.getElementById('libSecDocType').innerHTML='<option value="">Any</option>'+docs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
 }
 
+// ── LIBRARY ENTRY TYPE ───────────────────────────────────────────────────────
+var _libEntryType = 'precedent';
+function setLibEntryType(type){
+  _libEntryType = type;
+  document.getElementById('libTypePrec').classList.toggle('active', type==='precedent');
+  document.getElementById('libTypeSec').classList.toggle('active', type==='section');
+  document.getElementById('libUploadSector').style.display  = type==='precedent' ? '' : 'none';
+  document.getElementById('libSectionSector').style.display = type==='section'   ? '' : 'none';
+  document.getElementById('libSaveBtn').textContent = 'Save to Library';
+  _editingLibId = null;
+}
+function clearLibForm(){
+  ['libPrecName','libCaseTypeInput','libStageInput','libDocTypeInput',
+   'libContextDesc','libAiInstructions','libSecNotes','libSecTitle','libSecContent'].forEach(function(id){
+    var el=document.getElementById(id);if(el)el.value='';
+  });
+  ['libCaseTypeTags','libStageTags','libDocTypeTags'].forEach(function(id){
+    var el=document.getElementById(id);if(el)el.innerHTML='';
+  });
+  var pf=document.getElementById('libPrecFile');if(pf)pf.value='';
+  document.getElementById('libUploadLabel').textContent='Choose PDF to upload';
+  var cf=document.getElementById('libContextFile');if(cf)cf.value='';
+  document.getElementById('libContextFileLabel').textContent='Choose PDF';
+  var rs=document.getElementById('libPrecRelationship');if(rs)rs.selectedIndex=0;
+  var js=document.getElementById('libPrecJur');if(js)js.selectedIndex=0;
+  var cs=document.getElementById('libContextDocSelect');if(cs)cs.selectedIndex=0;
+  document.getElementById('libSaveBtn').textContent='Save to Library';
+  _editingLibId=null;
+}
+function onLibFileChosen(inp){
+  var label=document.getElementById('libUploadLabel');
+  if(inp.files[0])label.textContent=inp.files[0].name;
+  if(inp.files[0]&&!document.getElementById('libPrecName').value){
+    var n=inp.files[0].name.replace(/\.pdf$/i,'');
+    document.getElementById('libPrecName').value=n;
+  }
+}
+function addLibTag(sector){
+  var inputId={caseType:'libCaseTypeInput',stage:'libStageInput',docType:'libDocTypeInput'}[sector];
+  var tagsId ={caseType:'libCaseTypeTags', stage:'libStageTags', docType:'libDocTypeTags'}[sector];
+  var inp=document.getElementById(inputId);var val=inp?inp.value.trim():'';
+  if(!val)return;
+  var container=document.getElementById(tagsId);if(!container)return;
+  var existing=Array.from(container.querySelectorAll('.lib-tag')).map(function(t){return t.getAttribute('data-v').toLowerCase();});
+  if(existing.indexOf(val.toLowerCase())!==-1){inp.value='';return;}
+  var tag=document.createElement('span');tag.className='lib-tag';tag.setAttribute('data-v',val);
+  tag.innerHTML=val+' <button onclick="this.parentElement.remove()" title="Remove">x</button>';
+  container.appendChild(tag);
+  inp.value='';
+}
+function _getLibTags(tagsId){
+  return Array.from(document.getElementById(tagsId).querySelectorAll('.lib-tag')).map(function(t){return t.getAttribute('data-v');});
+}
 async function saveLibraryEntry(){
-  const btn=document.getElementById('libSaveBtn');
+  var btn=document.getElementById('libSaveBtn');
   btn.disabled=true;btn.textContent='Saving...';
   try{
     var tok=localStorage.getItem('elj_token');
-    if(activeLibTab==='precedent'){
-      const name=document.getElementById('libPrecName').value.trim();
-      const file=document.getElementById('libPrecFile').files[0];
+    if(_libEntryType==='precedent'){
+      var name=document.getElementById('libPrecName').value.trim();
+      var file=document.getElementById('libPrecFile').files[0];
       if(!name){showToast('Document name required');return;}
       if(!file&&!_editingLibId){showToast('Please upload a PDF document');return;}
-      const ids=await _resolveLibraryTaxonomy(
-        document.getElementById('libPrecCaseTypeInput').value.trim(),
-        document.getElementById('libPrecSubcatInput').value.trim(),
-        document.getElementById('libPrecDocTypeInput').value.trim());
+      var caseTypes=_getLibTags('libCaseTypeTags');
+      var stages   =_getLibTags('libStageTags');
+      var docTypes =_getLibTags('libDocTypeTags');
+      // Resolve first tag of each to IDs (create if needed)
+      var ids=await _resolveLibraryTaxonomy(caseTypes[0]||'',stages[0]||'',docTypes[0]||'');
+      var aiInstr=document.getElementById('libAiInstructions').value.trim();
+      var desc=(document.getElementById('libSecNotes').value.trim()||aiInstr||'').substring(0,500);
       if(file){
-        const fd=new FormData();
+        var fd=new FormData();
         fd.append('name',name);
         fd.append('case_type_id',ids.caseTypeId||'');
         fd.append('subcategory_id',ids.subcatId||'');
         fd.append('doc_type_id',ids.docTypeId||'');
         fd.append('jurisdiction',document.getElementById('libPrecJur').value||'');
-        fd.append('description',document.getElementById('libPrecDesc').value||'');
+        fd.append('description',desc);
         fd.append('context_relationship',document.getElementById('libPrecRelationship').value||'');
         var ctxSel=document.getElementById('libContextDocSelect');
         fd.append('context_doc_id',(ctxSel&&ctxSel.value)||'');
         fd.append('context_description',document.getElementById('libContextDesc').value||'');
+        fd.append('ai_instructions',aiInstr);
         var ctxFile=document.getElementById('libContextFile');
         if(ctxFile&&ctxFile.files[0])fd.append('context_file',ctxFile.files[0]);
         fd.append('file',file);
-        if(_editingLibId)fd.append('replace_id',_editingLibId);
-        const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd});
+        var r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd});
         if(!r.ok)throw new Error(await r.text());
         showToast('Precedent saved and indexed');
       } else if(_editingLibId){
         await api('/api/library','POST',{action:'update_precedent_meta',id:_editingLibId,name,
           case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,doc_type_id:ids.docTypeId||null,
-          jurisdiction:document.getElementById('libPrecJur').value||null,
-          description:document.getElementById('libPrecDesc').value||null});
+          jurisdiction:document.getElementById('libPrecJur').value||null,description:desc});
         showToast('Precedent updated');
       }
-    } else if(activeLibTab==='section'){
-      const title=document.getElementById('libSecTitle').value.trim();
-      const content=document.getElementById('libSecContent').value.trim();
+    } else {
+      var title=document.getElementById('libSecTitle').value.trim();
+      var content=document.getElementById('libSecContent').value.trim();
       if(!title||!content){showToast('Title and section text required');return;}
-      const ids=await _resolveLibraryTaxonomy(
-        document.getElementById('libSecCaseTypeInput').value.trim(),
-        document.getElementById('libSecSubcatInput').value.trim(),
-        document.getElementById('libSecDocTypeInput').value.trim());
-      const payload={title,content,case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,
-        doc_type_id:ids.docTypeId||null,notes:document.getElementById('libSecNotes').value||''};
+      var caseTypes=_getLibTags('libCaseTypeTags');
+      var stages   =_getLibTags('libStageTags');
+      var docTypes =_getLibTags('libDocTypeTags');
+      var ids=await _resolveLibraryTaxonomy(caseTypes[0]||'',stages[0]||'',docTypes[0]||'');
+      var notes=document.getElementById('libSecNotes').value.trim();
+      var aiInstr=document.getElementById('libAiInstructions').value.trim();
+      var payload={title,content,
+        case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,doc_type_id:ids.docTypeId||null,
+        notes:(notes||(aiInstr?'AI: '+aiInstr:'')||'')};
       if(_editingLibId){
         await api('/api/library','POST',{action:'update_section',id:_editingLibId,...payload});
         showToast('Section updated');
@@ -1322,9 +1556,9 @@ async function saveLibraryEntry(){
       }
     }
     await loadLibrary();
-    closeModal('libraryModal');
+    clearLibForm();
   }catch(e){showToast('Error: '+e.message);}
-  finally{btn.disabled=false;btn.textContent='Save';}
+  finally{btn.disabled=false;btn.textContent='Save to Library';}
 }
 async function _resolveLibraryTaxonomy(caseTypeName,subcatName,docTypeName){
   let caseTypeId=null,subcatId=null,docTypeId=null;
@@ -1352,39 +1586,45 @@ async function _resolveLibraryTaxonomy(caseTypeName,subcatName,docTypeName){
   return{caseTypeId,subcatId,docTypeId};
 }
 function viewLibItem(type,id){
+  // Switch to library tab
+  switchLeftPanel('library');
   if(type==='sec'){
-    const s=libraryData.sections.find(function(x){return x.id===id;});if(!s)return;
-    _editingLibId=id;_editingLibType='section';
-    document.getElementById('libModalTitle').textContent='Edit Section';
-    _populateLibDataLists();
+    var s=libraryData.sections.find(function(x){return x.id===id;});if(!s)return;
+    _editingLibId=id;setLibEntryType('section');
     document.getElementById('libSecTitle').value=s.title||'';
     document.getElementById('libSecContent').value=s.content||'';
     document.getElementById('libSecNotes').value=s.notes||'';
-    const ct=libraryData.caseTypes.find(function(x){return x.id===s.case_type_id;});
-    document.getElementById('libSecCaseTypeInput').value=ct?ct.name:'';
-    const sub=libraryData.subcats.find(function(x){return x.id===s.subcategory_id;});
-    document.getElementById('libSecSubcatInput').value=sub?sub.name:'';
-    const dt=libraryData.docTypes.find(function(x){return x.id===s.doc_type_id;});
-    document.getElementById('libSecDocTypeInput').value=dt?dt.name:'';
-    switchLibTab('section');document.getElementById('libraryModal').style.display='flex';
+    var ct=libraryData.caseTypes.find(function(x){return x.id===s.case_type_id;});
+    if(ct)_addTagDirect('libCaseTypeTags',ct.name);
+    var sub=libraryData.subcats.find(function(x){return x.id===s.subcategory_id;});
+    if(sub)_addTagDirect('libStageTags',sub.name);
+    var dt=libraryData.docTypes.find(function(x){return x.id===s.doc_type_id;});
+    if(dt)_addTagDirect('libDocTypeTags',dt.name);
+    document.getElementById('libSaveBtn').textContent='Update Section';
   } else {
-    const p=libraryData.precedents.find(function(x){return x.id===id;});if(!p)return;
-    _editingLibId=id;_editingLibType='precedent';
-    document.getElementById('libModalTitle').textContent='Edit Precedent';
-    _populateLibDataLists();_populateContextDocSelect();
+    var p=libraryData.precedents.find(function(x){return x.id===id;});if(!p)return;
+    _editingLibId=id;setLibEntryType('precedent');
     document.getElementById('libPrecName').value=p.name||'';
-    document.getElementById('libPrecDesc').value=p.description||'';
-    const ct=libraryData.caseTypes.find(function(x){return x.id===p.case_type_id;});
-    document.getElementById('libPrecCaseTypeInput').value=ct?ct.name:'';
-    const sub=libraryData.subcats.find(function(x){return x.id===p.subcategory_id;});
-    document.getElementById('libPrecSubcatInput').value=sub?sub.name:'';
-    const dt=libraryData.docTypes.find(function(x){return x.id===p.doc_type_id;});
-    document.getElementById('libPrecDocTypeInput').value=dt?dt.name:'';
-    const jurSel=document.getElementById('libPrecJur');
-    for(var i=0;i<jurSel.options.length;i++){if(jurSel.options[i].value===p.jurisdiction){jurSel.selectedIndex=i;break;}}
-    switchLibTab('precedent');document.getElementById('libraryModal').style.display='flex';
+    document.getElementById('libSecNotes').value=p.description||'';
+    var ct=libraryData.caseTypes.find(function(x){return x.id===p.case_type_id;});
+    if(ct)_addTagDirect('libCaseTypeTags',ct.name);
+    var sub=libraryData.subcats.find(function(x){return x.id===p.subcategory_id;});
+    if(sub)_addTagDirect('libStageTags',sub.name);
+    var dt=libraryData.docTypes.find(function(x){return x.id===p.doc_type_id;});
+    if(dt)_addTagDirect('libDocTypeTags',dt.name);
+    var jurSel=document.getElementById('libPrecJur');
+    if(jurSel&&p.jurisdiction){for(var i=0;i<jurSel.options.length;i++){if(jurSel.options[i].value===p.jurisdiction){jurSel.selectedIndex=i;break;}}}
+    document.getElementById('libSaveBtn').textContent='Update Precedent';
   }
 }
+function _addTagDirect(tagsId, val){
+  if(!val)return;
+  var container=document.getElementById(tagsId);if(!container)return;
+  var tag=document.createElement('span');tag.className='lib-tag';tag.setAttribute('data-v',val);
+  tag.innerHTML=val+' <button onclick="this.parentElement.remove()" title="Remove">x</button>';
+  container.appendChild(tag);
+}
+
 async function deleteCaseType(id){
   if(!confirm('Delete this case type and all its sub-categories, document types, precedents and sections?'))return;
   await api('/api/library','DELETE',{action:'delete_case_type',id});

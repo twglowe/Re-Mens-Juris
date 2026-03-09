@@ -148,17 +148,43 @@ export default async function handler(req, res) {
         form.parse(req, (err, f, fi) => err ? reject(err) : resolve([f, fi]))
       );
 
-      const name        = Array.isArray(fields.name) ? fields.name[0] : fields.name;
-      const caseTypeId  = Array.isArray(fields.case_type_id) ? fields.case_type_id[0] : fields.case_type_id;
-      const subcatId    = Array.isArray(fields.subcategory_id) ? fields.subcategory_id[0] : fields.subcategory_id;
-      const docTypeId   = Array.isArray(fields.doc_type_id) ? fields.doc_type_id[0] : fields.doc_type_id;
-      const jurisdiction= Array.isArray(fields.jurisdiction) ? fields.jurisdiction[0] : fields.jurisdiction;
-      const description = Array.isArray(fields.description) ? fields.description[0] : fields.description;
-      const file        = Array.isArray(files.file) ? files.file[0] : files.file;
+      const name              = Array.isArray(fields.name) ? fields.name[0] : fields.name;
+      const caseTypeId        = Array.isArray(fields.case_type_id) ? fields.case_type_id[0] : fields.case_type_id;
+      const subcatId          = Array.isArray(fields.subcategory_id) ? fields.subcategory_id[0] : fields.subcategory_id;
+      const docTypeId         = Array.isArray(fields.doc_type_id) ? fields.doc_type_id[0] : fields.doc_type_id;
+      const jurisdiction      = Array.isArray(fields.jurisdiction) ? fields.jurisdiction[0] : fields.jurisdiction;
+      const description       = Array.isArray(fields.description) ? fields.description[0] : fields.description;
+      const contextRelationship = Array.isArray(fields.context_relationship) ? fields.context_relationship[0] : (fields.context_relationship || '');
+      const contextDocId      = Array.isArray(fields.context_doc_id) ? fields.context_doc_id[0] : (fields.context_doc_id || '');
+      const contextDescription= Array.isArray(fields.context_description) ? fields.context_description[0] : (fields.context_description || '');
+      const file              = Array.isArray(files.file) ? files.file[0] : files.file;
+      const contextFile       = Array.isArray(files.context_file) ? files.context_file[0] : (files.context_file || null);
 
       if (!file) return res.status(400).json({ error: "No file uploaded" });
 
       // Insert precedent doc record
+      // If a context file was uploaded, insert it first as a precedent doc
+      let resolvedContextDocId = contextDocId || null;
+      if (contextFile) {
+        const { data: ctxDoc } = await supabase.from("precedent_docs").insert({
+          user_id: user.id,
+          case_type_id: caseTypeId,
+          name: contextDescription || ("Context for " + name),
+          description: contextDescription || null,
+          jurisdiction: jurisdiction || null,
+        }).select("id").single();
+        if (ctxDoc) {
+          resolvedContextDocId = ctxDoc.id;
+          try {
+            const ctxText = await extractPdfText(contextFile.filepath);
+            const ctxChunks = chunkText(ctxText);
+            await supabase.from("precedent_chunks").insert(
+              ctxChunks.map((c, i) => ({ precedent_doc_id: ctxDoc.id, user_id: user.id, content: c, chunk_index: i }))
+            );
+          } catch(e) { console.error("Context chunk error:", e); }
+        }
+      }
+
       const { data: precDoc, error: precErr } = await supabase.from("precedent_docs").insert({
         user_id: user.id,
         case_type_id: caseTypeId,
@@ -167,6 +193,9 @@ export default async function handler(req, res) {
         name,
         description: description || null,
         jurisdiction: jurisdiction || null,
+        context_relationship: contextRelationship || null,
+        context_doc_id: resolvedContextDocId || null,
+        context_description: contextDescription || null,
       }).select("id").single();
 
       if (precErr) return res.status(500).json({ error: precErr.message });
@@ -305,6 +334,41 @@ export default async function handler(req, res) {
       }).select("id").single();
       if (error) return res.status(500).json({ error: error.message });
       return res.status(201).json({ success: true, id: sec.id });
+    }
+
+    // Fetch full chunks for a list of precedent IDs (called by tools.js)
+    if (action === "get_precedent_chunks") {
+      const { precedent_ids = [] } = body;
+      if (!precedent_ids.length) return res.status(200).json({ chunks: [] });
+      const results = [];
+      for (const pid of precedent_ids.slice(0, 5)) {
+        // Get precedent metadata
+        const { data: prec } = await supabase.from("precedent_docs")
+          .select("id, name, description, context_relationship, context_doc_id, context_description")
+          .eq("id", pid).eq("user_id", user.id).single();
+        if (!prec) continue;
+        // Get its chunks
+        const { data: chunks } = await supabase.from("precedent_chunks")
+          .select("content, chunk_index")
+          .eq("precedent_doc_id", pid)
+          .order("chunk_index").limit(60);
+        const text = (chunks || []).map(c => c.content).join("
+
+");
+        // Get context doc chunks if any
+        let contextText = "";
+        if (prec.context_doc_id) {
+          const { data: ctxChunks } = await supabase.from("precedent_chunks")
+            .select("content, chunk_index")
+            .eq("precedent_doc_id", prec.context_doc_id)
+            .order("chunk_index").limit(30);
+          contextText = (ctxChunks || []).map(c => c.content).join("
+
+");
+        }
+        results.push({ id: prec.id, name: prec.name, text, contextRelationship: prec.context_relationship, contextText, contextDescription: prec.context_description });
+      }
+      return res.status(200).json({ results });
     }
 
     // Fetch library content for drafting (called by tools.js)

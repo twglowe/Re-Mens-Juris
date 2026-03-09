@@ -2098,7 +2098,6 @@ async function runDraftWorkflow(){
       document.getElementById('draftAmendInstructions').value='';
       document.getElementById('draftOutputArea').style.display='';
       showToast('Draft complete');
-      saveDraft();
     } else {throw new Error(data.error||'No result');}
   }catch(e){showToast('Error: '+e.message);}
   finally{btn.disabled=false;btn.textContent='Generate draft';}
@@ -2238,12 +2237,20 @@ async function saveDraft(){
   if(!_lastDraftResult||!currentMatter)return;
   var tok=localStorage.getItem('elj_token');
   var dt=getDraftDocType()||'Draft';
+  var titleEl=document.getElementById('draftSaveTitle');
+  var funcEl=document.getElementById('draftSaveFunction');
+  var notesEl=document.getElementById('draftSaveNotes');
+  var saveTitle=titleEl?titleEl.value.trim():'';
+  var saveFunc=funcEl?funcEl.value:'';
+  var saveNotes=notesEl?notesEl.value.trim():'';
+  var question='Draft: '+dt+(saveTitle?' | '+saveTitle:'')+(saveFunc?' ['+saveFunc+']':'');
+  if(saveNotes)question+=' - '+saveNotes;
   try{
     await fetch('/api/history',{method:'POST',
       headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
       body:JSON.stringify({
         matter_id:currentMatter.id,
-        question:'Draft: '+dt,
+        question:question,
         answer:_lastDraftResult,
         tool_name:'draft'
       })

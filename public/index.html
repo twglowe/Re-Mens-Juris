@@ -567,7 +567,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <div class="input-hint">Shift+Enter for new line · Enter to send</div>
       </div>
     </div>
-    <div class="right-panel">
+    <div class="right-panel" id="rightPanel">
       <div class="panel-head"><span class="panel-head-title">Documents</span></div>
       <div class="upload-meta">
         <div class="um-row">
@@ -742,6 +742,26 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       <div class="f-group"><label class="f-label">Jurisdiction</label><select class="f-input" id="libPrecJur"><option value="">Any</option><option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option></select></div>
       <div class="f-group"><label class="f-label">Description (optional)</label><input class="f-input" id="libPrecDesc" placeholder="Brief description"></div>
       <div class="f-group"><label class="f-label">PDF Document *</label><input type="file" class="f-input" id="libPrecFile" accept=".pdf" style="padding:.3rem"></div>
+      <div class="f-group">
+        <label class="f-label">Relationship to another document (optional)</label>
+        <select class="f-input" id="libPrecRelationship" onchange="toggleContextDoc(this.value)" style="margin-bottom:.4rem">
+          <option value="">— none —</option>
+          <option value="responds_to">Responds to (e.g. Defence responds to Statement of Claim)</option>
+          <option value="replies_to">Replies to (e.g. Reply responds to Defence)</option>
+          <option value="appeals">Appeals from (e.g. Skeleton responds to Judgment)</option>
+          <option value="supports">Supports / relies on</option>
+          <option value="opposes">Opposes</option>
+        </select>
+        <div id="libContextDocWrap" style="display:none">
+          <label class="f-label" style="margin-top:.4rem">Context document — select existing or upload</label>
+          <select class="f-input" id="libContextDocSelect" style="margin-bottom:.35rem">
+            <option value="">— select from library —</option>
+          </select>
+          <div style="font-size:.75rem;color:var(--text-faint);margin-bottom:.3rem;text-align:center">— or upload a new context PDF —</div>
+          <input type="file" class="f-input" id="libContextFile" accept=".pdf" style="padding:.3rem">
+          <input type="text" class="f-input" id="libContextDesc" placeholder="Brief description of context doc (optional)" style="margin-top:.35rem">
+        </div>
+      </div>
     </div>
     <div id="libTab-section" style="display:none">
       <div class="f-group"><label class="f-label">Section Title *</label><input class="f-input" id="libSecTitle" placeholder="e.g. Cayman Sources of Law"></div>
@@ -1101,6 +1121,10 @@ function switchLeftPanel(panel){
   document.getElementById('toggleMatters').classList.toggle('active', panel==='matters');
   document.getElementById('toggleLibrary').classList.toggle('active', panel==='library');
   if(panel==='library') loadLibrary();
+
+  // Show/hide right panel based on active tab
+  var rp=document.getElementById('rightPanel');
+  if(rp)rp.style.display=panel==='library'?'none':'';
 }
 
 async function loadLibrary(){
@@ -1212,6 +1236,15 @@ function openLibraryModal(defaultTab){
   var pf=document.getElementById('libPrecFile');if(pf)pf.value='';
   document.getElementById('libModalTitle').textContent='Add to Library';
   _populateLibDataLists();
+  _populateContextDocSelect();
+  var relSel=document.getElementById('libPrecRelationship');
+  if(relSel)relSel.selectedIndex=0;
+  var wrap=document.getElementById('libContextDocWrap');
+  if(wrap)wrap.style.display='none';
+  var cf=document.getElementById('libContextFile');
+  if(cf)cf.value='';
+  var cd=document.getElementById('libContextDesc');
+  if(cd)cd.value='';
   switchLibTab(defaultTab||'precedent');
   document.getElementById('libraryModal').style.display='flex';
 }
@@ -1291,6 +1324,12 @@ async function saveLibraryEntry(){
         fd.append('doc_type_id',ids.docTypeId||'');
         fd.append('jurisdiction',document.getElementById('libPrecJur').value||'');
         fd.append('description',document.getElementById('libPrecDesc').value||'');
+        fd.append('context_relationship',document.getElementById('libPrecRelationship').value||'');
+        var ctxSel=document.getElementById('libContextDocSelect');
+        fd.append('context_doc_id',(ctxSel&&ctxSel.value)||'');
+        fd.append('context_description',document.getElementById('libContextDesc').value||'');
+        var ctxFile=document.getElementById('libContextFile');
+        if(ctxFile&&ctxFile.files[0])fd.append('context_file',ctxFile.files[0]);
         fd.append('file',file);
         if(_editingLibId)fd.append('replace_id',_editingLibId);
         const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
@@ -1983,6 +2022,23 @@ function setMode(mode){
     _refreshDraftSourceStatuses();
     loadDraftLibrary();
   }
+}
+
+// ── LIBRARY CONTEXT DOC ─────────────────────────────────────────────────────
+function toggleContextDoc(val){
+  var wrap=document.getElementById('libContextDocWrap');
+  if(wrap)wrap.style.display=val?'':'none';
+}
+function _populateContextDocSelect(){
+  var sel=document.getElementById('libContextDocSelect');
+  if(!sel)return;
+  sel.innerHTML='<option value="">— select from library —</option>';
+  (libraryData.precedents||[]).forEach(function(p){
+    var o=document.createElement('option');
+    o.value=p.id;
+    o.textContent=p.name+(p.description?' — '+p.description:'');
+    sel.appendChild(o);
+  });
 }
 
 // ── DRAFT DOC TYPE CUSTOM ────────────────────────────────────────────────────

@@ -271,6 +271,58 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 @media(max-width:900px){.right-panel{display:none}.left-panel{width:240px}.source-panel{width:100%}}
 @media(max-width:640px){.left-panel{width:200px}.logo em{display:none}}
+
+.panel-toggle{display:flex;margin:.5rem .6rem .3rem;border:1.5px solid var(--border);border-radius:6px;overflow:hidden}
+.panel-toggle-btn{flex:1;padding:.3rem;border:none;background:var(--white);font-size:.75rem;font-weight:700;cursor:pointer;letter-spacing:.05em;text-transform:uppercase;color:var(--text-mid);font-family:'Source Sans 3',sans-serif;transition:all .15s}
+.panel-toggle-btn.active{background:var(--navy);color:#fff}
+#libPanel{display:none;flex-direction:column;overflow:hidden;flex:1}
+#libPanel.visible{display:flex}
+.lib-section{border-bottom:1px solid var(--border);padding:.5rem .8rem}
+.lib-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:.35rem}
+.lib-section-title{font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-mid)}
+.lib-add-btn{padding:.18rem .5rem;border:1.5px solid var(--blue-light);border-radius:4px;background:var(--white);color:var(--blue-light);font-size:.75rem;font-weight:700;cursor:pointer}
+.lib-add-btn:hover{background:var(--blue-light);color:#fff}
+.lib-list{display:flex;flex-direction:column;gap:.2rem;max-height:140px;overflow-y:auto}
+.lib-item{padding:.28rem .55rem;border-radius:4px;font-size:.82rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;color:var(--text-mid);border:1px solid transparent}
+.lib-item.active{background:var(--blue-faint);border-color:var(--blue-light);color:var(--navy);font-weight:600}
+.lib-item:hover:not(.active){background:rgba(0,60,120,.05)}
+.lib-item-del{border:none;background:none;color:var(--text-light);cursor:pointer;font-size:.85rem;padding:0 .15rem;display:none}
+.lib-item:hover .lib-item-del{display:inline}
+.lib-item-del:hover{color:#c0392b}
+.lib-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:none;align-items:center;justify-content:center}
+.lib-modal-overlay.open{display:flex}
+.lib-modal{background:var(--white);border-radius:10px;padding:1.5rem;min-width:340px;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,.2)}
+.lib-modal h3{margin:0 0 1rem;font-family:'Libre Baskerville',serif;font-size:1.05rem;color:var(--navy)}
+.lib-modal label{display:block;font-size:.8rem;font-weight:700;color:var(--text-mid);margin:.7rem 0 .2rem;text-transform:uppercase;letter-spacing:.04em}
+.lib-modal input,.lib-modal select,.lib-modal textarea{width:100%;padding:.38rem .6rem;border:1.5px solid var(--border);border-radius:5px;font-size:.88rem;font-family:'Source Sans 3',sans-serif;box-sizing:border-box;color:var(--text)}
+.lib-modal textarea{resize:vertical;min-height:80px;font-family:'Libre Baskerville',serif}
+.lib-modal-footer{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.1rem}
+.lib-modal-footer button{padding:.38rem .9rem;border-radius:5px;font-size:.85rem;font-weight:700;cursor:pointer;border:1.5px solid var(--border);background:var(--white);color:var(--text-mid)}
+.lib-modal-footer .lib-save-btn{background:var(--navy);color:#fff;border-color:var(--navy)}
+.lib-docs-scroll{overflow-y:auto;padding:.5rem .8rem}
+.lib-doc-card{background:var(--white);border:1.5px solid var(--border);border-radius:6px;padding:.5rem .75rem;margin-bottom:.4rem;font-size:.82rem}
+.lib-doc-card-head{display:flex;justify-content:space-between;align-items:center;font-weight:700;color:var(--navy);margin-bottom:.18rem}
+.lib-doc-meta{color:var(--text-light);font-size:.75rem}
+.drafting-workspace{display:flex;flex-direction:column;height:100%;overflow:hidden}
+.draft-header{padding:.7rem 1.1rem .5rem;background:var(--white);border-bottom:1.5px solid var(--border);flex-shrink:0}
+.draft-mode-bar{display:flex;gap:.4rem;margin-bottom:.55rem}
+.draft-mode-btn{padding:.28rem .75rem;border:1.5px solid var(--border);border-radius:5px;background:var(--white);color:var(--text-mid);font-size:.8rem;font-weight:600;cursor:pointer;font-family:'Source Sans 3',sans-serif}
+.draft-mode-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.draft-form{display:flex;flex-direction:column;gap:.45rem}
+.draft-row{display:flex;gap:.5rem;align-items:flex-start;flex-wrap:wrap}
+.draft-label{font-size:.75rem;font-weight:700;color:var(--text-mid);min-width:90px;padding-top:.35rem;letter-spacing:.04em;text-transform:uppercase}
+.draft-select{flex:1;min-width:120px;padding:.3rem .6rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;font-family:'Source Sans 3',sans-serif;background:var(--white);color:var(--text)}
+.draft-textarea{flex:1;padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:5px;font-size:.85rem;font-family:'Libre Baskerville',serif;resize:vertical;min-height:60px;color:var(--text)}
+.draft-run-btn{padding:.38rem 1.1rem;background:var(--navy);color:#fff;border:none;border-radius:5px;font-size:.85rem;font-weight:700;cursor:pointer;margin-top:.25rem}
+.draft-run-btn:hover{background:var(--navy-mid)}
+.draft-body{flex:1;overflow-y:auto;padding:1rem 1.1rem;display:flex;flex-direction:column;gap:1rem}
+.draft-result-block{background:var(--white);border:1.5px solid var(--border);border-radius:8px;overflow:hidden}
+.draft-result-head{padding:.5rem .85rem;background:var(--blue-faint);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;font-size:.78rem;font-weight:700;color:var(--navy)}
+.draft-actions{display:flex;gap:.4rem}
+.draft-actions button{padding:.2rem .55rem;border:1px solid var(--border);border-radius:4px;background:var(--white);font-size:.75rem;cursor:pointer;color:var(--text-mid);font-family:'Source Sans 3',sans-serif}
+.draft-result-body{padding:.85rem;font-family:'Libre Baskerville',serif;font-size:.9rem;line-height:1.7;color:var(--text);white-space:pre-wrap;outline:none;min-height:60px}
+.draft-result-body[contenteditable="true"]{background:#fffef7}
+
 </style>
 </head>
 <body>
@@ -321,6 +373,41 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
           <span class="panel-head-title">Matters</span>
           <button class="btn-add" id="newMatterBtn">+ New</button>
         </div>
+                <div class="panel-toggle" id="panelToggle">
+          <button class="panel-toggle-btn active" id="btnShowMatters" onclick="showPanelSection('matters')">Matters</button>
+          <button class="panel-toggle-btn" id="btnShowLib" onclick="showPanelSection('library')">Library</button>
+        </div>
+        <div id="libPanel">
+          <div class="lib-section">
+            <div class="lib-section-head"><span class="lib-section-title">Case Types</span><button class="lib-add-btn" onclick="libOpenModal('casetype')">+ Add</button></div>
+            <div class="lib-list" id="libCaseTypeList"></div>
+          </div>
+          <div class="lib-section" id="libSubcatSection" style="display:none">
+            <div class="lib-section-head"><span class="lib-section-title">Sub-categories</span><button class="lib-add-btn" onclick="libOpenModal('subcat')">+ Add</button></div>
+            <div class="lib-list" id="libSubcatList"></div>
+          </div>
+          <div class="lib-section" id="libDocTypeSection" style="display:none">
+            <div class="lib-section-head"><span class="lib-section-title">Document Types</span><button class="lib-add-btn" onclick="libOpenModal('doctype')">+ Add</button></div>
+            <div class="lib-list" id="libDocTypeList"></div>
+          </div>
+          <div class="lib-docs-scroll" id="libDocsArea" style="display:none">
+            <div class="lib-section-head" style="padding:.4rem 0"><span class="lib-section-title">Precedent Documents</span><button class="lib-add-btn" onclick="libOpenModal('document')">+ Upload</button></div>
+            <div id="libDocList"></div>
+            <div class="lib-section-head" style="padding:.6rem 0 .2rem;margin-top:.5rem"><span class="lib-section-title">Standard Sections</span><button class="lib-add-btn" onclick="libOpenModal('section')">+ Add</button></div>
+            <div id="libSectionList"></div>
+          </div>
+        </div>
+        <div class="lib-modal-overlay" id="libModal">
+          <div class="lib-modal">
+            <h3 id="libModalTitle">Add</h3>
+            <div id="libModalBody"></div>
+            <div class="lib-modal-footer">
+              <button onclick="libCloseModal()">Cancel</button>
+              <button class="lib-save-btn" onclick="libSave()">Save</button>
+            </div>
+          </div>
+        </div>
+
         <div class="matters-scroll" id="mattersList"><div class="empty-state">No matters yet.<br>Create one to begin.</div></div>
       </div>
 
@@ -393,7 +480,47 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         </div>
       </div>
       <!-- Tool workspaces injected here by JS -->
-      <div id="toolWorkspaces" style="display:contents"></div>
+      <div id="toolWorkspaces" style="display:contents">
+      <div id="ws-drafting" class="tab-workspace drafting-workspace" style="display:none">
+        <div class="draft-header">
+          <div class="draft-mode-bar">
+            <button class="draft-mode-btn active" id="btnDraftNew" onclick="setDraftMode('new')">New Draft</button>
+            <button class="draft-mode-btn" id="btnDraftPrecedent" onclick="setDraftMode('precedent')">Use Precedent</button>
+            <button class="draft-mode-btn" id="btnDraftSection" onclick="setDraftMode('section')">Insert Section</button>
+          </div>
+          <div class="draft-form">
+            <div class="draft-row">
+              <span class="draft-label">Case Type</span>
+              <select class="draft-select" id="draftCaseType" onchange="draftCaseTypeChanged()"><option value="">-- Select --</option></select>
+              <select class="draft-select" id="draftSubcat" style="display:none" onchange="draftSubcatChanged()"><option value="">-- Sub-category --</option></select>
+            </div>
+            <div class="draft-row">
+              <span class="draft-label">Document</span>
+              <select class="draft-select" id="draftDocType"><option value="">-- Select document type --</option></select>
+            </div>
+            <div class="draft-row" id="draftPrecedentRow" style="display:none">
+              <span class="draft-label">Precedent</span>
+              <select class="draft-select" id="draftPrecedentSelect"><option value="">-- Select precedent --</option></select>
+            </div>
+            <div class="draft-row" id="draftSectionRow" style="display:none">
+              <span class="draft-label">Section</span>
+              <select class="draft-select" id="draftSectionSelect"><option value="">-- Select standard section --</option></select>
+            </div>
+            <div class="draft-row">
+              <span class="draft-label">Instructions</span>
+              <textarea class="draft-textarea" id="draftInstructions" rows="3" placeholder="Additional instructions, issues to address, specific points to include..."></textarea>
+            </div>
+            <button class="draft-run-btn" onclick="runDraft()">Generate Draft</button>
+          </div>
+        </div>
+        <div class="draft-body" id="draftBody">
+          <div class="welcome-state" id="draftWelcome">
+            <div class="welcome-icon">&#9998;</div>
+            <div class="welcome-text">Select a matter, choose case type and document type, then generate a draft.</div>
+          </div>
+        </div>
+      </div>
+</div>
       <div class="input-area">
         <div class="input-row">
           <textarea id="chatInput" placeholder="Ask a legal question about this matter…" rows="1"></textarea>
@@ -1672,6 +1799,40 @@ function closeModal(id){document.getElementById(id).style.display='none';}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.style.display='none';}));
 function showToast(msg){document.querySelector('.toast')?.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3200);}
 init();
+
+
+function showPanelSection(which) {
+  var ms=document.querySelector('.matters-scroll'),lp=document.getElementById('libPanel'),bm=document.getElementById('btnShowMatters'),bl=document.getElementById('btnShowLib');
+  if(which==='matters'){if(ms)ms.style.display='';if(lp){lp.classList.remove('visible');lp.style.display='none';}bm.classList.add('active');bl.classList.remove('active');}
+  else{if(ms)ms.style.display='none';if(lp){lp.classList.add('visible');lp.style.display='flex';}bl.classList.add('active');bm.classList.remove('active');loadLibrarySidebar();}
+}
+var libState={caseTypeId:null,subcatId:null,docTypeId:null};
+function loadLibrarySidebar(){var tok=localStorage.getItem('elj_token');if(!tok)return;fetch('/api/library?action=getCaseTypes',{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){renderLibCaseTypes(d.caseTypes||[]);}).catch(function(){});}
+function renderLibCaseTypes(list){var el=document.getElementById('libCaseTypeList');if(!el)return;el.innerHTML='';list.forEach(function(ct){var d=document.createElement('div');d.className='lib-item'+(libState.caseTypeId===ct.id?' active':'');d.innerHTML='<span>'+ct.name+'</span><button class="lib-item-del" onclick="libDeleteItem(event,'casetype',''+ct.id+'')">x</button>';d.onclick=function(e){if(e.target.classList.contains('lib-item-del'))return;libSelectCaseType(ct.id);};el.appendChild(d);});}
+function libSelectCaseType(id){libState.caseTypeId=id;libState.subcatId=null;libState.docTypeId=null;document.getElementById('libSubcatSection').style.display='';document.getElementById('libDocTypeSection').style.display='none';document.getElementById('libDocsArea').style.display='none';var tok=localStorage.getItem('elj_token');fetch('/api/library?action=getSubcats&caseTypeId='+id,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){renderLibSubcats(d.subcats||[]);loadLibrarySidebar();}).catch(function(){});}
+function renderLibSubcats(list){var el=document.getElementById('libSubcatList');if(!el)return;el.innerHTML='<div class="lib-item" onclick="libSelectSubcat(null)"><span>(All)</span></div>';list.forEach(function(sc){var d=document.createElement('div');d.className='lib-item'+(libState.subcatId===sc.id?' active':'');d.innerHTML='<span>'+sc.name+'</span><button class="lib-item-del" onclick="libDeleteItem(event,'subcat',''+sc.id+'')">x</button>';d.onclick=function(e){if(e.target.classList.contains('lib-item-del'))return;libSelectSubcat(sc.id);};el.appendChild(d);});}
+function libSelectSubcat(id){libState.subcatId=id;document.getElementById('libDocTypeSection').style.display='';var tok=localStorage.getItem('elj_token');fetch('/api/library?action=getDocTypes&caseTypeId='+libState.caseTypeId+(id?'&subcatId='+id:''),{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){renderLibDocTypes(d.docTypes||[]);}).catch(function(){});}
+function renderLibDocTypes(list){var el=document.getElementById('libDocTypeList');if(!el)return;el.innerHTML='';list.forEach(function(dt){var d=document.createElement('div');d.className='lib-item'+(libState.docTypeId===dt.id?' active':'');d.innerHTML='<span>'+dt.name+'</span><button class="lib-item-del" onclick="libDeleteItem(event,'doctype',''+dt.id+'')">x</button>';d.onclick=function(e){if(e.target.classList.contains('lib-item-del'))return;libSelectDocType(dt.id);};el.appendChild(d);});}
+function libSelectDocType(id){libState.docTypeId=id;document.getElementById('libDocsArea').style.display='';loadLibDocs();}
+function loadLibDocs(){var tok=localStorage.getItem('elj_token');var p='caseTypeId='+libState.caseTypeId+(libState.subcatId?'&subcatId='+libState.subcatId:'')+(libState.docTypeId?'&docTypeId='+libState.docTypeId:'');fetch('/api/library?action=getDocs&'+p,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var el=document.getElementById('libDocList');if(!el)return;el.innerHTML='';(d.docs||[]).forEach(function(doc){var c=document.createElement('div');c.className='lib-doc-card';c.innerHTML='<div class="lib-doc-card-head"><span>'+doc.name+'</span><button onclick="libDeleteDoc(''+doc.id+'')" style="border:none;background:none;color:var(--text-light);cursor:pointer">x</button></div><div class="lib-doc-meta">'+(doc.chunk_count||0)+' passages indexed</div>';el.appendChild(c);});}).catch(function(){});fetch('/api/library?action=getSections&'+p,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var el=document.getElementById('libSectionList');if(!el)return;el.innerHTML='';(d.sections||[]).forEach(function(sec){var c=document.createElement('div');c.className='lib-doc-card';c.innerHTML='<div class="lib-doc-card-head"><span>'+sec.title+'</span><button onclick="libDeleteSection(''+sec.id+'')" style="border:none;background:none;color:var(--text-light);cursor:pointer">x</button></div><div class="lib-doc-meta">'+(sec.content||'').substring(0,120)+'...</div>';el.appendChild(c);});}).catch(function(){});}
+var libModalType='';
+function libOpenModal(type){libModalType=type;var titles={casetype:'Add Case Type',subcat:'Add Sub-category',doctype:'Add Document Type',document:'Upload Precedent Document',section:'Add Standard Section'};document.getElementById('libModalTitle').textContent=titles[type]||'Add';var body=document.getElementById('libModalBody');if(type==='casetype'){body.innerHTML='<label>Name</label><input type="text" id="libInput1" placeholder="e.g. Winding Up Petition">';}else if(type==='subcat'){body.innerHTML='<label>Name</label><input type="text" id="libInput1" placeholder="e.g. Creditors Petition">';}else if(type==='doctype'){body.innerHTML='<label>Name</label><input type="text" id="libInput1" placeholder="e.g. Skeleton Argument">';}else if(type==='document'){body.innerHTML='<label>Document Name</label><input type="text" id="libInput1" placeholder="Short description"><label style="margin-top:.7rem">Type</label><select id="libInput2"><option value="precedent">Precedent Document</option><option value="contextual">Contextual Document</option></select><label style="margin-top:.7rem">Upload PDF</label><input type="file" id="libFileInput" accept=".pdf">';}else if(type==='section'){body.innerHTML='<label>Title</label><input type="text" id="libInput1" placeholder="e.g. Cayman Sources of Law"><label style="margin-top:.7rem">Text</label><textarea id="libInput2" rows="6" placeholder="Paste or type the section text..."></textarea>';}document.getElementById('libModal').classList.add('open');setTimeout(function(){var i=document.getElementById('libInput1');if(i)i.focus();},50);}
+function libCloseModal(){document.getElementById('libModal').classList.remove('open');}
+function libSave(){var tok=localStorage.getItem('elj_token');if(!tok)return;if(libModalType==='casetype'){var name=document.getElementById('libInput1').value.trim();if(!name)return;fetch('/api/library?action=addCaseType',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({name:name})}).then(function(){libCloseModal();loadLibrarySidebar();}).catch(function(){});}else if(libModalType==='subcat'){var name=document.getElementById('libInput1').value.trim();if(!name||!libState.caseTypeId)return;fetch('/api/library?action=addSubcat',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({name:name,caseTypeId:libState.caseTypeId})}).then(function(){libCloseModal();libSelectCaseType(libState.caseTypeId);}).catch(function(){});}else if(libModalType==='doctype'){var name=document.getElementById('libInput1').value.trim();if(!name||!libState.caseTypeId)return;fetch('/api/library?action=addDocType',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({name:name,caseTypeId:libState.caseTypeId,subcatId:libState.subcatId||null})}).then(function(){libCloseModal();libSelectSubcat(libState.subcatId);}).catch(function(){});}else if(libModalType==='section'){var title=document.getElementById('libInput1').value.trim();var content=document.getElementById('libInput2').value.trim();if(!title||!content)return;fetch('/api/library?action=addSection',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({title:title,content:content,caseTypeId:libState.caseTypeId,subcatId:libState.subcatId||null,docTypeId:libState.docTypeId||null})}).then(function(){libCloseModal();loadLibDocs();}).catch(function(){});}else if(libModalType==='document'){var name=document.getElementById('libInput1').value.trim();var dtype=document.getElementById('libInput2').value;var fi=document.getElementById('libFileInput');var file=fi&&fi.files[0];if(!name||!file){alert('Please enter a name and select a PDF.');return;}var fd=new FormData();fd.append('file',file);fd.append('name',name);fd.append('docKind',dtype);fd.append('caseTypeId',libState.caseTypeId||'');fd.append('subcatId',libState.subcatId||'');fd.append('docTypeId',libState.docTypeId||'');fetch('/api/library?action=uploadDoc',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd}).then(function(r){return r.json();}).then(function(){libCloseModal();loadLibDocs();}).catch(function(){});}}
+function libDeleteItem(e,type,id){e.stopPropagation();if(!confirm('Delete this item?'))return;var acts={casetype:'deleteCaseType',subcat:'deleteSubcat',doctype:'deleteDocType'};fetch('/api/library?action='+acts[type]+'&id='+id,{method:'DELETE',headers:{'Authorization':'Bearer '+localStorage.getItem('elj_token')}}).then(function(){loadLibrarySidebar();}).catch(function(){});}
+function libDeleteDoc(id){if(!confirm('Delete this document?'))return;fetch('/api/library?action=deleteDoc&id='+id,{method:'DELETE',headers:{'Authorization':'Bearer '+localStorage.getItem('elj_token')}}).then(function(){loadLibDocs();}).catch(function(){});}
+function libDeleteSection(id){if(!confirm('Delete this section?'))return;fetch('/api/library?action=deleteSection&id='+id,{method:'DELETE',headers:{'Authorization':'Bearer '+localStorage.getItem('elj_token')}}).then(function(){loadLibDocs();}).catch(function(){});}
+var draftMode='new';
+function openDraftWorkspace(){document.querySelectorAll('.tab-workspace').forEach(function(w){w.style.display='none';w.classList.remove('active');});var ws=document.getElementById('ws-drafting');if(ws){ws.style.display='flex';ws.classList.add('active');}document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});var dt=document.querySelector('.tab[data-tab="drafting"]');if(dt)dt.classList.add('active');populateDraftSelects();}
+function setDraftMode(mode){draftMode=mode;document.querySelectorAll('.draft-mode-btn').forEach(function(b){b.classList.remove('active');});var btn=document.getElementById('btnDraft'+mode.charAt(0).toUpperCase()+mode.slice(1));if(btn)btn.classList.add('active');document.getElementById('draftPrecedentRow').style.display=mode==='precedent'?'':'none';document.getElementById('draftSectionRow').style.display=mode==='section'?'':'none';}
+function populateDraftSelects(){var tok=localStorage.getItem('elj_token');if(!tok)return;fetch('/api/library?action=getCaseTypes',{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var sel=document.getElementById('draftCaseType');if(!sel)return;var val=sel.value;sel.innerHTML='<option value="">-- Select case type --</option>';(d.caseTypes||[]).forEach(function(ct){var o=document.createElement('option');o.value=ct.id;o.textContent=ct.name;sel.appendChild(o);});if(val)sel.value=val;}).catch(function(){});}
+function draftCaseTypeChanged(){var cid=document.getElementById('draftCaseType').value;var tok=localStorage.getItem('elj_token');var ss=document.getElementById('draftSubcat');document.getElementById('draftDocType').innerHTML='<option value="">-- Select document type --</option>';ss.style.display='none';if(!cid)return;fetch('/api/library?action=getSubcats&caseTypeId='+cid,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var scs=d.subcats||[];if(scs.length){ss.innerHTML='<option value="">-- All sub-categories --</option>';scs.forEach(function(sc){var o=document.createElement('option');o.value=sc.id;o.textContent=sc.name;ss.appendChild(o);});ss.style.display='';}draftLoadDocTypes(cid,null);}).catch(function(){});}
+function draftSubcatChanged(){draftLoadDocTypes(document.getElementById('draftCaseType').value,document.getElementById('draftSubcat').value||null);}
+function draftLoadDocTypes(cid,sid){var tok=localStorage.getItem('elj_token');fetch('/api/library?action=getDocTypes&caseTypeId='+cid+(sid?'&subcatId='+sid:''),{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var sel=document.getElementById('draftDocType');sel.innerHTML='<option value="">-- Select document type --</option>';(d.docTypes||[]).forEach(function(dt){var o=document.createElement('option');o.value=dt.id;o.textContent=dt.name;sel.appendChild(o);});}).catch(function(){});}
+async function runDraft(){var matterId=(typeof currentMatterId!=='undefined')?currentMatterId:null;if(!matterId){if(typeof showToast==='function')showToast('Please select a matter first');else alert('Please select a matter first');return;}var cid=document.getElementById('draftCaseType').value;var did=document.getElementById('draftDocType').value;if(!cid||!did){if(typeof showToast==='function')showToast('Please select case type and document type');else alert('Please select case type and document type');return;}var tok=localStorage.getItem('elj_token');var welcome=document.getElementById('draftWelcome');if(welcome)welcome.style.display='none';var card=document.createElement('div');card.className='draft-result-block';card.innerHTML='<div class="draft-result-head"><span>Generating draft...</span></div><div class="draft-result-body" style="color:var(--text-light)"><em>Retrieving documents and library content...</em></div>';var body=document.getElementById('draftBody');if(body.firstChild)body.insertBefore(card,body.firstChild);else body.appendChild(card);try{var resp=await fetch('/api/tools',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({matterId:matterId,jurisdiction:(typeof currentJurisdiction!=='undefined'?currentJurisdiction:'Bermuda'),tool:'draft',instructions:document.getElementById('draftInstructions').value.trim(),caseTypeId:cid,subcatId:document.getElementById('draftSubcat').value||null,docTypeId:did})});var data=await resp.json();if(data.error)throw new Error(data.error);var ts=new Date().toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});var resultText=data.result||data.text||data.answer||'';card.innerHTML='<div class="draft-result-head"><span>'+ts+'</span><div class="draft-actions"><button onclick="(function(b){var x=b.closest('.draft-result-block').querySelector('.draft-result-body');x.setAttribute('contenteditable','true');x.focus();b.style.display='none';b.nextElementSibling.style.display='';})(this)">Edit</button><button style="display:none" onclick="(function(b){var x=b.closest('.draft-result-block').querySelector('.draft-result-body');x.removeAttribute('contenteditable');b.style.display='none';b.previousElementSibling.style.display='';})(this)">Done</button><button onclick="downloadDraftWord(this)">Word</button><button onclick="this.closest('.draft-result-block').remove()" style="color:#c0392b">X</button></div></div><div class="draft-result-body">'+(typeof renderMarkdown==='function'?renderMarkdown(resultText):resultText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/
+/g,'<br>'))+'</div>';}catch(err){card.innerHTML='<div class="draft-result-head" style="color:#c0392b">Error</div><div class="draft-result-body">'+err.message+'</div>';}}
+function downloadDraftWord(btn){var body=btn.closest('.draft-result-block').querySelector('.draft-result-body');var tok=localStorage.getItem('elj_token');fetch('/api/export?format=docx',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({text:body.innerText||body.textContent})}).then(function(r){return r.blob();}).then(function(blob){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='draft.docx';a.click();}).catch(function(){if(typeof showToast==='function')showToast('Download failed');});}
+
 </script>
 </body>
 </html>

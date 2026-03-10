@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Ex Libris Juris — Legal Analysis</title>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -1041,11 +1042,31 @@ async function uploadFiles(files){
   const prog=document.getElementById('uploadProg'),errEl=document.getElementById('uploadErr');
   errEl.classList.remove('on');
   for(const file of files){
-    prog.textContent=`Processing: ${file.name}…`;prog.classList.add('on');
-    try{const b64=await toB64(file);const d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,fileData:b64,docType});if(d)showToast(`✓ ${file.name} — ${d.chunks} passages indexed`);}
-    catch(e){errEl.textContent=`Failed: ${file.name} — ${e.message}`;errEl.classList.add('on');}
+    prog.textContent='Extracting text: '+file.name+'…';prog.classList.add('on');
+    try{
+      var text=await extractPdfText(file);
+      if(!text||text.trim().length<50){errEl.textContent='No readable text in '+file.name+'. Try OCR at ilovepdf.com first.';errEl.classList.add('on');continue;}
+      prog.textContent='Uploading: '+file.name+' ('+Math.round(text.length/1024)+'KB text)…';
+      var d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,textContent:text,docType:docType});
+      if(d)showToast('\u2713 '+file.name+' — '+d.chunks+' passages indexed');
+    }catch(e){errEl.textContent='Failed: '+file.name+' — '+e.message;errEl.classList.add('on');}
   }
   prog.classList.remove('on');await loadDocuments(currentMatter.id);await loadMatters();
+}
+async function extractPdfText(file){
+  var pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
+  if(!pdfjsLib)throw new Error('PDF library not loaded. Refresh and try again.');
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  var buf=await file.arrayBuffer();
+  var pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  var allText=[];
+  for(var i=1;i<=pdf.numPages;i++){
+    var page=await pdf.getPage(i);
+    var tc=await page.getTextContent();
+    var pageText=tc.items.map(function(item){return item.str;}).join(' ');
+    allText.push(pageText);
+  }
+  return allText.join('\n\n');
 }
 function toB64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(file);});}
 
@@ -1810,15 +1831,17 @@ function showPanelSection(which) {
   if(which==='matters'){if(ms)ms.style.display='';if(lp){lp.classList.remove('visible');lp.style.display='none';}bm.classList.add('active');bl.classList.remove('active');}
   else{if(ms)ms.style.display='none';if(lp){lp.classList.add('visible');lp.style.display='flex';}bl.classList.add('active');bm.classList.remove('active');loadLibrarySidebar();}
 }
-function libDeleteDoc(id){if(!confirm('Delete this document?'))return;fetch('/api/library?action=deleteDoc&id='+id,{method:'DELETE',headers:{'Authorization':'Bearer '+localStorage.getItem('elj_token')}}).then(function(){loadLibDocs();}).catch(function(){});}
-function libDeleteSection(id){if(!confirm('Delete this section?'))return;fetch('/api/library?action=deleteSection&id='+id,{method:'DELETE',headers:{'Authorization':'Bearer '+localStorage.getItem('elj_token')}}).then(function(){loadLibDocs();}).catch(function(){});}
+function libDeleteDoc(id){if(!confirm('Delete this document?'))return;fetch('/api/library',{method:'DELETE',headers:{'Authorization':'Bearer '+localStorage.getItem('elj_token'),'Content-Type':'application/json'},body:JSON.stringify({action:'delete_precedent',id:id})}).then(function(){loadLibDocs();}).catch(function(){});}
+function libDeleteSection(id){if(!confirm('Delete this section?'))return;fetch('/api/library',{method:'DELETE',headers:{'Authorization':'Bearer '+localStorage.getItem('elj_token'),'Content-Type':'application/json'},body:JSON.stringify({action:'delete_section',id:id})}).then(function(){loadLibDocs();}).catch(function(){});}
 var draftMode='new';
 function openDraftWorkspace(){document.querySelectorAll('.tab-workspace').forEach(function(w){w.style.display='none';w.classList.remove('active');});var ws=document.getElementById('ws-drafting');if(ws){ws.style.display='flex';ws.classList.add('active');}document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});var dt=document.querySelector('.tab[data-tab="drafting"]');if(dt)dt.classList.add('active');populateDraftSelects();}
 function setDraftMode(mode){draftMode=mode;document.querySelectorAll('.draft-mode-btn').forEach(function(b){b.classList.remove('active');});var btn=document.getElementById('btnDraft'+mode.charAt(0).toUpperCase()+mode.slice(1));if(btn)btn.classList.add('active');document.getElementById('draftPrecedentRow').style.display=mode==='precedent'?'':'none';document.getElementById('draftSectionRow').style.display=mode==='section'?'':'none';}
-function populateDraftSelects(){var tok=localStorage.getItem('elj_token');if(!tok)return;fetch('/api/library?action=getCaseTypes',{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var sel=document.getElementById('draftCaseType');if(!sel)return;var val=sel.value;sel.innerHTML='<option value="">-- Select case type --</option>';(d.caseTypes||[]).forEach(function(ct){var o=document.createElement('option');o.value=ct.id;o.textContent=ct.name;sel.appendChild(o);});if(val)sel.value=val;}).catch(function(){});}
-function draftCaseTypeChanged(){var cid=document.getElementById('draftCaseType').value;var tok=localStorage.getItem('elj_token');var ss=document.getElementById('draftSubcat');document.getElementById('draftDocType').innerHTML='<option value="">-- Select document type --</option>';ss.style.display='none';if(!cid)return;fetch('/api/library?action=getSubcats&caseTypeId='+cid,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var scs=d.subcats||[];if(scs.length){ss.innerHTML='<option value="">-- All sub-categories --</option>';scs.forEach(function(sc){var o=document.createElement('option');o.value=sc.id;o.textContent=sc.name;ss.appendChild(o);});ss.style.display='';}draftLoadDocTypes(cid,null);}).catch(function(){});}
+function populateDraftSelects(){var tok=localStorage.getItem('elj_token');if(!tok)return;fetch('/api/library?type=case_types',{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var sel=document.getElementById('draftCaseType');if(!sel)return;var val=sel.value;sel.innerHTML='<option value="">-- Select case type --</option>';(d.data||[]).forEach(function(ct){var o=document.createElement('option');o.value=ct.id;o.textContent=ct.name;sel.appendChild(o);});if(val)sel.value=val;}).catch(function(e){console.error('populateDraftSelects error:',e);});}
+function draftCaseTypeChanged(){var cid=document.getElementById('draftCaseType').value;var tok=localStorage.getItem('elj_token');var ss=document.getElementById('draftSubcat');document.getElementById('draftDocType').innerHTML='<option value="">-- Select document type --</option>';ss.style.display='none';if(!cid)return;fetch('/api/library?type=subcats',{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var scs=(d.data||[]).filter(function(s){return s.case_type_id===cid;});if(scs.length){ss.innerHTML='<option value="">-- All sub-categories --</option>';scs.forEach(function(sc){var o=document.createElement('option');o.value=sc.id;o.textContent=sc.name;ss.appendChild(o);});ss.style.display='';}draftLoadDocTypes(cid,null);draftLoadPrecedents(cid);draftLoadSections(cid);}).catch(function(e){console.error('draftCaseTypeChanged:',e);});}
 function draftSubcatChanged(){draftLoadDocTypes(document.getElementById('draftCaseType').value,document.getElementById('draftSubcat').value||null);}
-function draftLoadDocTypes(cid,sid){var tok=localStorage.getItem('elj_token');fetch('/api/library?action=getDocTypes&caseTypeId='+cid+(sid?'&subcatId='+sid:''),{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var sel=document.getElementById('draftDocType');sel.innerHTML='<option value="">-- Select document type --</option>';(d.docTypes||[]).forEach(function(dt){var o=document.createElement('option');o.value=dt.id;o.textContent=dt.name;sel.appendChild(o);});}).catch(function(){});}
+function draftLoadDocTypes(cid,sid){var tok=localStorage.getItem('elj_token');fetch('/api/library?type=doc_types',{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var sel=document.getElementById('draftDocType');sel.innerHTML='<option value="">-- Select document type --</option>';(d.data||[]).filter(function(dt){return dt.case_type_id===cid;}).forEach(function(dt){var o=document.createElement('option');o.value=dt.id;o.textContent=dt.name;sel.appendChild(o);});}).catch(function(e){console.error('draftLoadDocTypes:',e);});}
+function draftLoadPrecedents(cid){var tok=localStorage.getItem('elj_token');fetch('/api/library?type=precedents',{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var sel=document.getElementById('draftPrecedentSelect');if(!sel)return;sel.innerHTML='<option value="">-- Select precedent --</option>';(d.data||[]).filter(function(p){return p.case_type_id===cid;}).forEach(function(p){var o=document.createElement('option');o.value=p.id;o.textContent=p.name;sel.appendChild(o);});}).catch(function(){});}
+function draftLoadSections(cid){var tok=localStorage.getItem('elj_token');fetch('/api/library?type=sections',{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var sel=document.getElementById('draftSectionSelect');if(!sel)return;sel.innerHTML='<option value="">-- Select standard section --</option>';(d.data||[]).filter(function(s){return !s.case_type_id||s.case_type_id===cid;}).forEach(function(s){var o=document.createElement('option');o.value=s.id;o.textContent=s.title;sel.appendChild(o);});}).catch(function(){});}
 async function runDraft(){
   var matterId=(typeof currentMatterId!=='undefined')?currentMatterId:null;
   if(!matterId){if(typeof showToast==='function')showToast('Please select a matter first');else alert('Please select a matter first');return;}

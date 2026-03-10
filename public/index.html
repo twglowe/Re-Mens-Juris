@@ -228,58 +228,6 @@ textarea#chatInput::placeholder{color:var(--text-faint);font-weight:400}
 .upload-err{margin:.45rem .85rem 0;padding:.5rem .8rem;background:#fdf0f0;border:1.5px solid #f0b0b0;border-radius:5px;font-size:.8rem;font-weight:500;color:var(--error);display:none}
 .upload-err.on{display:block}
 select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-family:'Source Sans 3',sans-serif;font-size:.82rem;font-weight:600;color:var(--text-mid);background:var(--white)}
-.upload-meta{padding:.5rem .75rem .25rem;border-bottom:1px solid var(--border);}
-.um-row{display:flex;flex-direction:column;margin-bottom:.45rem;}
-.um-label{font-size:.68rem;font-weight:700;color:var(--text-faint);letter-spacing:.07em;text-transform:uppercase;margin-bottom:.2rem;}
-.um-combo{display:flex;flex-direction:column;gap:.2rem;}
-.um-combo select,.um-combo input{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;background:var(--off-white);color:var(--text-dark);}
-.um-custom{padding:.3rem .5rem;border:1.5px solid var(--blue-light);border-radius:5px;font-size:.82rem;}
-.issue-chips{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.25rem;}
-.issue-chip{display:inline-flex;align-items:center;gap:.25rem;background:var(--blue-pale);border:1px solid var(--blue-light);border-radius:12px;padding:.15rem .5rem;font-size:.75rem;color:var(--blue);}
-.issue-chip button{background:none;border:none;color:var(--blue);cursor:pointer;padding:0;font-size:.85rem;line-height:1;}
-.mode-toggle{display:flex;border:1.5px solid var(--border);border-radius:6px;overflow:hidden;}
-.mode-btn{padding:.3rem .85rem;font-size:.8rem;font-weight:600;border:none;background:var(--off-white);color:var(--text-faint);cursor:pointer;transition:all .15s;}
-.mode-btn.active{background:var(--navy-mid);color:#fff;}
-.drafting-workspace{display:flex;flex-direction:column;gap:1rem;padding:1rem;overflow-y:auto;}
-.draft-setup,.draft-sources,.draft-instructions-area,.draft-output-panel{background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:1rem;}
-.draft-setup-head{font-size:.72rem;font-weight:700;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.75rem;}
-.draft-fields{display:flex;flex-direction:column;gap:.6rem;}
-.draft-field-row{display:flex;gap:.6rem;flex-wrap:wrap;}
-.draft-field{flex:1;min-width:180px;display:flex;flex-direction:column;gap:.2rem;}
-.df-label{font-size:.72rem;font-weight:700;color:var(--text-faint);letter-spacing:.06em;text-transform:uppercase;}
-.df-input{padding:.4rem .6rem;border:1.5px solid var(--border);border-radius:5px;font-size:.85rem;font-family:inherit;background:var(--off-white);}
-.df-input:focus{outline:none;border-color:var(--blue-light);}
-.draft-header-preview{margin-top:.75rem;background:var(--off-white);border:1px solid var(--border);border-radius:6px;padding:.75rem;}
-.dhp-label{font-size:.68rem;font-weight:700;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.4rem;}
-.dhp-text{font-family:Georgia,serif;font-size:.82rem;white-space:pre-wrap;margin:0;color:var(--text-dark);}
-.draft-sources-note{font-size:.78rem;color:var(--text-faint);margin-bottom:.5rem;}
-.draft-source-list{display:flex;flex-direction:column;gap:.35rem;margin-bottom:.75rem;}
-.ds-item{display:flex;align-items:center;gap:.5rem;font-size:.85rem;cursor:pointer;}
-.ds-item input{accent-color:var(--blue);}
-.ds-status{font-size:.72rem;color:var(--text-faint);margin-left:auto;}
-.ds-status.run{color:#27ae60;}
-.draft-actions{display:flex;gap:.5rem;}
-.draft-instructions-wide{width:100%;box-sizing:border-box;}
-.draft-instructions-ta{width:100%;box-sizing:border-box;resize:vertical;min-height:90px;}
-.draft-output-panel{display:flex;flex-direction:column;border:1.5px solid var(--border);border-radius:8px;background:var(--white);overflow:hidden;flex:1;min-height:500px;padding:0;}
-.draft-output-header{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;border-bottom:1.5px solid var(--border);background:var(--navy-mid);color:#fff;flex-wrap:wrap;gap:.5rem;}
-.doh-title{display:flex;flex-direction:column;gap:.15rem;}
-.doh-matter{font-size:.78rem;font-weight:700;opacity:.8;text-transform:uppercase;letter-spacing:.06em;}
-.doh-doctype{font-size:.95rem;font-weight:700;}
-.doh-actions{display:flex;gap:.4rem;}
-.doh-btn{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);font-size:.78rem;padding:.25rem .65rem;}
-.doh-btn:hover{background:rgba(255,255,255,.25);}
-.draft-output-body{display:flex;flex:1;min-height:0;overflow:hidden;}
-.draft-toc{width:180px;min-width:140px;border-right:1.5px solid var(--border);background:var(--off-white);overflow-y:auto;padding:.5rem 0;flex-shrink:0;}
-.draft-toc-head{font-size:.68rem;font-weight:700;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;padding:.3rem .75rem .5rem;}
-.draft-toc-item{display:block;width:100%;text-align:left;background:none;border:none;padding:.3rem .75rem;font-size:.78rem;color:var(--blue);cursor:pointer;line-height:1.3;border-left:2px solid transparent;}
-.draft-toc-item:hover{background:var(--blue-pale);border-left-color:var(--blue-light);}
-.draft-toc-item.active{background:var(--blue-pale);border-left-color:var(--blue);font-weight:600;}
-.draft-content-wrap{flex:1;overflow-y:auto;padding:1rem 1.25rem;}
-.draft-output-content{font-family:Georgia,serif;font-size:.92rem;line-height:1.8;white-space:pre-wrap;color:var(--text-dark);}
-.draft-revise-bar{border-top:1.5px solid var(--border);padding:.75rem 1rem;background:var(--off-white);display:flex;flex-direction:column;gap:.5rem;}
-.draft-revise-ta{width:100%;box-sizing:border-box;resize:vertical;min-height:72px;}
-.draft-revise-btns{display:flex;gap:.5rem;flex-wrap:wrap;}
 .upload-zone{margin:.55rem .85rem;border:2px dashed var(--border-strong);border-radius:8px;padding:1.2rem .85rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;flex-shrink:0}
 .upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue-light);background:var(--blue-faint)}
 .upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
@@ -323,21 +271,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 @media(max-width:900px){.right-panel{display:none}.left-panel{width:240px}.source-panel{width:100%}}
 @media(max-width:640px){.left-panel{width:200px}.logo em{display:none}}
-.ws-type-btn{padding:.28rem .8rem;font-size:.8rem;font-weight:700;border:1.5px solid var(--border);border-radius:5px;background:var(--off-white);color:var(--text-faint);cursor:pointer}
-.ws-type-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-.ws-style-btn{padding:.22rem .6rem;font-size:.73rem;font-weight:700;border:1.5px solid var(--border);border-radius:5px;background:var(--off-white);color:var(--text-faint);cursor:pointer}
-.ws-style-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-.ws-input{width:100%;padding:.32rem .55rem;border:1.5px solid var(--border);border-radius:5px;background:var(--white);color:var(--text-mid);font-size:.82rem;font-family:inherit;box-sizing:border-box}
-.ws-input:focus{outline:none;border-color:var(--blue)}
-.ws-tag-add{padding:.28rem .6rem;font-size:.78rem;font-weight:700;background:var(--blue);color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap}
-.ws-tags{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem}
-.ws-tag{display:inline-flex;align-items:center;gap:.3rem;padding:.18rem .55rem;background:#e8f0ff;color:var(--navy-mid);border-radius:4px;font-size:.75rem;font-weight:600}
-.ws-tag button{border:none;background:none;cursor:pointer;color:var(--text-faint);font-size:.9rem;padding:0;line-height:1}
-.ws-upload-btn{display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem 1rem;border:2px dashed var(--border);border-radius:7px;cursor:pointer;color:var(--blue);font-weight:600;font-size:.85rem;background:var(--off-white)}
-.ws-upload-sm{padding:.4rem .75rem;font-size:.78rem;justify-content:flex-start}
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 </head>
 <body>
 <div class="login-screen" id="loginScreen">
@@ -374,7 +308,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
     </div>
   </header>
   <div class="main-layout">
-    <div class="left-panel" id="leftPanel">
+    <div class="left-panel">
       <!-- Panel toggle -->
       <div class="panel-toggle-bar">
         <button class="panel-toggle active" id="toggleMatters" onclick="switchLeftPanel('matters')">Matters</button>
@@ -415,10 +349,13 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       <div class="chat-toolbar">
         <div class="chat-matter-title empty" id="chatTitle">Select or create a matter</div>
         <div class="toolbar-controls">
-          <div class="mode-toggle">
-            <button class="mode-btn active" id="modeAnalysis" onclick="setMode('analysis')">Analysis</button>
-            <button class="mode-btn" id="modeDrafting" onclick="setMode('drafting')">Drafting</button>
-          </div>
+          <select class="qtype" id="qtypeSelect">
+            <option value="Factual Analysis">Factual</option>
+            <option value="Legal Issues">Legal Issues</option>
+            <option value="Procedural Advice">Procedural</option>
+            <option value="Case Strategy">Strategy</option>
+            <option value="Document Drafting">Drafting</option>
+          </select>
           <button class="btn-t" id="histBtn" style="display:none" onclick="toggleHistory()">History</button>
           <button class="btn-t" onclick="clearChat()">Clear</button>
         </div>
@@ -432,74 +369,8 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <button class="tool-btn" onclick="openTool('issues')">⚖ Issue Tracker</button>
         <button class="tool-btn" onclick="openTool('citations')">📚 Citations</button>
         <button class="tool-btn" onclick="openTool('briefing')">📋 Briefing Note</button>
+        <button class="tool-btn" onclick="openTool('draft')">✍️ Draft</button>
       </div>
-      <!-- Library inline workspace -->
-      <div id="libraryWorkspace" style="display:none;flex:1;flex-direction:column;overflow-y:auto;padding:1rem 1.25rem;gap:.85rem;background:var(--off-white)"><div style="display:flex;align-items:center;padding:.5rem 1rem;border-bottom:1px solid #e2e8f0;background:#f8fafc;flex-shrink:0;"><button onclick="switchLeftPanel('')" style="background:none;border:none;cursor:pointer;font-size:.95rem;color:#4a5568;padding:.25rem .5rem;border-radius:4px;">&#8592; Back to Analysis</button></div>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
-          <button class="ws-type-btn active" id="wsTypePrec" onclick="wsSetType('precedent')">Precedent Doc</button>
-          <button class="ws-type-btn" id="wsTypeSec" onclick="wsSetType('section')">Standard Section</button>
-          <button class="btn-secondary" onclick="wsClear()" style="font-size:.78rem;padding:.28rem .65rem;margin-left:.25rem">Clear</button>
-        </div>
-        <div id="wsUploadSector" style="background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.5rem .85rem">
-          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
-            <label class="ws-upload-btn" for="wsPrecFile" style="flex:1;min-width:160px;padding:.38rem .7rem;font-size:.82rem;justify-content:flex-start"><span>&#128206;</span><span id="wsUploadLabel">Choose PDF to upload</span></label>
-            <input type="file" id="wsPrecFile" accept=".pdf" style="display:none" onchange="wsOnFile(this)">
-            <span style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Source:</span>
-            <button class="ws-style-btn active" id="wsStyleOwn" onclick="wsSetStyle('own')">My drafting</button>
-            <button class="ws-style-btn" id="wsStyleThird" onclick="wsSetStyle('third')">Third party</button>
-          </div>
-        </div>
-        <div id="wsSectionSector" style="display:none;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.85rem 1rem">
-          <input type="text" class="ws-input" id="wsSecTitle" placeholder="Section title" style="width:100%;margin-bottom:.5rem">
-          <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.4rem;flex-wrap:wrap">
-            <label class="ws-upload-btn ws-upload-sm" for="wsSecFile" style="flex:none"><span>&#128206;</span><span id="wsSecFileLabel">Upload PDF to extract text</span></label>
-            <input type="file" id="wsSecFile" accept=".pdf" style="display:none" onchange="wsLoadSecFile(this)">
-            <span style="font-size:.75rem;color:var(--text-faint)">or paste below</span>
-          </div>
-          <textarea class="ws-input" id="wsSecContent" rows="6" placeholder="Paste section text here, or upload a PDF above to extract it..." style="width:100%;resize:vertical"></textarea>
-        </div>
-        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-          <div style="flex:1;min-width:160px;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.75rem .85rem">
-            <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.5rem">1 &nbsp; Case Type</div>
-            <div style="display:flex;gap:.4rem;margin-bottom:.4rem"><input type="text" class="ws-input" id="wsCaseTypeInput" placeholder="e.g. Winding Up" list="wsCaseTypeList" autocomplete="off" style="flex:1;min-width:0"><datalist id="wsCaseTypeList"></datalist><button class="ws-tag-add" onclick="wsAddTag('caseType')">Add</button></div>
-            <div id="wsCaseTypeTags" class="ws-tags"></div>
-          </div>
-          <div style="flex:1;min-width:160px;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.75rem .85rem">
-            <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.5rem">2 &nbsp; Procedural Stage</div>
-            <div style="display:flex;gap:.4rem;margin-bottom:.4rem"><input type="text" class="ws-input" id="wsStageInput" placeholder="e.g. Trial, Appeal" list="wsStageList" autocomplete="off" style="flex:1;min-width:0"><datalist id="wsStageList"><option>Trial</option><option>Interlocutory Application</option><option>Appeal</option><option>Arbitration</option><option>Winding Up Petition</option><option>Summary Judgment</option><option>Strike Out</option><option>Discovery</option></datalist><button class="ws-tag-add" onclick="wsAddTag('stage')">Add</button></div>
-            <div id="wsStageTags" class="ws-tags"></div>
-          </div>
-          <div style="flex:1;min-width:160px;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.75rem .85rem">
-            <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.5rem">3 &nbsp; Document Type</div>
-            <div style="display:flex;gap:.4rem;margin-bottom:.4rem"><input type="text" class="ws-input" id="wsDocTypeInput" placeholder="e.g. Skeleton Argument" list="wsDocTypeList" autocomplete="off" style="flex:1;min-width:0"><datalist id="wsDocTypeList"><option>Skeleton Argument</option><option>Pleading - Statement of Claim</option><option>Pleading - Defence</option><option>Pleading - Reply</option><option>Memo of Grounds of Appeal</option><option>Petition</option><option>Originating Summons</option><option>Affidavit</option><option>Written Submissions</option><option>Chronology</option><option>Cast List</option><option>Advice</option><option>Expert Opinion</option></datalist><button class="ws-tag-add" onclick="wsAddTag('docType')">Add</button></div>
-            <div id="wsDocTypeTags" class="ws-tags"></div>
-            <div style="margin-top:.5rem;display:flex;gap:.5rem;align-items:center"><label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Jurisdiction</label><select class="ws-input" id="wsPrecJur" style="width:auto;padding:.25rem .45rem;font-size:.78rem"><option value="">Any</option><option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option></select></div>
-          </div>
-        </div>
-        <div style="background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.85rem 1rem">
-          <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.4rem">4 &nbsp; Contextual Document</div>
-          <div style="font-size:.78rem;color:var(--text-faint);margin-bottom:.65rem">The document this precedent responds to or relates to.</div>
-          <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-            <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:.35rem"><label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Select existing library doc</label><select class="ws-input" id="wsContextDocSelect" style="width:100%"><option value="">-- none --</option></select></div>
-            <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:.35rem"><label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Or upload new context PDF</label><label class="ws-upload-btn ws-upload-sm" for="wsContextFile"><span>&#128206;</span><span id="wsContextFileLabel">Choose PDF</span></label><input type="file" id="wsContextFile" accept=".pdf" style="display:none" onchange="wsOnContextFile(this)"></div>
-            <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:.35rem"><label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Context doc type</label><input type="text" class="ws-input" id="wsContextDocType" placeholder="e.g. Pleading - Statement of Claim" list="wsContextDocTypeList" autocomplete="off"><datalist id="wsContextDocTypeList"><option>Skeleton Argument</option><option>Pleading - Statement of Claim</option><option>Pleading - Defence</option><option>Pleading - Reply</option><option>Memo of Grounds of Appeal</option><option>Judgment</option><option>Petition</option><option>Affidavit</option><option>Expert Opinion</option></datalist></div>
-          </div>
-          <div style="margin-top:.6rem;display:flex;gap:.75rem;flex-wrap:wrap">
-            <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:.3rem"><label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Relationship</label><select class="ws-input" id="wsPrecRelationship"><option value="">-- none --</option><option value="responds_to">Responds to</option><option value="replies_to">Replies to</option><option value="appeals">Appeals from</option><option value="supports">Supports</option><option value="opposes">Opposes</option></select></div>
-            <div style="flex:2;min-width:180px;display:flex;flex-direction:column;gap:.3rem"><label style="font-size:.72rem;font-weight:700;color:var(--text-faint)">Description of link</label><input type="text" class="ws-input" id="wsContextDesc" placeholder="e.g. Defence responding to Statement of Claim in ABC v DEF"></div>
-          </div>
-        </div>
-        <div style="background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:.85rem 1rem">
-          <div style="font-size:.7rem;font-weight:800;letter-spacing:.09em;color:var(--text-faint);text-transform:uppercase;margin-bottom:.4rem">5 &nbsp; Instructions for AI</div>
-          <div style="font-size:.78rem;color:var(--text-faint);margin-bottom:.5rem">Tell the AI what to understand about this document.</div>
-          <textarea class="ws-input" id="wsAiInstructions" rows="4" placeholder="e.g. This skeleton succeeded at the Court of Appeal. Follow its structure for similar matters." style="width:100%;resize:vertical"></textarea>
-          <input type="text" class="ws-input" id="wsNotes" placeholder="Short note for library list (optional)" style="width:100%;margin-top:.5rem">
-        </div>
-        <div style="display:flex;justify-content:flex-end;padding-bottom:1rem">
-          <button class="btn-primary" id="wsSaveBtn" onclick="saveWorkspaceEntry()" style="padding:.5rem 1.5rem;font-size:.9rem">Save to Library</button>
-        </div>
-      </div>
-
       <div class="progress-bar-wrap" id="progressWrap">
         <div class="progress-bar-label" id="progressLabel">Analysing documents…</div>
         <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
@@ -523,110 +394,6 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       </div>
       <!-- Tool workspaces injected here by JS -->
       <div id="toolWorkspaces" style="display:contents"></div>
-      <!-- Drafting workspace -->
-      <div id="ws-drafting" class="tab-workspace drafting-workspace" style="display:none">
-        <div class="draft-setup">
-          <div class="draft-setup-head">Document Setup</div>
-          <div class="draft-fields">
-            <div class="draft-field-row">
-              <div class="draft-field"><label class="df-label">Court / Tribunal</label><input class="df-input" id="draftCourt" placeholder="e.g. Supreme Court of Bermuda"></div>
-              <div class="draft-field"><label class="df-label">Action / Cause Number</label><input class="df-input" id="draftActionNo" placeholder="e.g. 2024: No. 123"></div>
-            </div>
-            <div class="draft-field-row">
-              <div class="draft-field"><label class="df-label">Plaintiff / Petitioner / Applicant</label><input class="df-input" id="draftPlaintiff" placeholder="Full name"></div>
-              <div class="draft-field"><label class="df-label">Defendant / Respondent</label><input class="df-input" id="draftDefendant" placeholder="Full name"></div>
-            </div>
-            <div class="draft-field-row">
-              <div class="draft-field">
-                <label class="df-label">Document Type</label>
-                <select class="df-input" id="draftSetupDocType" onchange="toggleDraftDocTypeCustom(this)">
-                  <option value="">Select type...</option>
-                  <option>Skeleton Argument</option><option>Pleading - Statement of Claim</option>
-                  <option>Pleading - Defence</option><option>Pleading - Reply</option>
-                  <option>Memo of Grounds of Appeal</option><option>Petition</option>
-                  <option>Originating Summons</option><option>Affidavit</option>
-                  <option>Written Submissions</option><option>Chronology</option>
-                  <option>Cast List</option><option>Advice</option><option>Expert Opinion</option>
-                  <option>Other</option><option value="__custom__">Other — type your own...</option>
-                </select>
-                <input type="text" class="df-input" id="draftSetupDocTypeCustom" placeholder="Type document type" style="display:none;margin-top:.3rem">
-              </div>
-              <div class="draft-field"><label class="df-label">Firm Name</label><input class="df-input" id="draftOnBehalf" placeholder="e.g. Walkers, Campbells, Mourant"></div>
-              <div class="draft-field">
-                <label class="df-label">Counsel for</label>
-                <select class="df-input" id="draftCounselFor">
-                  <option value="">— select —</option>
-                  <option>Plaintiff</option><option>Defendant</option><option>Petitioner</option>
-                  <option>Respondent</option><option>Applicant</option><option>Appellant</option>
-                  <option>First Defendant</option><option>Second Defendant</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          <div class="draft-header-preview" id="draftHeaderPreview" style="display:none">
-            <div class="dhp-label">Header preview</div>
-            <pre class="dhp-text" id="draftHeaderText"></pre>
-          </div>
-          <button class="btn-secondary" style="margin-top:.5rem;font-size:.8rem" onclick="generateDraftHeader()">Preview header</button>
-        </div>
-        <div class="draft-sources">
-          <div class="draft-setup-head">Source material</div>
-          <div class="draft-sources-note">Tick outputs to include. Unticked tools will be run automatically if selected.</div>
-          <div id="draftSourceChecks" class="draft-source-list">
-            <label class="ds-item"><input type="checkbox" class="ds-cb" value="chronology"> <span>Chronology</span> <span class="ds-status" id="dss-chronology"></span></label>
-            <label class="ds-item"><input type="checkbox" class="ds-cb" value="persons"> <span>Persons &amp; Entities Index</span> <span class="ds-status" id="dss-persons"></span></label>
-            <label class="ds-item"><input type="checkbox" class="ds-cb" value="issues"> <span>Issue Tracker</span> <span class="ds-status" id="dss-issues"></span></label>
-            <label class="ds-item"><input type="checkbox" class="ds-cb" value="briefing"> <span>Briefing Note</span> <span class="ds-status" id="dss-briefing"></span></label>
-          </div>
-          <div class="draft-sources-note" style="margin-top:.5rem">Library precedents and sections</div>
-          <div id="draftLibSelector" style="margin-bottom:.75rem;padding:.75rem;background:#f0f4ff;border-radius:6px;border:1px solid #d0d8f0;">
-            <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem;">
-              <select id="draftCaseType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Case type...</option></select>
-              <select id="draftSubcategory" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Sub-category...</option></select>
-              <select id="draftLibDocType" style="flex:1;min-width:110px;padding:.35rem .5rem;border:1.5px solid #d0d8f0;border-radius:5px;font-size:.82rem;"><option value="">Document type...</option></select>
-            </div>
-            <div id="draftLibItems" style="display:none;border-top:1px solid #d0d8f0;padding-top:.5rem;max-height:180px;overflow-y:auto;">
-              <div id="draftSectionsList"></div>
-              <div id="draftPrecedentsList"></div>
-            </div>
-          </div>
-        </div>
-        <div class="draft-instructions-area draft-instructions-wide">
-          <div class="draft-setup-head">Instructions to AI</div>
-          <textarea class="df-input draft-instructions-ta" id="draftInstructions" rows="5" placeholder="Describe what you want drafted. e.g.: Draft a skeleton argument for the Plaintiff addressing limitation, jurisdiction and quantum."></textarea>
-          <div class="draft-actions" style="margin-top:.6rem">
-            <button class="btn-primary" id="draftGenerateBtn" onclick="runDraftWorkflow()">Generate draft</button>
-          </div>
-        </div>
-        <div id="draftOutputArea" class="draft-output-panel" style="display:none">
-          <div class="draft-output-header">
-            <div class="doh-title">
-              <span id="draftOutputMatter" class="doh-matter"></span>
-              <span id="draftOutputDocType" class="doh-doctype"></span>
-            </div>
-            <div class="doh-actions">
-              <button class="btn-secondary doh-btn" onclick="openDraftSaveModal()">Save &amp; Download</button>
-              <button class="btn-secondary doh-btn" id="enhanceBtn" onclick="enhanceDraft()" style="background:rgba(255,200,50,.18);border-color:rgba(255,180,50,.5)">Enhance</button>
-            </div>
-          </div>
-          <div class="draft-output-body">
-            <div class="draft-toc" id="draftToc">
-              <div class="draft-toc-head">Contents</div>
-              <div id="draftTocList"></div>
-            </div>
-            <div class="draft-content-wrap">
-              <div id="draftOutputContent" class="draft-output-content"></div>
-            </div>
-          </div>
-          <div class="draft-revise-bar">
-            <textarea class="df-input draft-revise-ta" id="draftAmendInstructions" rows="3" placeholder="Give further instructions to amend, revise specific sections, or change the argument. Leave blank and click Re-generate to start fresh."></textarea>
-            <div class="draft-revise-btns">
-              <button class="btn-primary" onclick="amendOrRegenerateDraft()">Revise / Re-generate</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div class="input-area">
         <div class="input-row">
           <textarea id="chatInput" placeholder="Ask a legal question about this matter…" rows="1"></textarea>
@@ -635,49 +402,20 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <div class="input-hint">Shift+Enter for new line · Enter to send</div>
       </div>
     </div>
-    <div class="right-panel" id="rightPanel">
+    <div class="right-panel">
       <div class="panel-head"><span class="panel-head-title">Documents</span></div>
-      <div class="upload-meta">
-        <div class="um-row">
-          <label class="um-label">Party</label>
-          <div class="um-combo">
-            <select id="docPartySelect" onchange="syncCombo(this,'docPartyCustom')">
-              <option value="">— optional —</option>
-              <option>Plaintiff</option><option>Defendant</option><option>Petitioner</option>
-              <option>Respondent</option><option>Applicant</option><option>Appellant</option>
-              <option value="__custom__">Other...</option>
-            </select>
-            <input type="text" id="docPartyCustom" class="um-custom" placeholder="Type party name" style="display:none">
-          </div>
-        </div>
-        <div class="um-row">
-          <label class="um-label">Document type</label>
-          <div class="um-combo">
-            <select id="docTypeSelect" onchange="syncCombo(this,'docTypeCustom')">
-              <option value="">— optional —</option>
-              <option>Pleading</option><option>Skeleton Argument</option><option>Memo of Grounds of Appeal</option>
-              <option>Petition</option><option>Witness Statement</option><option>Affidavit</option>
-              <option>Exhibit</option><option>Discovery</option><option>Instructions</option>
-              <option>Opinion</option><option>Case Law</option><option>Statute / Regulation</option>
-              <option>Correspondence</option><option>Expert Report</option><option>Other</option>
-              <option value="__custom__">Custom...</option>
-            </select>
-            <input type="text" id="docTypeCustom" class="um-custom" placeholder="Type document type" style="display:none">
-          </div>
-        </div>
-        <div class="um-row">
-          <label class="um-label">Issues</label>
-          <div class="um-combo">
-            <select id="docIssuesSelect" onchange="addIssueChip(this.value);this.selectedIndex=0;">
-              <option value="">Add issue...</option>
-              <option>Liability</option><option>Quantum</option><option>Jurisdiction</option>
-              <option>Limitation</option><option>Evidence</option><option>Procedure</option>
-              <option value="__custom__">Other...</option>
-            </select>
-          </div>
-          <div id="issueChips" class="issue-chips"></div>
-        </div>
-      </div>
+      <select class="doc-type" id="docTypeSelect">
+        <option>Pleading</option>
+        <option>Skeleton Argument</option>
+        <option>Witness Statement</option>
+        <option>Exhibit</option>
+        <option>Case Law</option>
+        <option>Statute / Regulation</option>
+        <option>Correspondence</option>
+        <option>Expert Report</option>
+        <option>Trial Bundle</option>
+        <option>Other</option>
+      </select>
       <div class="upload-zone" id="uploadZone">
         <input type="file" id="fileInput" accept=".pdf,.doc,.docx" multiple>
         <div class="uz-icon">📎</div>
@@ -686,6 +424,17 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       </div>
       <div class="upload-progress" id="uploadProg"></div>
       <div class="upload-err" id="uploadErr"></div>
+      <div class="focus-section">
+        <div class="focus-label">Focus Areas</div>
+        <div class="chips" id="focusChips">
+          <span class="chip" data-v="Liability">Liability</span>
+          <span class="chip" data-v="Quantum">Quantum</span>
+          <span class="chip" data-v="Jurisdiction">Jurisdiction</span>
+          <span class="chip" data-v="Limitation">Limitation</span>
+          <span class="chip" data-v="Evidence">Evidence</span>
+          <span class="chip" data-v="Procedure">Procedure</span>
+        </div>
+      </div>
       <div class="docs-scroll"><div id="docsList"></div></div>
     </div>
   </div>
@@ -781,44 +530,130 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
   <div class="modal" style="max-width:540px;width:95%">
     <h3 id="libModalTitle">Add to Library</h3>
     <div class="lib-modal-tabs">
-      <button class="lib-modal-tab active" onclick="switchLibTab('precedent')">Precedent Doc</button>
+      <button class="lib-modal-tab active" onclick="switchLibTab('case-type')">Case Types</button>
+      <button class="lib-modal-tab" onclick="switchLibTab('precedent')">Precedent Doc</button>
       <button class="lib-modal-tab" onclick="switchLibTab('section')">Standard Section</button>
     </div>
-    <div id="libTab-precedent">
-      <div class="f-group"><label class="f-label">Document Name *</label><input class="f-input" id="libPrecName" placeholder="e.g. Skeleton - ABC v DEF (2024)"></div>
-      <div class="f-group"><label class="f-label">Case Type</label><input class="f-input" id="libPrecCaseTypeInput" placeholder="e.g. Winding Up" list="libPrecCaseTypeList" autocomplete="off"><datalist id="libPrecCaseTypeList"></datalist></div>
-      <div class="f-group"><label class="f-label">Sub-category (optional)</label><input class="f-input" id="libPrecSubcatInput" placeholder="e.g. Creditors Petition" list="libPrecSubcatList" autocomplete="off"><datalist id="libPrecSubcatList"></datalist></div>
-      <div class="f-group"><label class="f-label">Document Type (optional)</label><input class="f-input" id="libPrecDocTypeInput" placeholder="e.g. Skeleton Argument" list="libPrecDocTypeList" autocomplete="off"><datalist id="libPrecDocTypeList"></datalist></div>
-      <div class="f-group"><label class="f-label">Jurisdiction</label><select class="f-input" id="libPrecJur"><option value="">Any</option><option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option></select></div>
-      <div class="f-group"><label class="f-label">Description (optional)</label><input class="f-input" id="libPrecDesc" placeholder="Brief description"></div>
-      <div class="f-group"><label class="f-label">PDF Document *</label><input type="file" class="f-input" id="libPrecFile" accept=".pdf" style="padding:.3rem"></div>
+
+    <!-- Case type tab -->
+    <div id="libTab-case-type">
       <div class="f-group">
-        <label class="f-label">Relationship to another document (optional)</label>
-        <select class="f-input" id="libPrecRelationship" onchange="toggleContextDoc(this.value)" style="margin-bottom:.4rem">
-          <option value="">— none —</option>
-          <option value="responds_to">Responds to (e.g. Defence responds to Statement of Claim)</option>
-          <option value="replies_to">Replies to (e.g. Reply responds to Defence)</option>
-          <option value="appeals">Appeals from (e.g. Skeleton responds to Judgment)</option>
-          <option value="supports">Supports / relies on</option>
-          <option value="opposes">Opposes</option>
+        <label class="f-label">Case Type Name *</label>
+        <input class="f-input" id="libCaseTypeName" placeholder="e.g. Winding Up, Foreign Law Opinion, Ordinary Action">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Jurisdiction (optional)</label>
+        <select class="f-input" id="libCaseTypeJur">
+          <option value="">Any</option>
+          <option>Bermuda</option>
+          <option>Cayman Islands</option>
+          <option>British Virgin Islands</option>
         </select>
-        <div id="libContextDocWrap" style="display:none">
-          <label class="f-label" style="margin-top:.4rem">Context document — select existing or upload</label>
-          <select class="f-input" id="libContextDocSelect" style="margin-bottom:.35rem"><option value="">— select from library —</option></select>
-          <div style="font-size:.75rem;color:var(--text-faint);margin-bottom:.3rem;text-align:center">— or upload a new context PDF —</div>
-          <input type="file" class="f-input" id="libContextFile" accept=".pdf" style="padding:.3rem">
-          <input type="text" class="f-input" id="libContextDesc" placeholder="Brief description of context doc (optional)" style="margin-top:.35rem">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Description (optional)</label>
+        <input class="f-input" id="libCaseTypeDesc" placeholder="Brief description">
+      </div>
+      <div style="margin-top:.5rem">
+        <div style="font-size:.82rem;font-weight:600;color:var(--text-mid);margin-bottom:.4rem">Sub-categories</div>
+        <div id="libSubcatList" style="display:flex;flex-direction:column;gap:.3rem;margin-bottom:.4rem"></div>
+        <div style="display:flex;gap:.4rem">
+          <input class="f-input" id="libNewSubcat" placeholder="Add sub-category (e.g. Creditors Petition)" style="flex:1">
+          <button class="btn-secondary" onclick="addSubcatField()">+ Add</button>
+        </div>
+      </div>
+      <div style="margin-top:.75rem">
+        <div style="font-size:.82rem;font-weight:600;color:var(--text-mid);margin-bottom:.4rem">Document Types</div>
+        <div id="libDocTypeList" style="display:flex;flex-direction:column;gap:.3rem;margin-bottom:.4rem"></div>
+        <div style="display:flex;gap:.4rem">
+          <input class="f-input" id="libNewDocType" placeholder="Add document type (e.g. Skeleton Argument)" style="flex:1">
+          <button class="btn-secondary" onclick="addDocTypeField()">+ Add</button>
         </div>
       </div>
     </div>
-    <div id="libTab-section" style="display:none">
-      <div class="f-group"><label class="f-label">Section Title *</label><input class="f-input" id="libSecTitle" placeholder="e.g. Cayman Sources of Law"></div>
-      <div class="f-group"><label class="f-label">Case Type</label><input class="f-input" id="libSecCaseTypeInput" placeholder="e.g. Winding Up" list="libSecCaseTypeList" autocomplete="off"><datalist id="libSecCaseTypeList"></datalist></div>
-      <div class="f-group"><label class="f-label">Sub-category (optional)</label><input class="f-input" id="libSecSubcatInput" placeholder="e.g. Creditors Petition" list="libSecSubcatList" autocomplete="off"><datalist id="libSecSubcatList"></datalist></div>
-      <div class="f-group"><label class="f-label">Document Type (optional)</label><input class="f-input" id="libSecDocTypeInput" placeholder="e.g. Skeleton Argument" list="libSecDocTypeList" autocomplete="off"><datalist id="libSecDocTypeList"></datalist></div>
-      <div class="f-group"><label class="f-label">Section Text *</label><textarea class="lib-section-text" id="libSecContent" placeholder="Paste or type the standard section text here..."></textarea></div>
-      <div class="f-group"><label class="f-label">Notes (optional)</label><input class="f-input" id="libSecNotes" placeholder="When to use this section"></div>
+
+    <!-- Precedent doc tab -->
+    <div id="libTab-precedent" style="display:none">
+      <div class="f-group">
+        <label class="f-label">Document Name *</label>
+        <input class="f-input" id="libPrecName" placeholder="e.g. Skeleton — ABC v DEF (2024)">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Case Type *</label>
+        <select class="f-input" id="libPrecCaseType" onchange="updatePrecSubcats()">
+          <option value="">Select case type…</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Sub-category</label>
+        <select class="f-input" id="libPrecSubcat">
+          <option value="">None</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Document Type</label>
+        <select class="f-input" id="libPrecDocType">
+          <option value="">None</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Jurisdiction</label>
+        <select class="f-input" id="libPrecJur">
+          <option value="">Any</option>
+          <option>Bermuda</option>
+          <option>Cayman Islands</option>
+          <option>British Virgin Islands</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Description</label>
+        <input class="f-input" id="libPrecDesc" placeholder="Brief description of this precedent">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Upload Document (PDF)</label>
+        <input type="file" id="libPrecFile" accept=".pdf" class="f-input" style="padding:.3rem">
+        <div style="font-size:.75rem;color:var(--text-faint);margin-top:.2rem">The document will be chunked and stored in your library for drafting use.</div>
+      </div>
     </div>
+
+    <!-- Standard section tab -->
+    <div id="libTab-section" style="display:none">
+      <div class="f-group">
+        <label class="f-label">Section Title *</label>
+        <input class="f-input" id="libSecTitle" placeholder="e.g. Cayman Sources of Law, Introduction to Affidavit">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Case Type</label>
+        <select class="f-input" id="libSecCaseType" onchange="updateSecSubcats()">
+          <option value="">Any case type</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Sub-category</label>
+        <select class="f-input" id="libSecSubcat">
+          <option value="">Any</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Document Type</label>
+        <select class="f-input" id="libSecDocType">
+          <option value="">Any</option>
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Section Text *</label>
+        <textarea class="lib-section-text" id="libSecContent" placeholder="Paste or type the standard section text here…"></textarea>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Notes (optional)</label>
+        <input class="f-input" id="libSecNotes" placeholder="When to use this section, any caveats">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Also apply to additional case types</label>
+        <div id="libSecExtraTags" style="display:flex;flex-direction:column;gap:.3rem"></div>
+      </div>
+    </div>
+
     <div class="modal-btns" style="margin-top:1.2rem">
       <button class="btn-secondary" onclick="closeModal('libraryModal')">Cancel</button>
       <button class="btn-primary" id="libSaveBtn" onclick="saveLibraryEntry()">Save</button>
@@ -829,7 +664,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 <!-- Library: View precedent/section detail -->
 <div class="overlay" id="libDetailModal" style="display:none">
   <div class="modal" style="max-width:600px;width:95%">
-    <div id="libDetailTitle" style="font-size:.95rem;font-weight:700;margin-bottom:.4rem;color:var(--text-dark)"></div>
+    <h3 id="libDetailTitle"></h3>
     <div id="libDetailBody" style="max-height:400px;overflow-y:auto;font-size:.92rem;line-height:1.8;white-space:pre-wrap"></div>
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeModal('libDetailModal')">Close</button>
@@ -1072,35 +907,15 @@ uploadZone.addEventListener('dragleave',()=>uploadZone.classList.remove('drag-ov
 uploadZone.addEventListener('drop',e=>{e.preventDefault();uploadZone.classList.remove('drag-over');if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(e.dataTransfer.files).filter(f=>f.type==='application/pdf'));});
 fileInput.addEventListener('change',()=>{if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(fileInput.files));fileInput.value='';});
 
-function getUploadMeta(){
-  var partySel=document.getElementById('docPartySelect');
-  var party=partySel&&partySel.value==='__custom__'?document.getElementById('docPartyCustom').value.trim():(partySel?partySel.value||'':'');
-  var typeSel=document.getElementById('docTypeSelect');
-  var docType=typeSel&&typeSel.value==='__custom__'?document.getElementById('docTypeCustom').value.trim():(typeSel?typeSel.value||'Other':'Other');
-  var chips=document.querySelectorAll('.issue-chip');
-  var issues=Array.from(chips).map(function(c){return c.getAttribute('data-v');}).join(', ');
-  return{party:party||null,docType:docType||'Other',docIssues:issues||null};
-}
-function syncCombo(sel,customId){var el=document.getElementById(customId);if(el)el.style.display=sel.value==='__custom__'?'':'none';}
-function addIssueChip(val){
-  if(!val)return;
-  if(val==='__custom__'){val=prompt('Enter issue:');if(!val||!val.trim())return;val=val.trim();}
-  var container=document.getElementById('issueChips');if(!container)return;
-  var existing=Array.from(container.querySelectorAll('.issue-chip')).map(function(c){return c.getAttribute('data-v').toLowerCase();});
-  if(existing.indexOf(val.toLowerCase())!==-1)return;
-  var chip=document.createElement('span');chip.className='issue-chip';chip.setAttribute('data-v',val);
-  chip.innerHTML=val+' <button onclick="this.parentElement.remove()" title="Remove">x</button>';
-  container.appendChild(chip);
-}
 async function uploadFiles(files){
   if(!files.length||!currentMatter)return;
-  var meta=getUploadMeta();
+  const docType=document.getElementById('docTypeSelect').value;
   const prog=document.getElementById('uploadProg'),errEl=document.getElementById('uploadErr');
   errEl.classList.remove('on');
   for(const file of files){
-    prog.textContent='Processing: '+file.name+'...';prog.classList.add('on');
-    try{const b64=await toB64(file);const d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,fileData:b64,docType:meta.docType,party:meta.party,docIssues:meta.docIssues});if(d)showToast('Uploaded: '+file.name+' - '+d.chunks+' passages indexed');}
-    catch(e){errEl.textContent='Failed: '+file.name+' - '+e.message;errEl.classList.add('on');}
+    prog.textContent=`Processing: ${file.name}…`;prog.classList.add('on');
+    try{const b64=await toB64(file);const d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,fileData:b64,docType});if(d)showToast(`✓ ${file.name} — ${d.chunks} passages indexed`);}
+    catch(e){errEl.textContent=`Failed: ${file.name} — ${e.message}`;errEl.classList.add('on');}
   }
   prog.classList.remove('on');await loadDocuments(currentMatter.id);await loadMatters();
 }
@@ -1164,33 +979,7 @@ function switchLeftPanel(panel){
   document.getElementById('libraryPanel').style.display = panel==='library' ? 'flex' : 'none';
   document.getElementById('toggleMatters').classList.toggle('active', panel==='matters');
   document.getElementById('toggleLibrary').classList.toggle('active', panel==='library');
-  var lp=document.getElementById('leftPanel');
-  var lws=document.getElementById('libraryWorkspace');
-  var rp=document.getElementById('rightPanel');
-  var ca=document.getElementById('chatMessages');
-  var dws=document.getElementById('ws-drafting');
-  var ia=document.querySelector('.input-area');
-  var tb=document.getElementById('tabBar');
-  var mc=document.querySelector('.main-content');
-  if(panel==='library'){
-    if(lp) lp.style.display='none';
-    if(lws) lws.style.display='flex';
-    if(rp) rp.style.display='none';
-    if(ca) ca.style.display='none';
-    if(dws) dws.style.display='none';
-    if(ia) ia.style.display='none';
-    if(tb) tb.style.display='none';
-    loadLibrary();
-    wsPopulateCaseTypes();
-    wsPopulateContextDocs();
-  } else {
-    if(lp) lp.style.display='';
-    if(lws) lws.style.display='none';
-    if(rp) rp.style.display='';
-    if(ca) ca.style.display='';
-    if(ia) ia.style.display='';
-    if(tb) tb.style.display='';
-  }
+  if(panel==='library') loadLibrary();
 }
 
 async function loadLibrary(){
@@ -1292,39 +1081,24 @@ function renderLibrary(){
   }).join('');
 }
 
-function openLibraryModal(defaultTab){
-  _editingLibId=null;_editingLibType=null;
-  ['libPrecName','libPrecCaseTypeInput','libPrecSubcatInput','libPrecDocTypeInput','libPrecDesc',
-   'libSecTitle','libSecCaseTypeInput','libSecSubcatInput','libSecDocTypeInput','libSecContent','libSecNotes'].forEach(function(id){
-    var el=document.getElementById(id);if(el)el.value='';
+function openLibraryModal(){
+  pendingSubcats=[];
+  pendingDocTypes=[];
+  document.getElementById('libSubcatList').innerHTML='';
+  document.getElementById('libDocTypeList').innerHTML='';
+  document.getElementById('libCaseTypeName').value='';
+  document.getElementById('libCaseTypeDesc').value='';
+  // Populate case type dropdowns
+  const opts = '<option value="">Select case type…</option>'+
+    libraryData.caseTypes.map(ct=>`<option value="${ct.id}">${esc(ct.name)}</option>`).join('');
+  ['libPrecCaseType','libSecCaseType'].forEach(id=>{
+    document.getElementById(id).innerHTML = id==='libSecCaseType'
+      ? '<option value="">Any case type</option>'+libraryData.caseTypes.map(ct=>`<option value="${ct.id}">${esc(ct.name)}</option>`).join('')
+      : opts;
   });
-  var jur=document.getElementById('libPrecJur');if(jur)jur.selectedIndex=0;
-  var pf=document.getElementById('libPrecFile');if(pf)pf.value='';
-  var relSel=document.getElementById('libPrecRelationship');if(relSel)relSel.selectedIndex=0;
-  var wrap=document.getElementById('libContextDocWrap');if(wrap)wrap.style.display='none';
-  var cf=document.getElementById('libContextFile');if(cf)cf.value='';
-  var cd=document.getElementById('libContextDesc');if(cd)cd.value='';
-  document.getElementById('libModalTitle').textContent='Add to Library';
-  _populateLibDataLists();
-  _populateContextDocSelect();
-  switchLibTab(defaultTab||'precedent');
+  switchLibTab('case-type');
   document.getElementById('libraryModal').style.display='flex';
 }
-function _populateLibDataLists(){
-  var ctNames=libraryData.caseTypes.map(function(ct){return ct.name;});
-  var subNames=libraryData.subcats.map(function(s){return s.name;}).filter(function(v,i,a){return a.indexOf(v)===i;});
-  var dtNames=libraryData.docTypes.map(function(d){return d.name;}).filter(function(v,i,a){return a.indexOf(v)===i;});
-  ['libPrecCaseTypeList','libSecCaseTypeList'].forEach(function(id){var dl=document.getElementById(id);if(!dl)return;dl.innerHTML=ctNames.map(function(n){return '<option value="'+n+'">';}).join('');});
-  ['libPrecSubcatList','libSecSubcatList'].forEach(function(id){var dl=document.getElementById(id);if(!dl)return;dl.innerHTML=subNames.map(function(n){return '<option value="'+n+'">';}).join('');});
-  ['libPrecDocTypeList','libSecDocTypeList'].forEach(function(id){var dl=document.getElementById(id);if(!dl)return;dl.innerHTML=dtNames.map(function(n){return '<option value="'+n+'">';}).join('');});
-}
-function _populateContextDocSelect(){
-  var sel=document.getElementById('libContextDocSelect');if(!sel)return;
-  sel.innerHTML='<option value="">— select from library —</option>';
-  (libraryData.precedents||[]).forEach(function(p){var o=document.createElement('option');o.value=p.id;o.textContent=p.name+(p.description?' - '+p.description:'');sel.appendChild(o);});
-}
-function toggleContextDoc(val){var wrap=document.getElementById('libContextDocWrap');if(wrap)wrap.style.display=val?'':'none';}
-var _editingLibId=null,_editingLibType=null;
 
 function switchLibTab(tab){
   activeLibTab=tab;
@@ -1373,126 +1147,67 @@ function updateSecSubcats(){
 
 async function saveLibraryEntry(){
   const btn=document.getElementById('libSaveBtn');
-  btn.disabled=true;btn.textContent='Saving...';
+  btn.disabled=true; btn.textContent='Saving…';
   try{
-    var tok=localStorage.getItem('elj_token');
-    if(activeLibTab==='precedent'){
+    if(activeLibTab==='case-type'){
+      const name=document.getElementById('libCaseTypeName').value.trim();
+      if(!name){showToast('Case type name required');return;}
+      // Also pick up any unsaved subcat/doctype input
+      const pendingSub=document.getElementById('libNewSubcat').value.trim();
+      if(pendingSub)pendingSubcats.push(pendingSub);
+      const pendingDoc=document.getElementById('libNewDocType').value.trim();
+      if(pendingDoc)pendingDocTypes.push(pendingDoc);
+      await api('/api/library','POST',{
+        action:'create_case_type',
+        name,
+        jurisdiction:document.getElementById('libCaseTypeJur').value,
+        description:document.getElementById('libCaseTypeDesc').value,
+        subcats:pendingSubcats,
+        docTypes:pendingDocTypes,
+      });
+      showToast('Case type saved');
+    }
+    else if(activeLibTab==='precedent'){
       const name=document.getElementById('libPrecName').value.trim();
+      const caseTypeId=document.getElementById('libPrecCaseType').value;
       const file=document.getElementById('libPrecFile').files[0];
-      if(!name){showToast('Document name required');return;}
-      if(!file&&!_editingLibId){showToast('Please upload a PDF document');return;}
-      const ids=await _resolveLibraryTaxonomy(
-        document.getElementById('libPrecCaseTypeInput').value.trim(),
-        document.getElementById('libPrecSubcatInput').value.trim(),
-        document.getElementById('libPrecDocTypeInput').value.trim());
-      if(file){
-        const fd=new FormData();
-        fd.append('name',name);
-        fd.append('case_type_id',ids.caseTypeId||'');
-        fd.append('subcategory_id',ids.subcatId||'');
-        fd.append('doc_type_id',ids.docTypeId||'');
-        fd.append('jurisdiction',document.getElementById('libPrecJur').value||'');
-        fd.append('description',document.getElementById('libPrecDesc').value||'');
-        fd.append('context_relationship',document.getElementById('libPrecRelationship').value||'');
-        var ctxSel=document.getElementById('libContextDocSelect');
-        fd.append('context_doc_id',(ctxSel&&ctxSel.value)||'');
-        fd.append('context_description',document.getElementById('libContextDesc').value||'');
-        var ctxFile=document.getElementById('libContextFile');
-        if(ctxFile&&ctxFile.files[0])fd.append('context_file',ctxFile.files[0]);
-        fd.append('file',file);
-        if(_editingLibId)fd.append('replace_id',_editingLibId);
-        const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd});
-        if(!r.ok)throw new Error(await r.text());
-        showToast('Precedent saved and indexed');
-      } else if(_editingLibId){
-        await api('/api/library','POST',{action:'update_precedent_meta',id:_editingLibId,name,
-          case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,doc_type_id:ids.docTypeId||null,
-          jurisdiction:document.getElementById('libPrecJur').value||null,
-          description:document.getElementById('libPrecDesc').value||null});
-        showToast('Precedent updated');
-      }
-    } else if(activeLibTab==='section'){
+      if(!name||!caseTypeId){showToast('Name and case type required');return;}
+      if(!file){showToast('Please upload a PDF document');return;}
+      // Upload via FormData
+      const fd=new FormData();
+      fd.append('action','create_precedent');
+      fd.append('name',name);
+      fd.append('case_type_id',caseTypeId);
+      fd.append('subcategory_id',document.getElementById('libPrecSubcat').value||'');
+      fd.append('doc_type_id',document.getElementById('libPrecDocType').value||'');
+      fd.append('jurisdiction',document.getElementById('libPrecJur').value||'');
+      fd.append('description',document.getElementById('libPrecDesc').value||'');
+      fd.append('file',file);
+      const r=await fetch('/api/library',{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd});
+      if(!r.ok) throw new Error(await r.text());
+      showToast('Precedent document saved and indexed');
+    }
+    else if(activeLibTab==='section'){
       const title=document.getElementById('libSecTitle').value.trim();
       const content=document.getElementById('libSecContent').value.trim();
       if(!title||!content){showToast('Title and section text required');return;}
-      const ids=await _resolveLibraryTaxonomy(
-        document.getElementById('libSecCaseTypeInput').value.trim(),
-        document.getElementById('libSecSubcatInput').value.trim(),
-        document.getElementById('libSecDocTypeInput').value.trim());
-      const payload={title,content,case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,
-        doc_type_id:ids.docTypeId||null,notes:document.getElementById('libSecNotes').value||''};
-      if(_editingLibId){
-        await api('/api/library','POST',{action:'update_section',id:_editingLibId,...payload});
-        showToast('Section updated');
-      } else {
-        await api('/api/library','POST',{action:'create_section',...payload});
-        showToast('Standard section saved');
-      }
+      await api('/api/library','POST',{
+        action:'create_section',
+        title,
+        content,
+        case_type_id:document.getElementById('libSecCaseType').value||null,
+        subcategory_id:document.getElementById('libSecSubcat').value||null,
+        doc_type_id:document.getElementById('libSecDocType').value||null,
+        notes:document.getElementById('libSecNotes').value||'',
+      });
+      showToast('Standard section saved');
     }
     await loadLibrary();
     closeModal('libraryModal');
   }catch(e){showToast('Error: '+e.message);}
   finally{btn.disabled=false;btn.textContent='Save';}
 }
-async function _resolveLibraryTaxonomy(caseTypeName,subcatName,docTypeName){
-  let caseTypeId=null,subcatId=null,docTypeId=null;
-  if(caseTypeName){
-    const ex=libraryData.caseTypes.find(function(ct){return ct.name.toLowerCase()===caseTypeName.toLowerCase();});
-    if(ex){caseTypeId=ex.id;}
-    else{const r=await api('/api/library','POST',{action:'create_case_type',name:caseTypeName,subcats:[],docTypes:[]});caseTypeId=r.id;}
-  }
-  if(subcatName&&caseTypeId){
-    const ex=libraryData.subcats.find(function(s){return s.case_type_id===caseTypeId&&s.name.toLowerCase()===subcatName.toLowerCase();});
-    if(ex){subcatId=ex.id;}
-    else{await api('/api/library','POST',{action:'add_to_case_type',id:caseTypeId,name:caseTypeName,subcats:[subcatName],docTypes:[]});
-      await loadLibrary();
-      const fr=libraryData.subcats.find(function(s){return s.case_type_id===caseTypeId&&s.name.toLowerCase()===subcatName.toLowerCase();});
-      if(fr)subcatId=fr.id;}
-  }
-  if(docTypeName&&caseTypeId){
-    const ex=libraryData.docTypes.find(function(d){return d.case_type_id===caseTypeId&&d.name.toLowerCase()===docTypeName.toLowerCase();});
-    if(ex){docTypeId=ex.id;}
-    else{await api('/api/library','POST',{action:'add_to_case_type',id:caseTypeId,name:caseTypeName,subcats:[],docTypes:[docTypeName]});
-      await loadLibrary();
-      const fr=libraryData.docTypes.find(function(d){return d.case_type_id===caseTypeId&&d.name.toLowerCase()===docTypeName.toLowerCase();});
-      if(fr)docTypeId=fr.id;}
-  }
-  return{caseTypeId,subcatId,docTypeId};
-}
-function viewLibItem(type,id){
-  if(type==='sec'){
-    const s=libraryData.sections.find(function(x){return x.id===id;});if(!s)return;
-    _editingLibId=id;_editingLibType='section';
-    document.getElementById('libModalTitle').textContent='Edit Section';
-    _populateLibDataLists();
-    document.getElementById('libSecTitle').value=s.title||'';
-    document.getElementById('libSecContent').value=s.content||'';
-    document.getElementById('libSecNotes').value=s.notes||'';
-    const ct=libraryData.caseTypes.find(function(x){return x.id===s.case_type_id;});
-    document.getElementById('libSecCaseTypeInput').value=ct?ct.name:'';
-    const sub=libraryData.subcats.find(function(x){return x.id===s.subcategory_id;});
-    document.getElementById('libSecSubcatInput').value=sub?sub.name:'';
-    const dt=libraryData.docTypes.find(function(x){return x.id===s.doc_type_id;});
-    document.getElementById('libSecDocTypeInput').value=dt?dt.name:'';
-    switchLibTab('section');document.getElementById('libraryModal').style.display='flex';
-  } else {
-    const p=libraryData.precedents.find(function(x){return x.id===id;});if(!p)return;
-    _editingLibId=id;_editingLibType='precedent';
-    document.getElementById('libModalTitle').textContent='Edit Precedent';
-    _populateLibDataLists();_populateContextDocSelect();
-    document.getElementById('libPrecName').value=p.name||'';
-    document.getElementById('libPrecDesc').value=p.description||'';
-    const ct=libraryData.caseTypes.find(function(x){return x.id===p.case_type_id;});
-    document.getElementById('libPrecCaseTypeInput').value=ct?ct.name:'';
-    const sub=libraryData.subcats.find(function(x){return x.id===p.subcategory_id;});
-    document.getElementById('libPrecSubcatInput').value=sub?sub.name:'';
-    const dt=libraryData.docTypes.find(function(x){return x.id===p.doc_type_id;});
-    document.getElementById('libPrecDocTypeInput').value=dt?dt.name:'';
-    const jurSel=document.getElementById('libPrecJur');
-    for(var i=0;i<jurSel.options.length;i++){if(jurSel.options[i].value===p.jurisdiction){jurSel.selectedIndex=i;break;}}
-    switchLibTab('precedent');document.getElementById('libraryModal').style.display='flex';
-  }
-}
+
 async function deleteCaseType(id){
   if(!confirm('Delete this case type and all its sub-categories, document types, precedents and sections?'))return;
   await api('/api/library','DELETE',{action:'delete_case_type',id});
@@ -1609,44 +1324,12 @@ function closeTab(toolName){
 function openTool(t){
   if(!currentMatter){showToast('Select a matter first');return;}
   const isNew=getOrCreateToolTab(t);
-  if(!isNew){return;}
-  _loadMostRecentToolResult(t);
-}
-async function _loadMostRecentToolResult(toolName){
-  try{
-    var mid=currentMatter&&currentMatter.id;
-    if(!mid){promptTool(toolName);return;}
-    var tok=localStorage.getItem('elj_token');
-    var r=await fetch('/api/history?matter_id='+encodeURIComponent(mid),{headers:{'Authorization':'Bearer '+tok}});
-    if(!r.ok){promptTool(toolName);return;}
-    var h=await r.json();
-    var results=(h.history||[]).filter(function(x){return x.tool_name===toolName;})
-      .sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
-    if(results.length>0){
-      var latest=results[0];var prev=results.length>1?results[1]:null;
-      var msgsArea=showToolResult(toolName);
-      appendMsgTo(msgsArea,'assistant',latest.answer,toolName==='proposition'?'prop':'tool',latest.question,null,toolName,latest.id);
-      var bar=document.createElement('div');
-      bar.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;flex-wrap:wrap;';
-      var rerunBtn=document.createElement('button');rerunBtn.className='btn-secondary';rerunBtn.textContent='Re-run';
-      rerunBtn.onclick=function(){bar.remove();promptTool(toolName);};bar.appendChild(rerunBtn);
-      if(prev){
-        var prevBtn=document.createElement('button');prevBtn.className='btn-secondary';prevBtn.style.fontSize='.78rem';prevBtn.textContent='View previous version';
-        prevBtn.onclick=function(){
-          var prevArea=showToolResult(toolName);prevArea.innerHTML='';
-          appendMsgTo(prevArea,'assistant',prev.answer,toolName==='proposition'?'prop':'tool','Previous: '+prev.question,null,toolName,prev.id);
-          var backBar=document.createElement('div');backBar.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.5rem;border-top:1px solid #e8edf2;margin-top:.5rem;flex-wrap:wrap;';
-          var delPrevBtn=document.createElement('button');delPrevBtn.className='btn-secondary';delPrevBtn.style.cssText='font-size:.78rem;color:#c0392b;';delPrevBtn.textContent='Delete previous version';
-          delPrevBtn.onclick=function(){if(!confirm('Delete previous version?'))return;api('/api/history?id='+prev.id,'DELETE').then(function(){_loadMostRecentToolResult(toolName);}).catch(function(e){showToast('Error: '+e.message);});};
-          backBar.appendChild(delPrevBtn);
-          var backBtn=document.createElement('button');backBtn.className='btn-secondary';backBtn.textContent='Back to current version';
-          backBtn.onclick=function(){_loadMostRecentToolResult(toolName);};backBar.appendChild(backBtn);
-          prevArea.appendChild(backBar);
-        };bar.appendChild(prevBtn);
-      }
-      msgsArea.appendChild(bar);
-    } else {promptTool(toolName);}
-  }catch(e){promptTool(toolName);}
+  if(!isNew){
+    // Tab already exists — just switch to it, don't re-run
+    return;
+  }
+  // New tab — auto-open the config modal
+  promptTool(t);
 }
 
 function promptTool(t){
@@ -1989,857 +1672,6 @@ function closeModal(id){document.getElementById(id).style.display='none';}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.style.display='none';}));
 function showToast(msg){document.querySelector('.toast')?.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3200);}
 init();
-
-// ── LIBRARY TAB PANEL CONTROL ─────────────────────────────────────────────────
-var _origSwitchLeftPanel = null;
-(function(){
-  var _orig = switchLeftPanel;
-  switchLeftPanel = function(panel){
-    _orig(panel);
-    var rp=document.getElementById('rightPanel');
-    if(rp)rp.style.display=panel==='library'?'none':'';
-  };
-})();
-
-// ── LIBRARY DRAFT INTEGRATION ──────────────────────────────────────────────
-var _dls={sections:[],precedents:[],selSec:new Set(),selPrec:new Set()};
-function loadDraftLibrary(){
-  var tok=localStorage.getItem('elj_token');if(!tok)return;
-  fetch('/api/library_fetch?action=getCaseTypes',{headers:{'Authorization':'Bearer '+tok}})
-    .then(function(r){return r.json();}).then(function(d){
-      var sel=document.getElementById('draftCaseType');if(!sel)return;
-      sel.innerHTML='<option value="">Case type...</option>';
-      (d.caseTypes||[]).forEach(function(ct){var o=document.createElement('option');o.value=ct.id;o.setAttribute('data-name',ct.name);o.textContent=ct.name;sel.appendChild(o);});
-    }).catch(function(e){console.warn('loadDraftLibrary:',e);});
-}
-document.addEventListener('change',function(e){
-  var tok=localStorage.getItem('elj_token');if(!tok)return;
-  if(e.target.id==='draftCaseType'){
-    var ctId=e.target.value;
-    document.getElementById('draftSubcategory').innerHTML='<option value="">Sub-category...</option>';
-    document.getElementById('draftLibDocType').innerHTML='<option value="">Document type...</option>';
-    var li=document.getElementById('draftLibItems');if(li)li.style.display='none';
-    _dls.selSec=new Set();_dls.selPrec=new Set();
-    if(!ctId)return;
-    Promise.all([
-      fetch('/api/library_fetch?action=getSubcategories&caseTypeId='+ctId,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}),
-      fetch('/api/library_fetch?action=getDocTypes&caseTypeId='+ctId,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();})
-    ]).then(function(res){
-      var ss=document.getElementById('draftSubcategory');
-      (res[0].subcategories||[]).forEach(function(s){var o=document.createElement('option');o.value=s.id;o.setAttribute('data-name',s.name);o.textContent=s.name;ss.appendChild(o);});
-      var ds=document.getElementById('draftLibDocType');
-      (res[1].docTypes||[]).forEach(function(d){var o=document.createElement('option');o.value=d.id;o.setAttribute('data-name',d.name);o.textContent=d.name;ds.appendChild(o);});
-      _loadDraftItems(ctId,null,null);
-    });
-  }
-  if(e.target.id==='draftSubcategory'||e.target.id==='draftLibDocType'){
-    var ctId=document.getElementById('draftCaseType').value;
-    if(ctId)_loadDraftItems(ctId,document.getElementById('draftSubcategory').value||null,document.getElementById('draftLibDocType').value||null);
-  }
-});
-function _loadDraftItems(ctId,subId,dtId){
-  var tok=localStorage.getItem('elj_token');
-  var url='/api/library_fetch?action=getDraftContext&caseTypeId='+ctId;
-  if(subId)url+='&subcategoryId='+subId;if(dtId)url+='&docTypeId='+dtId;
-  fetch(url,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){_dls.sections=d.sections||[];_dls.precedents=d.precedents||[];_renderDraftItems();});
-}
-function _renderDraftItems(){
-  var wrap=document.getElementById('draftLibItems');
-  var sd=document.getElementById('draftSectionsList');var pd=document.getElementById('draftPrecedentsList');
-  if(!_dls.sections.length&&!_dls.precedents.length){if(wrap)wrap.style.display='none';return;}
-  if(wrap)wrap.style.display='';
-  if(sd){sd.innerHTML='';if(_dls.sections.length){var hd=document.createElement('div');hd.style.cssText='font-size:.72rem;font-weight:700;color:#7a8aaa;text-transform:uppercase;margin:.4rem 0 .2rem;';hd.textContent='Standard Sections';sd.appendChild(hd);_dls.sections.forEach(function(s){var lbl=document.createElement('label');lbl.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';var cb=document.createElement('input');cb.type='checkbox';cb.value=s.id;cb.setAttribute('data-title',s.title);cb.setAttribute('data-content',encodeURIComponent(s.content||''));cb.className='draft-sec-cb';if(_dls.selSec.has(s.id))cb.checked=true;cb.onchange=function(){if(this.checked)_dls.selSec.add(this.value);else _dls.selSec.delete(this.value);};lbl.appendChild(cb);lbl.appendChild(document.createTextNode(' '+s.title));sd.appendChild(lbl);});}}
-  if(pd){pd.innerHTML='';if(_dls.precedents.length){var hd=document.createElement('div');hd.style.cssText='font-size:.72rem;font-weight:700;color:#7a8aaa;text-transform:uppercase;margin:.4rem 0 .2rem;';hd.textContent='Precedent Documents';pd.appendChild(hd);_dls.precedents.forEach(function(p){var lbl=document.createElement('label');lbl.style.cssText='display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.84rem;cursor:pointer;';var cb=document.createElement('input');cb.type='checkbox';cb.value=p.id;cb.className='draft-prec-cb';if(_dls.selPrec.has(p.id))cb.checked=true;cb.onchange=function(){if(this.checked)_dls.selPrec.add(this.value);else _dls.selPrec.delete(this.value);};lbl.appendChild(cb);lbl.appendChild(document.createTextNode(' '+p.title));pd.appendChild(lbl);});}}
-}
-function buildLibraryContext(){
-  var ctSel=document.getElementById('draftCaseType');if(!ctSel||!ctSel.value)return null;
-  var ctName=(ctSel.selectedOptions[0]&&ctSel.selectedOptions[0].getAttribute('data-name'))||'';if(!ctName)return null;
-  var subSel=document.getElementById('draftSubcategory');var dtSel=document.getElementById('draftLibDocType');
-  var secs=[];document.querySelectorAll('.draft-sec-cb:checked').forEach(function(cb){secs.push({id:cb.value,title:cb.getAttribute('data-title'),content:decodeURIComponent(cb.getAttribute('data-content')||'')});});
-  var precs=[];document.querySelectorAll('.draft-prec-cb:checked').forEach(function(cb){precs.push(cb.value);});
-  return{caseTypeName:ctName,subcategoryName:(subSel&&subSel.value&&subSel.selectedOptions[0])?subSel.selectedOptions[0].getAttribute('data-name')||'':'',docTypeName:(dtSel&&dtSel.value&&dtSel.selectedOptions[0])?dtSel.selectedOptions[0].getAttribute('data-name')||'':'',selectedSections:secs,selectedPrecedentIds:precs};
-}
-
-// ── MODE SWITCH ───────────────────────────────────────────────────────────────
-var _appMode='analysis';
-function setMode(mode){
-  _appMode=mode;
-  document.getElementById('modeAnalysis').classList.toggle('active',mode==='analysis');
-  document.getElementById('modeDrafting').classList.toggle('active',mode==='drafting');
-  var tb=document.getElementById('toolsBar');if(tb)tb.style.display=(mode==='analysis'&&currentMatter)?'':'none';
-  var dws=document.getElementById('ws-drafting');if(dws)dws.style.display=mode==='drafting'?'':'none';
-  if(mode==='drafting'&&currentMatter){_refreshDraftSourceStatuses();loadDraftLibrary();}
-}
-
-// ── DRAFT DOC TYPE CUSTOM ────────────────────────────────────────────────────
-function toggleDraftDocTypeCustom(sel){var inp=document.getElementById('draftSetupDocTypeCustom');if(inp)inp.style.display=sel.value==='__custom__'?'':'none';}
-function getDraftDocType(){
-  var sel=document.getElementById('draftSetupDocType');if(!sel)return'';
-  if(sel.value==='__custom__'){var inp=document.getElementById('draftSetupDocTypeCustom');return inp?inp.value.trim():'';}
-  return sel.value||'';
-}
-
-// ── DRAFT HEADER ──────────────────────────────────────────────────────────────
-function generateDraftHeader(){
-  var court=(document.getElementById('draftCourt')||{}).value||'';
-  var actionNo=(document.getElementById('draftActionNo')||{}).value||'';
-  var plaintiff=(document.getElementById('draftPlaintiff')||{}).value||'';
-  var defendant=(document.getElementById('draftDefendant')||{}).value||'';
-  var docType=getDraftDocType();
-  var firmName=(document.getElementById('draftOnBehalf')||{}).value||'';
-  var counselFor=(document.getElementById('draftCounselFor')||{}).value||'';
-  var jur=currentMatter?(currentMatter.jurisdiction||''):'';
-  var isCoA=court.toLowerCase().indexOf('appeal')!==-1;
-  var lines=[];
-  if(isCoA){
-    if(actionNo)lines.push('Cause No. '+actionNo);
-    lines.push('');
-    lines.push('IN THE COURT OF APPEAL OF THE '+jur.toUpperCase());
-    lines.push('');
-    lines.push('On Appeal from the Grand Court, Financial Services Division');
-  } else {
-    if(court)lines.push('IN THE '+court.toUpperCase());
-    if(jur)lines.push(jur.toUpperCase());
-    if(actionNo){lines.push('');lines.push('Cause No. '+actionNo);}
-  }
-  lines.push('');lines.push('BETWEEN:');lines.push('');
-  if(plaintiff)lines.push(plaintiff.toUpperCase());
-  lines.push('                                                      Plaintiff');
-  lines.push('');lines.push('                        - and -');lines.push('');
-  if(defendant)lines.push(defendant.toUpperCase());
-  lines.push('                                                    Defendant');
-  if(docType){
-    var dt=docType.toUpperCase();
-    var tram='_____________________________________________________';
-    lines.push('');lines.push(tram);
-    var pad=Math.max(0,Math.floor((tram.length-dt.length)/2));
-    lines.push(' '.repeat(pad)+dt);lines.push(tram);
-  }
-  if(firmName||counselFor){
-    lines.push('');lines.push('');
-    if(firmName)lines.push('                                        '+firmName);
-    if(counselFor)lines.push('                             Counsel for the '+counselFor);
-  }
-  document.getElementById('draftHeaderText').textContent=lines.join('\n');
-  document.getElementById('draftHeaderPreview').style.display='';
-}
-
-// ── DRAFT SOURCE STATUSES ─────────────────────────────────────────────────────
-var _draftToolResults={};
-async function _refreshDraftSourceStatuses(){
-  if(!currentMatter)return;
-  var tok=localStorage.getItem('elj_token');
-  try{
-    var r=await fetch('/api/history?matter_id='+encodeURIComponent(currentMatter.id),{headers:{'Authorization':'Bearer '+tok}});
-    if(!r.ok)return;var h=await r.json();
-    var tools=['chronology','persons','issues','briefing'];_draftToolResults={};
-    tools.forEach(function(t){
-      var results=(h.history||[]).filter(function(x){return x.tool_name===t;}).sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
-      var el=document.getElementById('dss-'+t);
-      if(results.length>0){_draftToolResults[t]=results[0].answer;if(el){el.textContent='Already run';el.className='ds-status run';}}
-      else{if(el){el.textContent='Not yet run';el.className='ds-status';}}
-    });
-  }catch(e){}
-}
-
-// ── RUN DRAFT WORKFLOW ────────────────────────────────────────────────────────
-async function runDraftWorkflow(){
-  if(!currentMatter){showToast('Select a matter first');return;}
-  var instructions=(document.getElementById('draftInstructions')||{}).value||'';
-  if(!instructions.trim()){showToast('Please enter instructions for the draft');return;}
-  var btn=document.getElementById('draftGenerateBtn');btn.disabled=true;btn.textContent='Generating...';
-  document.getElementById('draftOutputArea').style.display='none';
-  try{
-    generateDraftHeader();
-    var headerText=document.getElementById('draftHeaderText').textContent||'';
-    var checkedTools=Array.from(document.querySelectorAll('.ds-cb:checked')).map(function(cb){return cb.value;});
-    for(var i=0;i<checkedTools.length;i++){
-      var t=checkedTools[i];
-      if(!_draftToolResults[t]){
-        showToast('Running '+t+'...');
-        var tok=localStorage.getItem('elj_token');
-        var tr=await fetch('/api/tools',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
-          body:JSON.stringify({tool:t,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction:currentMatter.jurisdiction||'Bermuda',anchorDocNames:[],instructions:''})});
-        if(tr.ok){var td=await tr.json();if(td.result)_draftToolResults[t]=td.result;}
-      }
-    }
-    var fullInstructions=instructions;
-    if(headerText.trim())fullInstructions+='\n\nDOCUMENT HEADER (use this exactly at the top):\n'+headerText;
-    checkedTools.forEach(function(t){
-      if(_draftToolResults[t]){
-        var label={chronology:'CHRONOLOGY',persons:'PERSONS AND ENTITIES INDEX',issues:'ISSUE TRACKER',briefing:'BRIEFING NOTE'}[t]||t.toUpperCase();
-        fullInstructions+='\n\n--- '+label+' ---\n'+_draftToolResults[t];
-      }
-    });
-    var libCtx=buildLibraryContext();
-    var tok=localStorage.getItem('elj_token');
-    var payload={tool:'draft',matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction:currentMatter.jurisdiction||'Bermuda',anchorDocNames:[],instructions:fullInstructions};
-    if(libCtx)payload.libraryContext=libCtx;
-    var res=await fetch('/api/tools',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(!res.ok)throw new Error(await res.text());
-    var data=await res.json();
-    if(data.result){
-      _lastDraftResult=data.result;
-      _displayDraft(data.result);
-      document.getElementById('draftAmendInstructions').value='';
-      document.getElementById('draftOutputArea').style.display='';
-      showToast('Draft complete');
-    } else {throw new Error(data.error||'No result');}
-  }catch(e){showToast('Error: '+e.message);}
-  finally{btn.disabled=false;btn.textContent='Generate draft';}
-}
-
-async function amendOrRegenerateDraft(){
-  var amend=(document.getElementById('draftAmendInstructions')||{}).value||'';
-  if(amend.trim()){
-    var orig=(document.getElementById('draftInstructions')||{}).value||'';
-    document.getElementById('draftInstructions').value=orig+'\n\nAMENDMENTS REQUESTED: '+amend.trim();
-    document.getElementById('draftAmendInstructions').value='';
-  }
-  await runDraftWorkflow();
-}
-
-// ── DRAFT DISPLAY WITH TOC ────────────────────────────────────────────────────
-function _displayDraft(text){
-  var matterEl=document.getElementById('draftOutputMatter');var docTypeEl=document.getElementById('draftOutputDocType');
-  if(matterEl)matterEl.textContent=currentMatter?currentMatter.name:'';
-  var dt=getDraftDocType()||'Draft';if(docTypeEl)docTypeEl.textContent=dt;
-  var contentEl=document.getElementById('draftOutputContent');if(!contentEl)return;contentEl.innerHTML='';
-  var lines=text.split('\n');var sections=[];var currentSection=null;var buf=[];
-  function _isHeading(line){var t=line.trim();if(!t)return false;if(/^[A-Z][A-Z0-9 ,&()\/\-]{4,}$/.test(t))return true;if(/^\d+\.\s+[A-Z]/.test(t))return true;if(/^[IVXLC]+\.\s+[A-Z]/.test(t))return true;return false;}
-  lines.forEach(function(line){if(_isHeading(line)){if(currentSection!==null)sections.push({heading:currentSection,lines:buf});currentSection=line.trim();buf=[];}else{buf.push(line);}});
-  if(buf.length||currentSection!==null)sections.push({heading:currentSection||'',lines:buf});
-  if(sections.length<=1){contentEl.textContent=text;document.getElementById('draftTocList').innerHTML='<div style="font-size:.78rem;color:var(--text-faint);padding:.3rem .75rem">No sections detected</div>';return;}
-  var tocList=document.getElementById('draftTocList');tocList.innerHTML='';
-  sections.forEach(function(sec,idx){
-    var anchor='draft-sec-'+idx;
-    if(sec.heading){var btn=document.createElement('button');btn.className='draft-toc-item';btn.textContent=sec.heading.length>38?sec.heading.substring(0,36)+'...':sec.heading;btn.title=sec.heading;btn.setAttribute('data-anchor',anchor);btn.onclick=function(){document.getElementById(anchor).scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.draft-toc-item').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');};tocList.appendChild(btn);}
-    var block=document.createElement('div');block.id=anchor;block.style.marginBottom='1.25rem';
-    if(sec.heading){var hEl=document.createElement('div');hEl.style.cssText='font-weight:700;font-size:.95rem;margin-bottom:.4rem;padding-bottom:.2rem;border-bottom:1px solid var(--border);';hEl.textContent=sec.heading;block.appendChild(hEl);}
-    var body=document.createElement('div');body.textContent=sec.lines.join('\n');block.appendChild(body);contentEl.appendChild(block);
-  });
-  var wrap=document.querySelector('.draft-content-wrap');
-  if(wrap){wrap.onscroll=function(){var scrollTop=wrap.scrollTop;var active=null;sections.forEach(function(sec,idx){var el=document.getElementById('draft-sec-'+idx);if(el&&el.offsetTop<=scrollTop+80)active='draft-sec-'+idx;});document.querySelectorAll('.draft-toc-item').forEach(function(btn){btn.classList.toggle('active',btn.getAttribute('data-anchor')===active);});};}
-}
-
-// ── SAVE DRAFT ────────────────────────────────────────────────────────────────
-var _lastDraftResult='';
-function openDraftSaveModal(){
-  if(!_lastDraftResult){showToast('No draft to save');return;}
-  var dt=getDraftDocType()||'Draft';var mName=currentMatter?currentMatter.name:'';
-  document.getElementById('draftSaveTitle').value=mName+(dt?' - '+dt:'');
-  document.getElementById('draftSaveFunction').selectedIndex=0;
-  document.getElementById('draftSaveNotes').value='';
-  document.getElementById('draftSaveModal').style.display='flex';
-}
-async function saveDraftOnly(){await saveDraft();closeModal('draftSaveModal');}
-async function saveDraftAndDownload(){await saveDraft();closeModal('draftSaveModal');await downloadDraftWord();}
-async function saveDraft(){
-  if(!_lastDraftResult||!currentMatter)return;
-  var tok=localStorage.getItem('elj_token');
-  var dt=getDraftDocType()||'Draft';
-  var titleEl=document.getElementById('draftSaveTitle');var funcEl=document.getElementById('draftSaveFunction');var notesEl=document.getElementById('draftSaveNotes');
-  var saveTitle=titleEl?titleEl.value.trim():'';var saveFunc=funcEl?funcEl.value:'';var saveNotes=notesEl?notesEl.value.trim():'';
-  var question='Draft: '+dt+(saveTitle?' | '+saveTitle:'')+(saveFunc?' ['+saveFunc+']':'');
-  if(saveNotes)question+=' - '+saveNotes;
-  try{
-    await fetch('/api/history',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
-      body:JSON.stringify({matter_id:currentMatter.id,question:question,answer:_lastDraftResult,tool_name:'draft'})});
-    showToast('Draft saved to matter');
-  }catch(e){console.warn('saveDraft:',e);}
-}
-async function downloadDraftWord(){
-  if(!_lastDraftResult){showToast('No draft to download');return;}
-  var dt=getDraftDocType()||'Draft';var fileName=(currentMatter?currentMatter.name:'Draft')+' - '+dt;
-  try{
-    var tok=localStorage.getItem('elj_token');
-    var r=await fetch('/api/export',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
-      body:JSON.stringify({content:_lastDraftResult,title:fileName,matter:currentMatter?currentMatter.name:''})});
-    if(!r.ok)throw new Error(await r.text());
-    var blob=await r.blob();var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');a.href=url;a.download=fileName+'.docx';a.click();URL.revokeObjectURL(url);
-  }catch(e){showToast('Download failed: '+e.message);}
-}
-// ---- WORKSPACE LIBRARY JS ----
-var _wsType='precedent',_wsIsOwnStyle=false,_wsEditingId=null;
-var _wsTags={caseType:[],stage:[],docType:[]};
-
-function wsSetType(t){
-  _wsType=t;
-  document.getElementById('wsTypePrec').classList.toggle('active',t==='precedent');
-  document.getElementById('wsTypeSec').classList.toggle('active',t==='section');
-  var up=document.getElementById('wsUploadSector');
-  var sec=document.getElementById('wsSectionSector');
-  if(up) up.style.display=t==='precedent'?'':'none';
-  if(sec) sec.style.display=t==='section'?'':'none';
-}
-
-function wsSetStyle(s){
-  _wsIsOwnStyle=(s==='own');
-  var ob=document.getElementById('wsStyleOwn');
-  var tb=document.getElementById('wsStyleThird');
-  if(ob) ob.classList.toggle('active',_wsIsOwnStyle);
-  if(tb) tb.classList.toggle('active',!_wsIsOwnStyle);
-}
-
-function wsOnFile(inp){
-  var lbl=document.getElementById('wsUploadLabel');
-  if(lbl&&inp.files[0]) lbl.textContent=inp.files[0].name;
-}
-
-function wsLoadSecFile(inp){
-  if(!inp.files||!inp.files[0]) return;
-  var lbl=document.getElementById('wsSecFileLabel');
-  var file=inp.files[0];
-  if(lbl) lbl.textContent=file.name;
-  var reader=new FileReader();
-  reader.onload=function(e){
-    var arr=new Uint8Array(e.target.result);
-    if(typeof pdfjsLib==='undefined'){showToast('PDF.js not loaded — paste text directly');return;}
-    pdfjsLib.getDocument({data:arr}).promise.then(function(pdf){
-      var nums=[];for(var i=1;i<=pdf.numPages;i++) nums.push(i);
-      return Promise.all(nums.map(function(n){return pdf.getPage(n).then(function(pg){return pg.getTextContent();});}));
-    }).then(function(contents){
-      var text=contents.map(function(c){return c.items.map(function(it){return it.str;}).join(' ');}).join('\n\n');
-      var ta=document.getElementById('wsSecContent');
-      if(ta) ta.value=text;
-      showToast('Text extracted');
-    }).catch(function(err){showToast('Extraction failed: '+err.message);});
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-function wsOnContextFile(inp){
-  var lbl=document.getElementById('wsContextFileLabel');
-  if(lbl&&inp.files[0]) lbl.textContent=inp.files[0].name;
-}
-
-function wsAddTag(field){
-  var ids={caseType:'wsCaseTypeInput',stage:'wsStageInput',docType:'wsDocTypeInput'};
-  var inp=document.getElementById(ids[field]);
-  if(!inp) return;
-  var val=inp.value.trim();
-  if(!val) return;
-  if(_wsTags[field].indexOf(val)===-1) _wsTags[field].push(val);
-  inp.value='';
-  wsRenderTags(field);
-}
-
-function wsRenderTags(field){
-  var tagIds={caseType:'wsCaseTypeTags',stage:'wsStageTags',docType:'wsDocTypeTags'};
-  var el=document.getElementById(tagIds[field]);
-  if(!el) return;
-  el.innerHTML='';
-  _wsTags[field].forEach(function(v,i){
-    var span=document.createElement("span");
-    span.className="ws-tag";
-    var txt=document.createTextNode(v+" ");
-    var btn=document.createElement("button");
-    btn.textContent="×";
-    btn.setAttribute("data-field",field);
-    btn.setAttribute("data-idx",i);
-    btn.addEventListener("click",function(){wsRemoveTag(this.getAttribute("data-field"),parseInt(this.getAttribute("data-idx")));});
-    span.appendChild(txt);
-    span.appendChild(btn);
-    el.appendChild(span);
-  });
-}
-
-function wsRemoveTag(field,idx){
-  _wsTags[field].splice(idx,1);
-  wsRenderTags(field);
-}
-
-function wsClear(){
-  _wsTags={caseType:[],stage:[],docType:[]};
-  ['wsCaseTypeTags','wsStageTags','wsDocTypeTags'].forEach(function(id){
-    var el=document.getElementById(id);if(el)el.innerHTML='';
-  });
-  ['wsCaseTypeInput','wsStageInput','wsDocTypeInput','wsContextDocType','wsContextDesc','wsAiInstructions','wsNotes','wsSecTitle','wsSecContent'].forEach(function(id){
-    var el=document.getElementById(id);if(el)el.value='';
-  });
-  var pf=document.getElementById('wsPrecFile');if(pf)pf.value='';
-  var ul=document.getElementById('wsUploadLabel');if(ul)ul.textContent='Choose PDF to upload';
-  var cf=document.getElementById('wsContextFile');if(cf)cf.value='';
-  var cfl=document.getElementById('wsContextFileLabel');if(cfl)cfl.textContent='Choose PDF';
-  var jr=document.getElementById('wsPrecJur');if(jr)jr.selectedIndex=0;
-  var rl=document.getElementById('wsPrecRelationship');if(rl)rl.selectedIndex=0;
-  var cs=document.getElementById('wsContextDocSelect');if(cs)cs.selectedIndex=0;
-  wsSetStyle('third');
-  var sb=document.getElementById('wsSaveBtn');if(sb)sb.textContent='Save to Library';
-  _wsEditingId=null;
-}
-
-function wsPopulateCaseTypes(){
-  var dl=document.getElementById('wsCaseTypeList');
-  if(!dl) return;
-  dl.innerHTML='';
-  (libraryData.caseTypes||[]).forEach(function(ct){
-    var o=document.createElement("option");o.value=ct.name;dl.appendChild(o);
-  });
-}
-
-function wsPopulateContextDocs(){
-  var sel=document.getElementById('wsContextDocSelect');
-  if(!sel) return;
-  sel.innerHTML='<option value="">-- none --</option>';
-  (libraryData.precedents||[]).forEach(function(p){
-    var o=document.createElement("option");
-    o.value=p.id;o.textContent=p.name||p.title||p.id;
-    sel.appendChild(o);
-  });
-}
-
-async function saveWorkspaceEntry(){
-  var tok=localStorage.getItem('elj_token');
-  if(!tok){showToast('Not signed in');return;}
-  var btn=document.getElementById('wsSaveBtn');
-  if(btn){btn.disabled=true;btn.textContent='Saving...';}
-  try{
-    if(_wsType==='section'){
-      var title=document.getElementById('wsSecTitle').value.trim();
-      var content=document.getElementById('wsSecContent').value.trim();
-      if(!title||!content){showToast('Title and content required');return;}
-      var ids=await _resolveLibraryTaxonomy(_wsTags.caseType[0]||"",_wsTags.stage[0]||"",_wsTags.docType[0]||"");
-      var notes=document.getElementById('wsNotes').value.trim();
-      await api('/api/library','POST',{action:'add_section',title:title,content:content,
-        case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,
-        doc_type_id:ids.docTypeId||null,description:notes||""});
-      showToast('Section saved');
-      wsClear();loadLibrary();return;
-    }
-    var file=document.getElementById('wsPrecFile').files[0];
-    if(!file&&!_wsEditingId){showToast('Please upload a PDF document');return;}
-    var docTypes=_wsTags.docType;
-    if(!docTypes.length){showToast('Please add at least one Document Type tag');return;}
-    var ids=await _resolveLibraryTaxonomy(_wsTags.caseType[0]||"",_wsTags.stage[0]||"",docTypes[0]||"");
-    var aiInstr=document.getElementById('wsAiInstructions').value.trim();
-    var notes=document.getElementById('wsNotes').value.trim();
-    var autoName=(docTypes[0]||"Precedent")+(_wsTags.caseType[0]?" - "+_wsTags.caseType[0]:"")+(_wsTags.stage[0]?" ("+_wsTags.stage[0]+")":"");
-    var desc=(notes||aiInstr||"").substring(0,500);
-    if(file){
-      var fd=new FormData();
-      fd.append("name",autoName);
-      fd.append("case_type_id",ids.caseTypeId||"");
-      fd.append("subcategory_id",ids.subcatId||"");
-      fd.append("doc_type_id",ids.docTypeId||"");
-      fd.append("jurisdiction",(document.getElementById('wsPrecJur')||{value:""}).value||"" );
-      fd.append("description",desc);
-      fd.append("ai_instructions",aiInstr);
-      fd.append("is_own_style",_wsIsOwnStyle?"true":"false");
-      fd.append("context_relationship",(document.getElementById('wsPrecRelationship')||{value:""}).value||"" );
-      fd.append("context_doc_type",(document.getElementById('wsContextDocType')||{value:""}).value||"" );
-      var ctxSel=document.getElementById('wsContextDocSelect');
-      fd.append("context_doc_id",(ctxSel&&ctxSel.value)||"");
-      fd.append("context_description",(document.getElementById('wsContextDesc')||{value:""}).value||"" );
-      var ctxFile=document.getElementById('wsContextFile');
-      if(ctxFile&&ctxFile.files[0]) fd.append("context_file",ctxFile.files[0]);
-      fd.append("file",file);
-      var r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd});
-      if(!r.ok) throw new Error(await r.text());
-      showToast('Precedent saved and indexed');
-    } else if(_wsEditingId){
-      await api('/api/library','POST',{action:'update_precedent_meta',id:_wsEditingId,
-        name:autoName,case_type_id:ids.caseTypeId||null,subcategory_id:ids.subcatId||null,
-        doc_type_id:ids.docTypeId||null,jurisdiction:(document.getElementById('wsPrecJur')||{value:null}).value||null,
-        description:desc,is_own_style:_wsIsOwnStyle});
-      showToast('Precedent updated');
-    }
-    wsClear();loadLibrary();
-  }catch(e){showToast('Save failed: '+e.message);console.error(e);}
-  finally{if(btn){btn.disabled=false;btn.textContent=_wsEditingId?'Update':'Save to Library';}}
-}
-
-// ---- ENHANCE DRAFT ----
-async function enhanceDraft(){
-  if(typeof _lastDraftResult==='undefined'||!_lastDraftResult){showToast('No draft to enhance');return;}
-  if(!currentMatter){showToast('No matter selected');return;}
-  var btn=document.getElementById('enhanceBtn');
-  if(btn){btn.disabled=true;btn.textContent='Enhancing...';}
-  try{
-    var tok=localStorage.getItem('elj_token');
-    var jur=currentMatter.jurisdiction||'Bermuda';
-    var thirdPartyText='';
-    try{
-      var ctSel=document.getElementById('draftCaseType');
-      var ctId=ctSel?ctSel.value:'';
-      if(ctId){
-        var lr=await fetch('/api/library_fetch?action=getDraftContext&caseTypeId='+encodeURIComponent(ctId),{headers:{'Authorization':'Bearer '+tok}});
-        if(lr.ok){
-          var ld=await lr.json();
-          var thirdPrecs=(ld.precedents||[]).filter(function(p){return !p.is_own_style;});
-          if(thirdPrecs.length){
-            var chunkResults=await Promise.all(thirdPrecs.slice(0,3).map(function(p){
-              return fetch('/api/library?type=prec_chunks&prec_id='+p.id,{headers:{'Authorization':'Bearer '+tok}})
-                .then(function(r2){return r2.json();})
-                .then(function(d2){return{name:(p.name||p.title||"Precedent"),chunks:d2.data||[]};});
-            }));
-            thirdPartyText=chunkResults.map(function(r3){return '=== THIRD PARTY PRECEDENT: '+r3.name+' ===\n'+r3.chunks.map(function(c){return c.content;}).join('\n\n');}).join('\n\n');
-          }
-        }
-      }
-    }catch(fetchErr){console.warn('Could not fetch precedents:',fetchErr);}
-    var prompt='You are a senior '+jur+' litigation counsel. Review the following draft:\n\n'+_lastDraftResult+'\n\n';
-    if(thirdPartyText){
-      prompt+='For comparison, here are high-quality third party precedents:\n\n'+thirdPartyText+'\n\n';
-      prompt+='Please: (1) identify specific weaknesses compared to the precedents; (2) produce an enhanced version incorporating those improvements. Preserve all specific facts and arguments.';
-    } else {
-      prompt+='Please review this draft critically, identify weaknesses in structure, argument or language, and produce an enhanced version.';
-    }
-    var res=await fetch('/api/tools',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
-      body:JSON.stringify({tool:'draft',matterId:currentMatter.id,matterName:currentMatter.name,
-        matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',
-        jurisdiction:jur,anchorDocNames:[],instructions:prompt})});
-    if(!res.ok) throw new Error(await res.text());
-    var data=await res.json();
-    if(data.result){_lastDraftResult=data.result;_displayDraft(data.result);showToast('Draft enhanced');}
-    else throw new Error(data.error||'No result');
-  }catch(e){showToast('Enhance failed: '+e.message);console.error(e);}
-  finally{if(btn){btn.disabled=false;btn.textContent='Enhance';}}
-}
-// END DRAFTING JS
-</script>
-<!-- Draft Save modal -->
-<div class="overlay" id="draftSaveModal" style="display:none">
-  <div class="modal" style="max-width:460px;width:95%">
-    <h3>Save &amp; Download Draft</h3>
-    <label class="f-label">Document title</label>
-    <input type="text" class="f-input" id="draftSaveTitle" placeholder="e.g. Skeleton Argument - ABC v DEF" style="margin-bottom:.75rem">
-    <label class="f-label">Function / Nature of document</label>
-    <select class="f-input" id="draftSaveFunction" style="margin-bottom:.75rem">
-      <option value="">— select —</option>
-      <option>First draft for review</option><option>Revised draft</option><option>Final draft</option>
-      <option>Filed document</option><option>Internal advice</option><option>Client advice</option>
-      <option>Court submission</option>
-    </select>
-    <label class="f-label">Notes (optional)</label>
-    <textarea class="f-input" id="draftSaveNotes" rows="3" placeholder="Any notes about this version..." style="margin-bottom:.75rem;width:100%;box-sizing:border-box;resize:vertical;"></textarea>
-    <div class="modal-btns">
-      <button class="btn-secondary" onclick="closeModal('draftSaveModal')">Cancel</button>
-      <button class="btn-secondary" onclick="saveDraftOnly()">Save only</button>
-      <button class="btn-primary" onclick="saveDraftAndDownload()">Save &amp; Download Word</button>
-    </div>
-  </div>
-</div>
-<script>(function(){var _o=switchLeftPanel;switchLeftPanel=function(p){_o(p);var lws=document.getElementById("libraryWorkspace");var tbar=document.getElementById("toolsBar");var pw=document.getElementById("progressWrap");if(p==="library"){if(lws){lws.style.position="fixed";lws.style.top="56px";lws.style.left="0";lws.style.right="0";lws.style.bottom="0";lws.style.zIndex="100";}if(tbar)tbar.style.display="none";if(pw)pw.style.display="none";}else{if(lws){lws.style.position="";lws.style.top="";lws.style.left="";lws.style.right="";lws.style.bottom="";lws.style.zIndex="";}if(tbar)tbar.style.display="";if(pw)pw.style.display="";}};})();</script>
-<style>
-/* Chunk viewer panel */
-.chunk-viewer{position:fixed;top:0;right:0;width:440px;height:100vh;background:#fff;
-  box-shadow:-4px 0 24px rgba(0,0,0,.18);z-index:2000;display:flex;flex-direction:column;
-  transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);}
-.chunk-viewer.open{transform:translateX(0);}
-.cv-head{padding:.75rem 1rem;background:#0f2744;color:#fff;display:flex;
-  align-items:center;justify-content:space-between;flex-shrink:0;}
-.cv-head-title{font-size:.88rem;font-weight:600;flex:1;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;}
-.cv-close{background:none;border:none;color:#fff;cursor:pointer;font-size:1.3rem;
-  padding:0 .25rem;line-height:1;opacity:.8;}
-.cv-close:hover{opacity:1;}
-.cv-body{flex:1;overflow-y:auto;padding:.75rem;}
-.cv-chunk{padding:.6rem .75rem;margin-bottom:.5rem;border-radius:6px;
-  border:1px solid #e2e8f0;font-size:.82rem;line-height:1.6;color:#2d3748;}
-.cv-chunk.cv-hl{background:#fffbeb;border-color:#f6ad55;}
-.cv-idx{font-size:.7rem;color:#94a3b8;margin-bottom:.3rem;font-family:monospace;}
-/* Source reference links */
-.src-ref{color:#1d6fa4;cursor:pointer;text-decoration:underline dotted;
-  text-underline-offset:2px;}
-.src-ref:hover{color:#0f2744;text-decoration:underline;}
-/* Saved drafts panel */
-.draft-list-wrap{border-bottom:1px solid #e2e8f0;padding:.5rem .75rem .4rem;
-  background:#f8fafc;flex-shrink:0;}
-.draft-list-head{font-size:.78rem;font-weight:600;color:#4a5568;margin-bottom:.3rem;
-  display:flex;align-items:center;justify-content:space-between;}
-.draft-item{display:flex;align-items:center;gap:.4rem;padding:.18rem 0;font-size:.82rem;}
-.draft-item-title{flex:1;color:#1d6fa4;cursor:pointer;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.draft-item-title:hover{text-decoration:underline;}
-.draft-item-del{color:#e53e3e;cursor:pointer;font-size:.8rem;opacity:.55;flex-shrink:0;}
-.draft-item-del:hover{opacity:1;}
-/* Fix draft workspace gap and hide tabBar */
-.drafting-workspace{padding-top:0!important;}
-/* Copy to draft button on tool outputs */
-.copy-to-draft-btn{background:#e8f4ff;border:1px solid #bee3f8;color:#2b6cb0;
-  font-size:.78rem;padding:.25rem .65rem;border-radius:4px;cursor:pointer;
-  margin-left:.5rem;}
-.copy-to-draft-btn:hover{background:#bee3f8;}
-</style>
-<div id="chunkViewerPanel" class="chunk-viewer">
-  <div class="cv-head">
-    <span class="cv-head-title" id="cvTitle">Source document</span>
-    <button class="cv-close" onclick="closeChunkViewer()">&#x2715;</button>
-  </div>
-  <div class="cv-body" id="cvBody"></div>
-</div>
-<script>
-// ── Chunk viewer ──────────────────────────────────────────────────────────────
-function escHtml(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
-async function showChunkViewer(docName,highlightIdx){
-  var panel=document.getElementById('chunkViewerPanel');
-  var body=document.getElementById('cvBody');
-  document.getElementById('cvTitle').textContent=docName;
-  body.innerHTML='<div style="color:#94a3b8;padding:1rem;font-size:.85rem">Loading…</div>';
-  panel.classList.add('open');
-  var mid=currentMatter&&currentMatter.id;
-  if(!mid)return;
-  var tok=localStorage.getItem('elj_token');
-  try{
-    var r=await fetch('/api/documents?matter_id='+encodeURIComponent(mid)+'&doc_name='+encodeURIComponent(docName),
-      {headers:{'Authorization':'Bearer '+tok}});
-    var d=await r.json();
-    var chunks=d.chunks||[];
-    if(!chunks.length){body.innerHTML='<div style="color:#94a3b8;padding:1rem;font-size:.85rem">No text found for this document.</div>';return;}
-    body.innerHTML=chunks.map(function(c){
-      var hl=(highlightIdx!==undefined&&c.chunk_index===parseInt(highlightIdx))?' cv-hl':'';
-      return '<div class="cv-chunk'+hl+'"><div class="cv-idx">Chunk '+c.chunk_index+'</div>'+escHtml(c.content)+'</div>';
-    }).join('');
-    var hlEl=body.querySelector('.cv-hl');
-    if(hlEl)setTimeout(function(){hlEl.scrollIntoView({block:'center',behavior:'smooth'});},80);
-  }catch(e){
-    body.innerHTML='<div style="color:#e53e3e;padding:1rem;font-size:.85rem">Error loading document text.</div>';
-  }
-}
-
-function closeChunkViewer(){
-  document.getElementById('chunkViewerPanel').classList.remove('open');
-}
-
-function parseSourceRefs(container){
-  if(!container)return;
-  var walker=document.createTreeWalker(container,NodeFilter.SHOW_TEXT,null,false);
-  var nodes=[];
-  var node;
-  while((node=walker.nextNode()))nodes.push(node);
-  nodes.forEach(function(n){
-    var txt=n.textContent;
-    if(!txt.includes('Source:'))return;
-    var re=/\(Source:\s*([^,)]+),\s*([^)]+)\)/g;
-    var match;
-    var parts=[];
-    var last=0;
-    while((match=re.exec(txt))!==null){
-      if(match.index>last)parts.push(document.createTextNode(txt.slice(last,match.index)));
-      var doc=match[1].trim();
-      var ref=match[2].trim();
-      var idx=parseInt((ref.match(/\d+/)||[0])[0]);
-      var span=document.createElement('span');
-      span.className='src-ref';
-      span.textContent='(Source: '+doc+', '+ref+')';
-      span.setAttribute('data-doc',doc);
-      span.setAttribute('data-idx',idx);
-      span.onclick=(function(d,i){return function(){showChunkViewer(d,i);};})(doc,idx);
-      parts.push(span);
-      last=match.index+match[0].length;
-    }
-    if(!parts.length)return;
-    if(last<txt.length)parts.push(document.createTextNode(txt.slice(last)));
-    var parent=n.parentNode;
-    parts.forEach(function(p){parent.insertBefore(p,n);});
-    parent.removeChild(n);
-  });
-}
-
-// ── Copy to Draft ─────────────────────────────────────────────────────────────
-var _toolContentMap={};
-
-function copyToolToDraft(toolName,content){
-  var typeMap={
-    chronology:'Chronology',persons:'Dramatis Personae',issues:'Issue Tracker',
-    inconsistency:'Inconsistency Analysis',proposition:'Proposition Finder',
-    citations:'Citations',briefing:'Briefing Note'
-  };
-  var docType=typeMap[toolName]||toolName;
-  var matter=currentMatter?currentMatter.name:'';
-  window._currentDraftContent=content;
-  window._currentDraftTitle=matter?(matter+' — '+docType):docType;
-  window._currentDraftDocType=docType;
-
-  // Switch to drafting tab
-  var dws=document.getElementById('ws-drafting');
-  if(dws){dws.style.display='';}
-  if(typeof switchTab==='function')switchTab('drafting');
-
-  // Pre-fill document type
-  var sel=document.getElementById('draftSetupDocType');
-  if(sel){
-    for(var i=0;i<sel.options.length;i++){
-      if(sel.options[i].text===docType){sel.value=sel.options[i].value;break;}
-    }
-  }
-
-  // Show output
-  var outArea=document.getElementById('draftOutputArea');
-  if(outArea)outArea.style.display='';
-  var outContent=document.getElementById('draftOutputContent');
-  if(outContent){
-    outContent.innerHTML=p15Markdown(content);
-    parseSourceRefs(outContent);
-  }
-  var outMatter=document.getElementById('draftOutputMatter');
-  if(outMatter)outMatter.textContent=matter;
-  var outDocType=document.getElementById('draftOutputDocType');
-  if(outDocType)outDocType.textContent=docType;
-}
-
-function p15Markdown(t){
-  return escHtml(t)
-    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g,'<em>$1</em>')
-    .replace(/^## (.+)$/gm,'<h2 style="font-size:1.05rem;margin:.75rem 0 .3rem;color:#0f2744">$1</h2>')
-    .replace(/^### (.+)$/gm,'<h3 style="font-size:.95rem;margin:.6rem 0 .25rem;color:#1d6fa4">$1</h3>')
-    .replace(/
-/g,'<br>');
-}
-
-// ── Saved drafts list ─────────────────────────────────────────────────────────
-async function loadDraftsList(){
-  if(!currentMatter)return;
-  var tok=localStorage.getItem('elj_token');
-  try{
-    var r=await fetch('/api/drafts?matter_id='+encodeURIComponent(currentMatter.id),
-      {headers:{'Authorization':'Bearer '+tok}});
-    if(!r.ok)return;
-    var d=await r.json();
-    renderDraftsList(d.drafts||[]);
-  }catch(e){}
-}
-
-function renderDraftsList(drafts){
-  var wrap=document.getElementById('p15DraftItems');
-  if(!wrap)return;
-  if(!drafts.length){
-    wrap.innerHTML='<div style="color:#94a3b8;font-size:.76rem;padding:.1rem 0">No saved drafts</div>';
-    return;
-  }
-  wrap.innerHTML=drafts.map(function(d){
-    var t=d.title||'Untitled';
-    return '<div class="draft-item">'
-      +'<span class="draft-item-title" title="'+escHtml(t)+'" onclick="openSavedDraft(this)"'
-      +' data-id="'+d.id+'" data-content="'+encodeURIComponent(d.content||'')+'"'
-      +' data-title="'+escHtml(t)+'"'
-      +' data-doctype="'+escHtml(d.document_type||'')+'"'
-      +' data-court="'+escHtml(d.court||'')+'"'
-      +' data-actionno="'+escHtml(d.action_no||'')+'"'
-      +' data-plaintiff="'+escHtml(d.plaintiff||'')+'"'
-      +' data-defendant="'+escHtml(d.defendant||'')+'"'
-      +' data-firm="'+escHtml(d.firm||'')+'"'
-      +'>'+escHtml(t)+'</span>'
-      +'<span class="draft-item-del" onclick="deleteDraftItem(''+d.id+'')" title="Delete">✕</span>'
-      +'</div>';
-  }).join('');
-}
-
-function openSavedDraft(el){
-  var content=decodeURIComponent(el.getAttribute('data-content')||'');
-  window._currentDraftContent=content;
-  window._currentDraftTitle=el.getAttribute('data-title')||'';
-  var outArea=document.getElementById('draftOutputArea');
-  if(outArea)outArea.style.display='';
-  var outContent=document.getElementById('draftOutputContent');
-  if(outContent){outContent.innerHTML=p15Markdown(content);parseSourceRefs(outContent);}
-  var outMatter=document.getElementById('draftOutputMatter');
-  if(outMatter)outMatter.textContent=currentMatter?currentMatter.name:'';
-  var outDocType=document.getElementById('draftOutputDocType');
-  if(outDocType)outDocType.textContent=el.getAttribute('data-doctype')||'';
-  var fields=[['draftCourt','data-court'],['draftActionNo','data-actionno'],
-    ['draftPlaintiff','data-plaintiff'],['draftDefendant','data-defendant'],
-    ['draftOnBehalf','data-firm']];
-  fields.forEach(function(f){var el2=document.getElementById(f[0]);if(el2)el2.value=el.getAttribute(f[1])||'';});
-}
-
-async function deleteDraftItem(id){
-  if(!confirm('Delete this draft?'))return;
-  var tok=localStorage.getItem('elj_token');
-  try{
-    await fetch('/api/drafts?id='+id,{method:'DELETE',headers:{'Authorization':'Bearer '+tok}});
-    loadDraftsList();
-  }catch(e){showToast('Delete failed');}
-}
-
-async function saveDraftToDb(){
-  if(!currentMatter){showToast('No matter selected');return;}
-  var content=window._currentDraftContent||(document.getElementById('draftOutputContent')||{}).innerText||'';
-  if(!content){showToast('No content to save');return;}
-  var tok=localStorage.getItem('elj_token');
-  try{
-    var body={
-      matter_id:currentMatter.id,
-      title:window._currentDraftTitle||'Draft',
-      document_type:(document.getElementById('draftSetupDocType')||{}).value||window._currentDraftDocType||'',
-      court:(document.getElementById('draftCourt')||{}).value||'',
-      action_no:(document.getElementById('draftActionNo')||{}).value||'',
-      plaintiff:(document.getElementById('draftPlaintiff')||{}).value||'',
-      defendant:(document.getElementById('draftDefendant')||{}).value||'',
-      firm:(document.getElementById('draftOnBehalf')||{}).value||'',
-      counsel_for:(document.getElementById('draftCounselFor')||{}).value||'',
-      content:content
-    };
-    var r=await fetch('/api/drafts',{method:'POST',
-      headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
-      body:JSON.stringify(body)});
-    if(r.ok){showToast('Draft saved');loadDraftsList();}
-    else showToast('Save failed');
-  }catch(e){showToast('Save failed');}
-}
-
-// ── Override switchTab: hide tabBar in drafting, load drafts ──────────────────
-(function(){
-  var _orig=window.switchTab;
-  window.switchTab=function(tabId){
-    if(_orig)_orig(tabId);
-    var tb=document.getElementById('tabBar');
-    if(tb)tb.style.display=(tabId==='drafting')?'none':'';
-    if(tabId==='drafting')loadDraftsList();
-  };
-})();
-
-// ── DOM setup ─────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded',function(){
-  // Inject saved drafts panel at top of drafting workspace
-  var dws=document.getElementById('ws-drafting');
-  if(dws&&!document.getElementById('p15DraftPanel')){
-    var panel=document.createElement('div');
-    panel.id='p15DraftPanel';
-    panel.className='draft-list-wrap';
-    panel.innerHTML='<div class="draft-list-head">Saved Drafts'
-      +'<button onclick="saveDraftToDb()" style="font-size:.72rem;padding:.15rem .4rem;'
-      +'background:#0f2744;color:#fff;border:none;border-radius:3px;cursor:pointer;margin-left:.5rem">'
-      +'Save current</button></div>'
-      +'<div id="p15DraftItems"><div style="color:#94a3b8;font-size:.76rem">No saved drafts</div></div>';
-    dws.insertBefore(panel,dws.firstChild);
-  }
-
-  // Add Copy to Draft buttons to tool outputs using MutationObserver
-  var observer=new MutationObserver(function(muts){
-    muts.forEach(function(m){
-      m.addedNodes.forEach(function(node){
-        if(node.nodeType!==1)return;
-        // Parse source refs in any new content
-        parseSourceRefs(node);
-        // Add Copy to Draft button to tool result headers
-        var hdrs=node.querySelectorAll?node.querySelectorAll('.tool-result-header,.tool-output-header'):[];
-        hdrs.forEach(function(hdr){
-          if(!hdr.querySelector('.copy-to-draft-btn')){
-            var tw=hdr.closest('[data-tool]');
-            var tn=tw?tw.getAttribute('data-tool'):'';
-            var btn=document.createElement('button');
-            btn.className='copy-to-draft-btn';
-            btn.textContent='Copy to Draft';
-            btn.onclick=function(){
-              var contentEl=tw?tw.querySelector('.tool-result-content,.tool-content'):null;
-              if(contentEl)copyToolToDraft(tn,contentEl.innerText||contentEl.textContent||'');
-            };
-            hdr.appendChild(btn);
-          }
-        });
-      });
-    });
-  });
-  observer.observe(document.body,{childList:true,subtree:true});
-
-  // Also parse source refs in any already-rendered tool outputs
-  document.querySelectorAll('.tool-workspace').forEach(parseSourceRefs);
-});
 </script>
 </body>
 </html>

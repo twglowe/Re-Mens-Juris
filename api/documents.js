@@ -33,7 +33,7 @@ export default async function handler(req, res) {
           .eq("matter_id", matter_id)
           .eq("document_name", doc_name)
           .order("chunk_index", { ascending: true })
-          .limit(20);
+          .limit(500);
         if (error) throw error;
         return res.status(200).json({ chunks: data || [] });
       }

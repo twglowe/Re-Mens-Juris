@@ -54,20 +54,29 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
-  const { matterId, fileName, fileData, docType, party, docIssues } = req.body;
-  if (!matterId || !fileName || !fileData) return res.status(400).json({ error: "Missing fields" });
+  const { matterId, fileName, fileData, textContent, docType, party, docIssues } = req.body;
+  if (!matterId || !fileName) return res.status(400).json({ error: "Missing fields" });
+  if (!fileData && !textContent) return res.status(400).json({ error: "No file data or text content provided" });
   const allowed = await canEdit(user.id, matterId);
   if (!allowed) return res.status(403).json({ error: "No edit permission" });
 
   try {
-    const buffer = Buffer.from(fileData, "base64");
     let extractedText = "";
-    try {
-      const parsed = await pdfParse(buffer);
-      extractedText = parsed.text || "";
-    } catch (e) {
-      return res.status(400).json({ error: "Could not read this PDF. It may be password-protected or a scanned image. Please use ilovepdf.com to OCR it first." });
+
+    if (textContent) {
+      // Client already extracted text via pdf.js — use directly
+      extractedText = textContent;
+    } else if (fileData) {
+      // Legacy path: base64 PDF, extract server-side
+      const buffer = Buffer.from(fileData, "base64");
+      try {
+        const parsed = await pdfParse(buffer);
+        extractedText = parsed.text || "";
+      } catch (e) {
+        return res.status(400).json({ error: "Could not read this PDF. It may be password-protected or a scanned image. Please use ilovepdf.com to OCR it first." });
+      }
     }
+
     if (!extractedText || extractedText.trim().length < 50) {
       return res.status(400).json({ error: "No readable text found. This PDF may be a scanned image — please OCR it first at ilovepdf.com." });
     }

@@ -1768,12 +1768,24 @@ function extractDocRefs(content){
 
 // Render markdown with clickable source links
 function renderMdWithSourceLinks(text){
-  let html=renderMd(text);
-  // Make *(Source: DocName)* into clickable links
-  html=html.replace(/\*\(Source:\s*([^)]+)\)\*/g,(match,docName)=>{
-    const safe=esc(docName.trim());
-    return `<span class="source-link" onclick="openSourcePanel('${safe.replace(/'/g,"\\'")}','')" title="View source passage">📎 ${safe}</span>`;
+  // Replace *(Source: DocName)* with placeholder BEFORE markdown converts * to <em>
+  var srcMap={};var srcIdx=0;
+  text=text.replace(/\*\(Source:\s*([^)]+)\)\*/g,function(match,docName){
+    var key='__SRC'+srcIdx+'__';srcIdx++;
+    srcMap[key]=docName.trim();
+    return key;
   });
+  var html=renderMd(text);
+  // Also catch any that renderMd turned into <em>(Source: DocName)</em>
+  html=html.replace(/<em>\(Source:\s*([^<]+)\)<\/em>/g,function(match,docName){
+    var safe=esc(docName.trim());
+    return '<span class="source-link" onclick="openSourcePanel(\''+safe.replace(/'/g,"\\'")+'\',\'\')" title="View source passage">📎 '+safe+'</span>';
+  });
+  // Restore placeholders as clickable links
+  for(var k in srcMap){
+    var safe=esc(srcMap[k]);
+    html=html.replace(k,'<span class="source-link" onclick="openSourcePanel(\''+safe.replace(/'/g,"\\'")+'\',\'\')" title="View source passage">📎 '+safe+'</span>');
+  }
   return html;
 }
 

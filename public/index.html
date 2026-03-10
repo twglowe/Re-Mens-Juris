@@ -10,42 +10,39 @@ function addFocusChip(){var name=prompt('Focus area name:');if(!name||!name.trim
 
 function switchMainNav(nav){
   document.querySelectorAll('.main-nav-btn').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-nav')===nav);});
-  // Show/hide the left panel sections
   var mattersPanel=document.getElementById('mattersPanel');
   var libraryPanel=document.getElementById('libraryPanel');
-  // Show/hide centre panel sections  
-  var centrePanel=document.querySelector('.centre-panel');
-  var rightPanel=document.querySelector('.right-panel');
+  var rightPanel=document.getElementById('rightPanel');
   var draftWs=document.getElementById('ws-drafting');
   var chatWs=document.getElementById('ws-chat');
   var toolsBar=document.getElementById('toolsBar');
   var chatToolbar=document.querySelector('.chat-toolbar');
+  var leftPanel=document.querySelector('.left-panel');
+  // Hide everything first
+  if(draftWs){draftWs.style.display='none';draftWs.classList.remove('active');}
+  if(chatWs){chatWs.style.display='none';chatWs.classList.remove('active');}
+  document.querySelectorAll('.tool-workspace').forEach(function(ws){ws.style.display='none';ws.classList.remove('active');});
   if(nav==='matters'){
+    if(leftPanel)leftPanel.style.display='';
     if(mattersPanel)mattersPanel.style.display='';
     if(libraryPanel)libraryPanel.style.display='none';
-    if(draftWs){draftWs.style.display='none';draftWs.classList.remove('active');}
     if(chatWs){chatWs.style.display='flex';chatWs.classList.add('active');}
     if(toolsBar)toolsBar.style.display=currentMatter?'flex':'none';
     if(chatToolbar)chatToolbar.style.display='';
     if(rightPanel)rightPanel.style.display=currentMatter?'':'none';
-    document.querySelectorAll('.tool-workspace').forEach(function(ws){ws.style.display='none';ws.classList.remove('active');});
-    if(chatWs){chatWs.style.display='flex';chatWs.classList.add('active');}
   }else if(nav==='library'){
+    if(leftPanel)leftPanel.style.display='';
     if(mattersPanel)mattersPanel.style.display='none';
     if(libraryPanel){libraryPanel.style.display='flex';loadLibrary();}
-    if(draftWs){draftWs.style.display='none';draftWs.classList.remove('active');}
-    if(chatWs){chatWs.style.display='none';chatWs.classList.remove('active');}
-    document.querySelectorAll('.tool-workspace').forEach(function(ws){ws.style.display='none';ws.classList.remove('active');});
     if(toolsBar)toolsBar.style.display='none';
     if(chatToolbar)chatToolbar.style.display='none';
     if(rightPanel)rightPanel.style.display='none';
   }else if(nav==='draft'){
+    if(leftPanel)leftPanel.style.display='';
     if(mattersPanel)mattersPanel.style.display='';
     if(libraryPanel)libraryPanel.style.display='none';
     if(toolsBar)toolsBar.style.display='none';
     if(chatToolbar)chatToolbar.style.display='none';
-    if(chatWs){chatWs.style.display='none';chatWs.classList.remove('active');}
-    document.querySelectorAll('.tool-workspace').forEach(function(ws){ws.style.display='none';ws.classList.remove('active');});
     if(draftWs){draftWs.style.display='flex';draftWs.classList.add('active');}
     if(rightPanel)rightPanel.style.display=currentMatter?'':'none';
     populateDraftSelects();
@@ -110,7 +107,7 @@ header{background:var(--navy);padding:0 1.5rem;flex-shrink:0;box-shadow:0 2px 16
 .btn-icon:hover{background:rgba(0,0,0,.07)}
 .empty-state{padding:2.5rem 1.25rem;text-align:center;color:var(--text-faint);font-size:.9rem;font-style:italic;line-height:1.8}
 .centre-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-.chat-toolbar{padding:.6rem 1.1rem;background:var(--white);border-bottom:2px solid var(--border);display:flex;align-items:center;gap:.65rem;flex-shrink:0;flex-wrap:wrap}
+.chat-toolbar{padding:.35rem .8rem;background:var(--white);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.5rem;flex-shrink:0;flex-wrap:nowrap;min-height:36px}
 .chat-matter-title{font-family:'Libre Baskerville',serif;font-size:1.08rem;font-weight:700;color:var(--navy);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chat-matter-title.empty{font-style:italic;color:var(--text-faint);font-weight:400;font-family:'Source Sans 3',sans-serif;font-size:.95rem}
 .toolbar-controls{display:flex;gap:.38rem;flex-shrink:0;align-items:center}
@@ -135,8 +132,8 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .history-item:hover{background:var(--blue-pale);border-color:var(--blue-light)}
 .history-q{font-size:.85rem;font-weight:600;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .history-meta{font-size:.7rem;color:var(--text-faint);margin-top:.1rem}
-.messages-area{flex:1;overflow-y:auto;padding:1.35rem;display:flex;flex-direction:column;gap:1.15rem}
-.welcome-state{display:flex;flex-direction:column;align-items:center;justify-content:center;max-height:200px;text-align:center;padding:1.5rem;margin:auto}
+.messages-area{flex:1;overflow-y:auto;padding:.8rem 1.1rem;display:flex;flex-direction:column;gap:.8rem;min-height:0}
+.welcome-state{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:.8rem;margin:0 auto;flex-shrink:0;max-height:80px;font-size:.85rem}
 .welcome-icon{font-size:2.5rem;opacity:.1;margin-bottom:.75rem}
 .welcome-title{font-family:'Libre Baskerville',serif;font-size:1.1rem;font-weight:700;color:var(--text-light);margin-bottom:.4rem}
 .welcome-sub{font-size:.88rem;line-height:1.65;color:var(--text-faint)}
@@ -268,7 +265,7 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .typing-bubble span:nth-child(2){animation-delay:.2s}
 .typing-bubble span:nth-child(3){animation-delay:.4s}
 @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
-.input-area{padding:.85rem 1.1rem;border-top:2px solid var(--border);background:var(--white);flex-shrink:0}
+.input-area{padding:.5rem .8rem;border-top:1px solid var(--border);background:var(--white);flex-shrink:0}
 .input-row{display:flex;gap:.6rem;align-items:flex-end}
 textarea#chatInput{flex:1;background:var(--off-white);border:2px solid var(--border);border-radius:9px;color:var(--text-dark);font-family:'Source Sans 3',sans-serif;font-size:1.02rem;font-weight:500;line-height:1.55;padding:.75rem 1rem;resize:none;min-height:50px;max-height:160px;outline:none;transition:border-color .2s}
 textarea#chatInput:focus{border-color:var(--blue-light);background:#fff}
@@ -378,11 +375,11 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .draft-result-body{padding:.85rem;font-family:'Libre Baskerville',serif;font-size:.9rem;line-height:1.7;color:var(--text);white-space:pre-wrap;outline:none;min-height:60px}
 .draft-result-body[contenteditable="true"]{background:#fffef7}
 
-/* Scroll fixes */
-.tab-workspace{min-height:0;overflow:hidden}
-.tool-msgs{min-height:0;overflow-y:auto}
+/* Scroll and layout fixes */
+.tab-workspace{min-height:0;overflow:hidden;flex:1}
+.tab-workspace.active{display:flex;flex-direction:column;flex:1;min-height:0}
+.tool-msgs{min-height:0;overflow-y:auto;flex:1}
 #toolWorkspaces{min-height:0;overflow:hidden;display:contents}
-.messages-area{min-height:0;overflow-y:auto}
 </style>
 </head>
 <body>
@@ -426,11 +423,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
   </header>
   <div class="main-layout">
     <div class="left-panel">
-      <!-- Panel toggle -->
-      <div class="panel-toggle-bar">
-        <button class="panel-toggle active" id="toggleMatters" onclick="switchLeftPanel('matters')">Matters</button>
-        <button class="panel-toggle" id="toggleLibrary" onclick="switchLeftPanel('library')">📚 Library</button>
-      </div>
+
 
       <!-- Matters panel -->
       <div id="mattersPanel">
@@ -438,10 +431,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
           <span class="panel-head-title">Matters</span>
           <button class="btn-add" id="newMatterBtn">+ New</button>
         </div>
-                <div class="panel-toggle" id="panelToggle">
-          <button class="panel-toggle-btn active" id="btnShowMatters" onclick="showPanelSection('matters')">Matters</button>
-          <button class="panel-toggle-btn" id="btnShowLib" onclick="showPanelSection('library')">Library</button>
-        </div>
+        
         <div id="libPanel">
           <div class="lib-section">
             <div class="lib-section-head"><span class="lib-section-title">Case Types</span><button class="lib-add-btn" onclick="libOpenModal('casetype')">+ Add</button></div>
@@ -521,7 +511,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <button class="tool-btn" onclick="openTool('issues')">⚖ Issue Tracker</button>
         <button class="tool-btn" onclick="openTool('citations')">📚 Citations</button>
         <button class="tool-btn" onclick="openTool('briefing')">📋 Briefing Note</button>
-        <button class="tool-btn" onclick="openTool('draft')">✍️ Draft</button>
+
       </div>
       <div class="progress-bar-wrap" id="progressWrap">
         <div class="progress-bar-label" id="progressLabel">Analysing documents…</div>
@@ -537,7 +527,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       <div class="tab-workspace active" id="ws-chat">
         <div class="messages-area" id="messagesArea">
           <div class="welcome-state">
-            <div class="welcome-icon">⚖</div>
+            <div class="welcome-icon" style="font-size:1.5rem">⚖</div>
             <div class="welcome-title">Ex Libris Juris</div>
             <div class="welcome-sub">Select a matter to begin analysis,<br>or create a new matter and upload documents.</div>
           </div>
@@ -965,6 +955,7 @@ async function selectMatter(id){
   document.getElementById('toolsBar').style.display='flex';
   document.getElementById('histBtn').style.display='';
   document.getElementById('tabBar').style.display='flex';
+  var rp=document.getElementById('rightPanel');if(rp)rp.style.display='';
   renderMatters();
 
   // Close all tool tabs, reset to chat
@@ -1187,11 +1178,13 @@ let pendingSubcats = []; // for new case type creation
 let pendingDocTypes = [];
 
 function switchLeftPanel(panel){
-  document.getElementById('mattersPanel').style.display = panel==='matters' ? '' : 'none';
-  document.getElementById('libraryPanel').style.display = panel==='library' ? 'flex' : 'none';
-  document.getElementById('toggleMatters').classList.toggle('active', panel==='matters');
-  document.getElementById('toggleLibrary').classList.toggle('active', panel==='library');
-  if(panel==='library') loadLibrary();
+  var mp=document.getElementById('mattersPanel');
+  var lp=document.getElementById('libraryPanel');
+  if(mp)mp.style.display=panel==='matters'?'':'none';
+  if(lp)lp.style.display=panel==='library'?'flex':'none';
+  var tm=document.getElementById('toggleMatters');if(tm)tm.classList.toggle('active',panel==='matters');
+  var tl=document.getElementById('toggleLibrary');if(tl)tl.classList.toggle('active',panel==='library');
+  if(panel==='library')loadLibrary();
 }
 
 async function loadLibrary(){

@@ -5,7 +5,53 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Ex Libris Juris — Legal Analysis</title>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js">
+function addFocusChip(){var name=prompt('Focus area name:');if(!name||!name.trim())return;var chip=document.createElement('span');chip.className='chip';chip.setAttribute('data-v',name.trim());chip.innerHTML=esc(name.trim())+' <button class="chip-del" onclick="this.parentElement.remove()">&times;</button>';var container=document.getElementById('focusChips');var addBtn=container.querySelector('.chip-add');container.insertBefore(chip,addBtn);}
+
+function switchMainNav(nav){
+  document.querySelectorAll('.main-nav-btn').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-nav')===nav);});
+  // Show/hide the left panel sections
+  var mattersPanel=document.getElementById('mattersPanel');
+  var libraryPanel=document.getElementById('libraryPanel');
+  // Show/hide centre panel sections  
+  var centrePanel=document.querySelector('.centre-panel');
+  var rightPanel=document.querySelector('.right-panel');
+  var draftWs=document.getElementById('ws-drafting');
+  var chatWs=document.getElementById('ws-chat');
+  var toolsBar=document.getElementById('toolsBar');
+  var chatToolbar=document.querySelector('.chat-toolbar');
+  if(nav==='matters'){
+    if(mattersPanel)mattersPanel.style.display='';
+    if(libraryPanel)libraryPanel.style.display='none';
+    if(draftWs){draftWs.style.display='none';draftWs.classList.remove('active');}
+    if(chatWs){chatWs.style.display='flex';chatWs.classList.add('active');}
+    if(toolsBar)toolsBar.style.display=currentMatter?'flex':'none';
+    if(chatToolbar)chatToolbar.style.display='';
+    if(rightPanel)rightPanel.style.display=currentMatter?'':'none';
+    document.querySelectorAll('.tool-workspace').forEach(function(ws){ws.style.display='none';ws.classList.remove('active');});
+    if(chatWs){chatWs.style.display='flex';chatWs.classList.add('active');}
+  }else if(nav==='library'){
+    if(mattersPanel)mattersPanel.style.display='none';
+    if(libraryPanel){libraryPanel.style.display='flex';loadLibrary();}
+    if(draftWs){draftWs.style.display='none';draftWs.classList.remove('active');}
+    if(chatWs){chatWs.style.display='none';chatWs.classList.remove('active');}
+    document.querySelectorAll('.tool-workspace').forEach(function(ws){ws.style.display='none';ws.classList.remove('active');});
+    if(toolsBar)toolsBar.style.display='none';
+    if(chatToolbar)chatToolbar.style.display='none';
+    if(rightPanel)rightPanel.style.display='none';
+  }else if(nav==='draft'){
+    if(mattersPanel)mattersPanel.style.display='';
+    if(libraryPanel)libraryPanel.style.display='none';
+    if(toolsBar)toolsBar.style.display='none';
+    if(chatToolbar)chatToolbar.style.display='none';
+    if(chatWs){chatWs.style.display='none';chatWs.classList.remove('active');}
+    document.querySelectorAll('.tool-workspace').forEach(function(ws){ws.style.display='none';ws.classList.remove('active');});
+    if(draftWs){draftWs.style.display='flex';draftWs.classList.add('active');}
+    if(rightPanel)rightPanel.style.display=currentMatter?'':'none';
+    populateDraftSelects();
+  }
+}
+</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -117,6 +163,10 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .tool-hist-item{padding:.55rem .85rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.5rem;cursor:pointer;transition:background .15s}
 .tool-hist-item:last-child{border-bottom:none}
 .tool-hist-item:hover{background:var(--blue-pale)}
+.tool-hist-actions{display:flex;gap:4px;align-items:center;margin-left:auto;flex-shrink:0}
+.tool-hist-btn{background:none;border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.72rem;cursor:pointer;color:var(--text-mid);transition:all .15s}
+.tool-hist-btn:hover{background:var(--blue-pale);border-color:var(--blue-light)}
+
 .tool-hist-label{flex:1;font-size:.82rem;font-weight:600;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tool-hist-date{font-size:.7rem;color:var(--text-faint);flex-shrink:0}
 .tool-hist-del{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1rem;padding:0 .2rem;flex-shrink:0}
@@ -140,6 +190,10 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .bundle-table td{padding:.5rem .75rem;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.55}
 .bundle-table tr:last-child td{border-bottom:none}
 .bundle-table tr:hover td{background:var(--blue-faint)}
+.main-nav{display:flex;gap:2px;margin-left:1.5rem;align-items:center}
+.main-nav-btn{padding:.45rem 1rem;border:none;background:transparent;font-family:'Source Sans 3',sans-serif;font-size:.88rem;font-weight:700;color:rgba(255,255,255,.55);cursor:pointer;border-radius:5px;transition:all .18s;letter-spacing:.03em}
+.main-nav-btn:hover{color:rgba(255,255,255,.85);background:rgba(255,255,255,.08)}
+.main-nav-btn.active{color:#fff;background:rgba(255,255,255,.15)}
 /* Tab bar */
 .tab-bar{display:flex;align-items:center;gap:0;padding:0 1.1rem;background:var(--white);border-bottom:2px solid var(--border);flex-shrink:0;overflow-x:auto;min-height:42px}
 .tab-bar::-webkit-scrollbar{height:3px}
@@ -324,6 +378,11 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .draft-result-body{padding:.85rem;font-family:'Libre Baskerville',serif;font-size:.9rem;line-height:1.7;color:var(--text);white-space:pre-wrap;outline:none;min-height:60px}
 .draft-result-body[contenteditable="true"]{background:#fffef7}
 
+/* Scroll fixes */
+.tab-workspace{min-height:0;overflow:hidden}
+.tool-msgs{min-height:0;overflow-y:auto}
+#toolWorkspaces{min-height:0;overflow:hidden;display:contents}
+.messages-area{min-height:0;overflow-y:auto}
 </style>
 </head>
 <body>
@@ -347,7 +406,12 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
   <header>
     <div class="hdr">
       <div class="logo"><span style="font-size:1.9rem;vertical-align:middle;margin-right:.25rem">⚖</span> Ex Libris Juris <em>Offshore Legal Analysis</em></div>
-      <div class="hdr-right">
+      <div class="main-nav">
+          <button class="main-nav-btn active" data-nav="matters" onclick="switchMainNav('matters')">📁 Matters</button>
+          <button class="main-nav-btn" data-nav="library" onclick="switchMainNav('library')">📚 Library</button>
+          <button class="main-nav-btn" data-nav="draft" onclick="switchMainNav('draft')">✍️ Draft</button>
+        </div>
+        <div class="hdr-right">
         <div class="jur-tabs">
           <button class="jur-tab active" data-jur="Bermuda">Bermuda</button>
           <button class="jur-tab" data-jur="Cayman Islands">Cayman</button>
@@ -463,10 +527,8 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <div class="progress-bar-label" id="progressLabel">Analysing documents…</div>
         <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
       </div>
-      <!-- Tab bar -->
+      <!-- Tool tabs bar (for open tool tabs) -->
       <div class="tab-bar" id="tabBar" style="display:none">
-        <div class="tab active" data-tab="chat" onclick="switchTab('chat')">💬 Chat</div>
-        <div class="tab" data-tab="drafting" onclick="openDraftWorkspace()">✍️ Draft</div>
       </div>
       <div id="histPanel" class="history-panel">
         <div class="history-list" id="histList"></div>
@@ -531,7 +593,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
         <div class="input-hint">Shift+Enter for new line · Enter to send</div>
       </div>
     </div>
-    <div class="right-panel">
+    <div class="right-panel" id="rightPanel" style="display:none">
       <div class="panel-head"><span class="panel-head-title">Documents</span></div>
       <select class="doc-type" id="docTypeSelect">
         <option>Pleading</option>
@@ -556,12 +618,13 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       <div class="focus-section">
         <div class="focus-label">Focus Areas</div>
         <div class="chips" id="focusChips">
-          <span class="chip" data-v="Liability">Liability</span>
-          <span class="chip" data-v="Quantum">Quantum</span>
-          <span class="chip" data-v="Jurisdiction">Jurisdiction</span>
-          <span class="chip" data-v="Limitation">Limitation</span>
-          <span class="chip" data-v="Evidence">Evidence</span>
-          <span class="chip" data-v="Procedure">Procedure</span>
+          <span class="chip" data-v="Liability">Liability <button class="chip-del" onclick="this.parentElement.remove()">&times;</button></span>
+          <span class="chip" data-v="Quantum">Quantum <button class="chip-del" onclick="this.parentElement.remove()">&times;</button></span>
+          <span class="chip" data-v="Jurisdiction">Jurisdiction <button class="chip-del" onclick="this.parentElement.remove()">&times;</button></span>
+          <span class="chip" data-v="Limitation">Limitation <button class="chip-del" onclick="this.parentElement.remove()">&times;</button></span>
+          <span class="chip" data-v="Evidence">Evidence <button class="chip-del" onclick="this.parentElement.remove()">&times;</button></span>
+          <span class="chip" data-v="Procedure">Procedure <button class="chip-del" onclick="this.parentElement.remove()">&times;</button></span>
+          <button class="chip chip-add" onclick="addFocusChip()">+ Add</button>
         </div>
       </div>
       <div class="docs-scroll"><div id="docsList"></div></div>
@@ -952,7 +1015,7 @@ document.getElementById('saveMatterBtn').addEventListener('click',async()=>{
   try{
     await api(`/api/matters?id=${editingMatterId}`,'PATCH',{name:document.getElementById('editMatterName').value.trim(),nature:document.getElementById('editMatterNature').value,issues:document.getElementById('editMatterIssues').value});
     closeModal('editMatterModal');await loadMatters();
-    if(currentMatter?.id===editingMatterId){const m=matters.find(x=>x.id===editingMatterId);if(m){currentMatter=m;document.getElementById('chatTitle').textContent=m.name;}}
+    if(currentMatter?.id===editingMatterId){const m=matters.find(x=>x.id===editingMatterId);if(m){currentMatter=m;var rp=document.getElementById('rightPanel');if(rp)rp.style.display='';document.getElementById('chatTitle').textContent=m.name;}}
   }catch(e){showToast('Error: '+e.message);}
 });
 
@@ -1661,44 +1724,35 @@ function getToolHistory(toolName){
 }
 
 function renderToolHistoryBar(toolName,historyId,bubble){
-  const bar=document.createElement('div');
+  var bar=document.createElement('div');
   bar.className='tool-history-bar';
-  const hist=getToolHistory(toolName);
+  var hist=getToolHistory(toolName);
   if(!hist.length)return bar;
-
-  const toggle=document.createElement('button');
+  var toggle=document.createElement('button');
   toggle.className='tool-history-toggle';
-  toggle.innerHTML=`📂 Previous ${hist.length} run${hist.length!==1?'s':''} of ${toolDefs[toolName]?.title.replace(/^[^\w]*/,'').split(' ').slice(0,2).join(' ')||toolName}`;
-  const list=document.createElement('div');
+  var toolLabel=toolDefs[toolName]?toolDefs[toolName].title.replace(/^[^\w]*/,'').split(' ').slice(0,2).join(' '):toolName;
+  toggle.textContent='\uD83D\uDCC2 Previous '+hist.length+' run'+(hist.length!==1?'s':'')+' of '+toolLabel;
+  var list=document.createElement('div');
   list.className='tool-history-list';
-
-  hist.forEach((h,i)=>{
-    if(h.id===historyId)return; // Don't show current run
-    const item=document.createElement('div');
+  hist.forEach(function(h){
+    if(h.id===historyId)return;
+    var item=document.createElement('div');
     item.className='tool-hist-item';
-    const lbl=document.createElement('div');lbl.className='tool-hist-label';lbl.textContent=h.question.slice(0,70)+(h.question.length>70?'…':'');
-    const dt=document.createElement('div');dt.className='tool-hist-date';dt.textContent=new Date(h.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'});
-    const del=document.createElement('button');del.className='tool-hist-del';del.textContent='×';del.title='Delete this run';
-    del.addEventListener('click',async(e)=>{
-      e.stopPropagation();
-      if(!confirm('Delete this saved result?'))return;
-      try{
-        await api(`/api/history?id=${h.id}`,'DELETE');
-        await loadHistory(currentMatter.id);
-        item.remove();
-        showToast('Deleted');
-      }catch(err){showToast('Error: '+err.message);}
-    });
-    item.appendChild(lbl);item.appendChild(dt);item.appendChild(del);
-    item.addEventListener('click',()=>{
-      clearMessages();
-      appendMsg('assistant',h.answer,'tool',h.question,null,h.tool_name,h.id);
-      list.classList.remove('open');
-    });
+    var lbl=document.createElement('div');lbl.className='tool-hist-label';lbl.textContent=h.question.slice(0,70)+(h.question.length>70?'\u2026':'');
+    var dt=document.createElement('div');dt.className='tool-hist-date';dt.textContent=new Date(h.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'});
+    var actions=document.createElement('div');actions.className='tool-hist-actions';
+    var wordBtn=document.createElement('button');wordBtn.className='tool-hist-btn';wordBtn.textContent='\u2B07 Word';wordBtn.title='Download as Word';
+    wordBtn.addEventListener('click',function(e){e.stopPropagation();downloadWord(h.answer,h.question||currentMatter.name);});
+    var editBtn=document.createElement('button');editBtn.className='tool-hist-btn';editBtn.textContent='\u270F\uFE0F';editBtn.title='Edit this result';
+    editBtn.addEventListener('click',function(e){e.stopPropagation();clearMessages();var area=getActiveMessagesArea();appendMsgTo(area,'assistant',h.answer,'tool',h.question,null,h.tool_name,h.id);list.classList.remove('open');});
+    var delBtn=document.createElement('button');delBtn.className='tool-hist-del';delBtn.textContent='\u00D7';delBtn.title='Delete this run';
+    delBtn.addEventListener('click',function(e){e.stopPropagation();if(!confirm('Delete this saved result?'))return;api('/api/history?id='+h.id,'DELETE').then(function(){loadHistory(currentMatter.id);item.remove();showToast('Deleted');}).catch(function(err){showToast('Error: '+err.message);});});
+    actions.appendChild(wordBtn);actions.appendChild(editBtn);actions.appendChild(delBtn);
+    item.appendChild(lbl);item.appendChild(dt);item.appendChild(actions);
+    item.addEventListener('click',function(){clearMessages();appendMsg('assistant',h.answer,'tool',h.question,null,h.tool_name,h.id);list.classList.remove('open');});
     list.appendChild(item);
   });
-
-  toggle.addEventListener('click',()=>list.classList.toggle('open'));
+  toggle.addEventListener('click',function(){list.classList.toggle('open');});
   bar.appendChild(toggle);
   bar.appendChild(list);
   return bar;

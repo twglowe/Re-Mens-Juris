@@ -1,51 +1,18 @@
 {
-  "version": 2,
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/public/index.html"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/public/index.html"
-    }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/public/index.html" }
   ],
   "functions": {
-    "api/upload.js": {
-      "maxDuration": 300
-    },
-    "api/analyse.js": {
-      "maxDuration": 120
-    },
-    "api/tools.js": {
-      "maxDuration": 300
-    },
-    "api/matters.js": {
-      "maxDuration": 30
-    },
-    "api/documents.js": {
-      "maxDuration": 30
-    },
-    "api/auth.js": {
-      "maxDuration": 30
-    },
-    "api/sharing.js": {
-      "maxDuration": 30
-    },
-    "api/history.js": {
-      "maxDuration": 30
-    },
-    "api/export.js": {
-      "maxDuration": 30
-    },
-    "api/usage.js": {
-      "maxDuration": 30
-    },
-    "api/library.js": {
-      "maxDuration": 60
-    },
-    "api/library_fetch.js": {
-      "maxDuration": 60
-    }
+    "api/upload.js":    { "maxDuration": 300 },
+    "api/analyse.js":   { "maxDuration": 120 },
+    "api/tools.js":     { "maxDuration": 300 },
+    "api/library.js":   { "maxDuration": 120 },
+    "api/matters.js":   { "maxDuration": 30  },
+    "api/documents.js": { "maxDuration": 30  },
+    "api/auth.js":      { "maxDuration": 30  },
+    "api/sharing.js":   { "maxDuration": 30  },
+    "api/history.js":   { "maxDuration": 30  },
+    "api/export.js":    { "maxDuration": 30  }
   }
 }

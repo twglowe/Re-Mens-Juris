@@ -465,6 +465,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
       <!-- Tab bar -->
       <div class="tab-bar" id="tabBar" style="display:none">
         <div class="tab active" data-tab="chat" onclick="switchTab('chat')">💬 Chat</div>
+        <div class="tab" data-tab="drafting" onclick="openDraftWorkspace()">✍️ Draft</div>
       </div>
       <div id="histPanel" class="history-panel">
         <div class="history-list" id="histList"></div>
@@ -1387,6 +1388,9 @@ function switchTab(tabId){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tabId));
   // Show/hide workspaces
   document.getElementById('ws-chat').classList.toggle('active',tabId==='chat');
+  // Hide drafting workspace when switching to other tabs
+  var draftWs=document.getElementById('ws-drafting');
+  if(draftWs){draftWs.style.display='none';draftWs.classList.remove('active');}
   document.querySelectorAll('.tool-workspace').forEach(ws=>{
     ws.classList.toggle('active',ws.dataset.tool===tabId);
   });

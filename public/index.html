@@ -1819,8 +1819,46 @@ function populateDraftSelects(){var tok=localStorage.getItem('elj_token');if(!to
 function draftCaseTypeChanged(){var cid=document.getElementById('draftCaseType').value;var tok=localStorage.getItem('elj_token');var ss=document.getElementById('draftSubcat');document.getElementById('draftDocType').innerHTML='<option value="">-- Select document type --</option>';ss.style.display='none';if(!cid)return;fetch('/api/library?action=getSubcats&caseTypeId='+cid,{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var scs=d.subcats||[];if(scs.length){ss.innerHTML='<option value="">-- All sub-categories --</option>';scs.forEach(function(sc){var o=document.createElement('option');o.value=sc.id;o.textContent=sc.name;ss.appendChild(o);});ss.style.display='';}draftLoadDocTypes(cid,null);}).catch(function(){});}
 function draftSubcatChanged(){draftLoadDocTypes(document.getElementById('draftCaseType').value,document.getElementById('draftSubcat').value||null);}
 function draftLoadDocTypes(cid,sid){var tok=localStorage.getItem('elj_token');fetch('/api/library?action=getDocTypes&caseTypeId='+cid+(sid?'&subcatId='+sid:''),{headers:{'Authorization':'Bearer '+tok}}).then(function(r){return r.json();}).then(function(d){var sel=document.getElementById('draftDocType');sel.innerHTML='<option value="">-- Select document type --</option>';(d.docTypes||[]).forEach(function(dt){var o=document.createElement('option');o.value=dt.id;o.textContent=dt.name;sel.appendChild(o);});}).catch(function(){});}
-async function runDraft(){var matterId=(typeof currentMatterId!=='undefined')?currentMatterId:null;if(!matterId){if(typeof showToast==='function')showToast('Please select a matter first');else alert('Please select a matter first');return;}var cid=document.getElementById('draftCaseType').value;var did=document.getElementById('draftDocType').value;if(!cid||!did){if(typeof showToast==='function')showToast('Please select case type and document type');else alert('Please select case type and document type');return;}var tok=localStorage.getItem('elj_token');var welcome=document.getElementById('draftWelcome');if(welcome)welcome.style.display='none';var card=document.createElement('div');card.className='draft-result-block';card.innerHTML='<div class="draft-result-head"><span>Generating draft...</span></div><div class="draft-result-body" style="color:var(--text-light)"><em>Retrieving documents and library content...</em></div>';var body=document.getElementById('draftBody');if(body.firstChild)body.insertBefore(card,body.firstChild);else body.appendChild(card);try{var resp=await fetch('/api/tools',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({matterId:matterId,jurisdiction:(typeof currentJurisdiction!=='undefined'?currentJurisdiction:'Bermuda'),tool:'draft',instructions:document.getElementById('draftInstructions').value.trim(),caseTypeId:cid,subcatId:document.getElementById('draftSubcat').value||null,docTypeId:did})});var data=await resp.json();if(data.error)throw new Error(data.error);var ts=new Date().toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});var resultText=data.result||data.text||data.answer||'';card.innerHTML='<div class="draft-result-head"><span>'+ts+'</span><div class="draft-actions"><button onclick="(function(b){var x=b.closest('.draft-result-block').querySelector('.draft-result-body');x.setAttribute('contenteditable','true');x.focus();b.style.display='none';b.nextElementSibling.style.display='';})(this)">Edit</button><button style="display:none" onclick="(function(b){var x=b.closest('.draft-result-block').querySelector('.draft-result-body');x.removeAttribute('contenteditable');b.style.display='none';b.previousElementSibling.style.display='';})(this)">Done</button><button onclick="downloadDraftWord(this)">Word</button><button onclick="this.closest('.draft-result-block').remove()" style="color:#c0392b">X</button></div></div><div class="draft-result-body">'+(typeof renderMarkdown==='function'?renderMarkdown(resultText):resultText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/
-/g,'<br>'))+'</div>';}catch(err){card.innerHTML='<div class="draft-result-head" style="color:#c0392b">Error</div><div class="draft-result-body">'+err.message+'</div>';}}
+async function runDraft(){
+  var matterId=(typeof currentMatterId!=='undefined')?currentMatterId:null;
+  if(!matterId){if(typeof showToast==='function')showToast('Please select a matter first');else alert('Please select a matter first');return;}
+  var cid=document.getElementById('draftCaseType').value;
+  var did=document.getElementById('draftDocType').value;
+  if(!cid||!did){if(typeof showToast==='function')showToast('Please select case type and document type');else alert('Please select case type and document type');return;}
+  var tok=localStorage.getItem('elj_token');
+  var welcome=document.getElementById('draftWelcome');
+  if(welcome)welcome.style.display='none';
+  var card=document.createElement('div');
+  card.className='draft-result-block';
+  card.innerHTML='<div class="draft-result-head"><span>Generating draft...</span></div><div class="draft-result-body" style="color:var(--text-light)"><em>Retrieving documents and library content...</em></div>';
+  var body=document.getElementById('draftBody');
+  if(body.firstChild)body.insertBefore(card,body.firstChild);else body.appendChild(card);
+  try{
+    var resp=await fetch('/api/tools',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({matterId:matterId,jurisdiction:(typeof currentJurisdiction!=='undefined'?currentJurisdiction:'Bermuda'),tool:'draft',instructions:document.getElementById('draftInstructions').value.trim(),caseTypeId:cid,subcatId:document.getElementById('draftSubcat').value||null,docTypeId:did})});
+    var data=await resp.json();
+    if(data.error)throw new Error(data.error);
+    var ts=new Date().toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+    var resultText=data.result||data.text||data.answer||'';
+    var head=document.createElement('div');head.className='draft-result-head';
+    var span=document.createElement('span');span.textContent=ts;head.appendChild(span);
+    var actions=document.createElement('div');actions.className='draft-actions';
+    var editBtn=document.createElement('button');editBtn.textContent='Edit';
+    editBtn.onclick=function(){var x=card.querySelector('.draft-result-body');x.setAttribute('contenteditable','true');x.focus();editBtn.style.display='none';doneBtn.style.display='';};
+    var doneBtn=document.createElement('button');doneBtn.textContent='Done';doneBtn.style.display='none';
+    doneBtn.onclick=function(){var x=card.querySelector('.draft-result-body');x.removeAttribute('contenteditable');doneBtn.style.display='none';editBtn.style.display='';};
+    var wordBtn=document.createElement('button');wordBtn.textContent='Word';
+    wordBtn.onclick=function(){downloadDraftWord(wordBtn);};
+    var delBtn=document.createElement('button');delBtn.textContent='X';delBtn.style.color='#c0392b';
+    delBtn.onclick=function(){card.remove();};
+    actions.appendChild(editBtn);actions.appendChild(doneBtn);actions.appendChild(wordBtn);actions.appendChild(delBtn);
+    head.appendChild(actions);
+    var bodyDiv=document.createElement('div');bodyDiv.className='draft-result-body';
+    bodyDiv.innerHTML=(typeof renderMarkdown==='function')?renderMarkdown(resultText):resultText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>');
+    card.innerHTML='';card.appendChild(head);card.appendChild(bodyDiv);
+  }catch(err){
+    card.innerHTML='<div class="draft-result-head" style="color:#c0392b">Error</div><div class="draft-result-body">'+err.message+'</div>';
+  }
+}
 function downloadDraftWord(btn){var body=btn.closest('.draft-result-block').querySelector('.draft-result-body');var tok=localStorage.getItem('elj_token');fetch('/api/export?format=docx',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({text:body.innerText||body.textContent})}).then(function(r){return r.blob();}).then(function(blob){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='draft.docx';a.click();}).catch(function(){if(typeof showToast==='function')showToast('Download failed');});}
 
 </script>

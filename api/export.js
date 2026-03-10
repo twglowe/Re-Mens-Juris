@@ -2,23 +2,38 @@ import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, Bord
 
 export const config = { maxDuration: 30 };
 
-function parseMarkdownToDocx(text, matterName, jurisdiction) {
+function parseMarkdownToDocx(text, matterName, jurisdiction, h) {
   const children = [];
 
-  // Title
-  children.push(new Paragraph({
-    children: [new TextRun({ text: "Mens Juris — Legal Analysis", bold: true, size: 28, color: "0f2744" })],
-    spacing: { after: 120 },
-  }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: `Matter: ${matterName}`, size: 22, color: "1d6fa4" })],
-    spacing: { after: 60 },
-  }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: `Jurisdiction: ${jurisdiction}   |   Date: ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`, size: 18, color: "5a7a94" })],
-    spacing: { after: 400 },
-    border: { bottom: { color: "c5ddf0", size: 6, style: BorderStyle.SINGLE } },
-  }));
+  // Legal heading
+  const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  if (h && (h.court || h.plaintiff)) {
+    // Full formal legal heading
+    if (h.court) children.push(new Paragraph({ children: [new TextRun({ text: h.court.toUpperCase(), bold: true, size: 24, color: "0f2744" })], alignment: AlignmentType.CENTER, spacing: { after: 80 } }));
+    if (h.actionNo) children.push(new Paragraph({ children: [new TextRun({ text: "Cause No. " + h.actionNo, size: 22, color: "0f2744" })], alignment: AlignmentType.CENTER, spacing: { after: 80 } }));
+    children.push(new Paragraph({ children: [new TextRun({ text: "IN THE MATTER OF " + matterName.toUpperCase(), size: 22, color: "0f2744", bold: true })], alignment: AlignmentType.CENTER, spacing: { before: 120, after: 160 } }));
+    if (h.plaintiff || h.defendant) {
+      children.push(new Paragraph({ children: [new TextRun({ text: "BETWEEN:", bold: true, size: 22, color: "0f2744" })], spacing: { after: 80 } }));
+      if (h.plaintiff) {
+        children.push(new Paragraph({ children: [new TextRun({ text: h.plaintiff, size: 22, color: "0f2744" })], spacing: { after: 40 } }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Plaintiff / Petitioner / Applicant", size: 20, color: "5a7a94", italics: true })], indent: { left: 3600 }, spacing: { after: 80 } }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "— and —", size: 22, color: "0f2744" })], alignment: AlignmentType.CENTER, spacing: { before: 60, after: 60 } }));
+      }
+      if (h.defendant) {
+        children.push(new Paragraph({ children: [new TextRun({ text: h.defendant, size: 22, color: "0f2744" })], spacing: { after: 40 } }));
+        children.push(new Paragraph({ children: [new TextRun({ text: "Defendant / Respondent", size: 20, color: "5a7a94", italics: true })], indent: { left: 3600 }, spacing: { after: 160 } }));
+      }
+    }
+    if (h.docType) children.push(new Paragraph({ children: [new TextRun({ text: h.docType.toUpperCase(), bold: true, size: 26, color: "0f2744" })], alignment: AlignmentType.CENTER, spacing: { before: 160, after: 80 } }));
+    if (h.firm) children.push(new Paragraph({ children: [new TextRun({ text: "Filed by: " + h.firm, size: 20, color: "1d6fa4" })], alignment: AlignmentType.CENTER, spacing: { after: 40 } }));
+    if (h.counselFor) children.push(new Paragraph({ children: [new TextRun({ text: "Counsel for the " + h.counselFor, size: 20, color: "1d6fa4" })], alignment: AlignmentType.CENTER, spacing: { after: 40 } }));
+    children.push(new Paragraph({ children: [new TextRun({ text: "Jurisdiction: " + jurisdiction + "   |   Date: " + dateStr, size: 18, color: "5a7a94" })], alignment: AlignmentType.CENTER, spacing: { after: 400 }, border: { bottom: { color: "c5ddf0", size: 6, style: BorderStyle.SINGLE } } }));
+  } else {
+    // Simple heading fallback
+    children.push(new Paragraph({ children: [new TextRun({ text: "Ex Libris Juris — Legal Analysis", bold: true, size: 28, color: "0f2744" })], spacing: { after: 120 } }));
+    children.push(new Paragraph({ children: [new TextRun({ text: "Matter: " + matterName, size: 22, color: "1d6fa4" })], spacing: { after: 60 } }));
+    children.push(new Paragraph({ children: [new TextRun({ text: "Jurisdiction: " + jurisdiction + "   |   Date: " + dateStr, size: 18, color: "5a7a94" })], spacing: { after: 400 }, border: { bottom: { color: "c5ddf0", size: 6, style: BorderStyle.SINGLE } } }));
+  }
 
   const lines = text.split("\n");
   let i = 0;
@@ -94,11 +109,12 @@ function parseMarkdownToDocx(text, matterName, jurisdiction) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { content, matterName, jurisdiction, title } = req.body;
+  const { content, matterName, jurisdiction, title, court, actionNo, plaintiff, defendant, firm, counselFor, docType } = req.body;
   if (!content) return res.status(400).json({ error: "No content provided" });
 
   try {
-    const children = parseMarkdownToDocx(content, matterName || "Matter", jurisdiction || "Bermuda");
+    const headingOpts = (court || plaintiff || defendant) ? { court, actionNo, plaintiff, defendant, firm: firm, counselFor, docType } : null;
+    const children = parseMarkdownToDocx(content, matterName || "Matter", jurisdiction || "Bermuda", headingOpts);
 
     const doc = new Document({
       numbering: {

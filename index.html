@@ -5,50 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Ex Libris Juris — Legal Analysis</title>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js">
-function addFocusChip(){var name=prompt('Focus area name:');if(!name||!name.trim())return;var chip=document.createElement('span');chip.className='chip';chip.setAttribute('data-v',name.trim());chip.innerHTML=esc(name.trim())+' <button class="chip-del" onclick="this.parentElement.remove()">&times;</button>';var container=document.getElementById('focusChips');var addBtn=container.querySelector('.chip-add');container.insertBefore(chip,addBtn);}
-
-function switchMainNav(nav){
-  document.querySelectorAll('.main-nav-btn').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-nav')===nav);});
-  var mattersPanel=document.getElementById('mattersPanel');
-  var libraryPanel=document.getElementById('libraryPanel');
-  var rightPanel=document.getElementById('rightPanel');
-  var draftWs=document.getElementById('ws-drafting');
-  var chatWs=document.getElementById('ws-chat');
-  var toolsBar=document.getElementById('toolsBar');
-  var chatToolbar=document.querySelector('.chat-toolbar');
-  var leftPanel=document.querySelector('.left-panel');
-  // Hide everything first
-  if(draftWs){draftWs.style.display='none';draftWs.classList.remove('active');}
-  if(chatWs){chatWs.style.display='none';chatWs.classList.remove('active');}
-  document.querySelectorAll('.tool-workspace').forEach(function(ws){ws.style.display='none';ws.classList.remove('active');});
-  if(nav==='matters'){
-    if(leftPanel)leftPanel.style.display='';
-    if(mattersPanel)mattersPanel.style.display='';
-    if(libraryPanel)libraryPanel.style.display='none';
-    if(chatWs){chatWs.style.display='flex';chatWs.classList.add('active');}
-    if(toolsBar)toolsBar.style.display=currentMatter?'flex':'none';
-    if(chatToolbar)chatToolbar.style.display='';
-    if(rightPanel)rightPanel.style.display=currentMatter?'':'none';
-  }else if(nav==='library'){
-    if(leftPanel)leftPanel.style.display='';
-    if(mattersPanel)mattersPanel.style.display='none';
-    if(libraryPanel){libraryPanel.style.display='flex';loadLibrary();}
-    if(toolsBar)toolsBar.style.display='none';
-    if(chatToolbar)chatToolbar.style.display='none';
-    if(rightPanel)rightPanel.style.display='none';
-  }else if(nav==='draft'){
-    if(leftPanel)leftPanel.style.display='';
-    if(mattersPanel)mattersPanel.style.display='';
-    if(libraryPanel)libraryPanel.style.display='none';
-    if(toolsBar)toolsBar.style.display='none';
-    if(chatToolbar)chatToolbar.style.display='none';
-    if(draftWs){draftWs.style.display='flex';draftWs.classList.add('active');}
-    if(rightPanel)rightPanel.style.display=currentMatter?'':'none';
-    populateDraftSelects();
-  }
-}
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -643,6 +600,8 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
     </select>
     <label class="f-label" style="margin-top:.85rem">Nature of Dispute <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
     <textarea id="newMatterNature" placeholder="e.g. Shareholder dispute arising from alleged breach of shareholders agreement"></textarea>
+    <label class="f-label" style="margin-top:.85rem">Acting For</label>
+    <select id="newMatterActingFor"><option value="">-- Select party --</option><option>Plaintiff</option><option>Defendant</option><option>Appellant</option><option>Respondent</option><option>Petitioner</option><option>Applicant</option><option>Other</option></select>
     <label class="f-label" style="margin-top:.85rem">Key Issues <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
     <textarea id="newMatterIssues" placeholder="e.g. Whether the defendant breached the drag-along provisions; valuation of shares"></textarea>
     <div class="modal-btns">
@@ -660,6 +619,9 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
     <label class="f-label" style="margin-top:.85rem">Nature of Dispute</label>
     <textarea id="editMatterNature"></textarea>
     <label class="f-label" style="margin-top:.85rem">Key Issues</label>
+        <label class="f-label" style="margin-top:.85rem">Acting For</label>
+    <select id="editMatterActingFor"><option value="">-- Select party --</option><option>Plaintiff</option><option>Defendant</option><option>Appellant</option><option>Respondent</option><option>Petitioner</option><option>Applicant</option><option>Other</option></select>
+    <label class="f-label" style="margin-top:.85rem">Key Issues <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
     <textarea id="editMatterIssues"></textarea>
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeModal('editMatterModal')">Cancel</button>
@@ -966,7 +928,7 @@ async function selectMatter(id){
   await loadDocuments(id);
   await loadHistory(id);
   toolHistoryCache[id]={};
-  sysMsg(`Matter loaded: **${currentMatter.name}** · ${currentMatter.jurisdiction}`);
+  sysMsg(`Matter loaded: **${currentMatter.name}** · ${currentMatter.jurisdiction}${currentMatter.acting_for?' · Acting for: '+currentMatter.acting_for:''}`);
   if(currentMatter.nature)sysMsg(`Dispute: ${currentMatter.nature}`);
 }
 
@@ -987,7 +949,7 @@ document.getElementById('createMatterBtn').addEventListener('click',async()=>{
   const name=document.getElementById('newMatterName').value.trim();
   if(!name){showToast('Please enter a matter name');return;}
   try{
-    const d=await api('/api/matters','POST',{name,jurisdiction:document.getElementById('newMatterJur').value,nature:document.getElementById('newMatterNature').value,issues:document.getElementById('newMatterIssues').value});
+    const d=await api('/api/matters','POST',{name,jurisdiction:document.getElementById('newMatterJur').value,nature:document.getElementById('newMatterNature').value,issues:document.getElementById('newMatterIssues').value,acting_for:document.getElementById('newMatterActingFor').value});
     closeModal('newMatterModal');await loadMatters();selectMatter(d.matter.id);
   }catch(e){showToast('Error: '+e.message);}
 });
@@ -1145,7 +1107,7 @@ async function sendMessage(){
   area.appendChild(typing);area.scrollTop=area.scrollHeight;
 
   try{
-    const d=await api('/api/analyse','POST',{matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',messages:[{role:'user',content:text+(toolContext?'\n\n[Context: '+toolContext+']':'')}],jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:[...focusAreas]});
+    const d=await api('/api/analyse','POST',{matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:text+(toolContext?'\n\n[Context: '+toolContext+']':'')}],jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:[...focusAreas]});
     typing.remove();
     if(d?.result){
       const hId=await saveHistory(text,d.result);
@@ -1596,7 +1558,7 @@ document.getElementById('toolRunBtn').addEventListener('click',async()=>{
   msgsArea.scrollTop=msgsArea.scrollHeight;
 
   try{
-    const d=await api('/api/tools','POST',{tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',jurisdiction,anchorDocNames,instructions});
+    const d=await api('/api/tools','POST',{tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',jurisdiction,anchorDocNames,instructions});
     typing.remove();
     if(d?.result){
       const isProp=toolName==='proposition';
@@ -1619,23 +1581,47 @@ document.getElementById('toolRunBtn').addEventListener('click',async()=>{
 });
 
 // ── SOURCE PASSAGE PANEL ──────────────────────────────────────────────────────
-async function openSourcePanel(docName,contextText){
+async function openSourcePanel(docName,contextText,chunkIdx){
   document.getElementById('sourcePanelTitle').textContent=docName;
-  const body=document.getElementById('sourcePanelBody');
-  body.innerHTML='<div style="color:var(--text-faint);font-size:.88rem;font-style:italic;padding:.5rem 0">Loading passage…</div>';
+  var body=document.getElementById('sourcePanelBody');
+  body.innerHTML='<div style="color:var(--text-faint);font-size:.88rem;font-style:italic;padding:.5rem 0">Loading passages\u2026</div>';
   document.getElementById('sourcePanel').classList.add('open');
-
   try{
-    // Search for relevant chunks from this document
-    const d=await api('/api/documents?matter_id='+currentMatter.id+'&doc_name='+encodeURIComponent(docName));
-    const chunks=d?.chunks||[];
+    var tok=token||localStorage.getItem('elj_token');
+    var resp=await fetch('/api/documents?matter_id='+currentMatter.id+'&doc_name='+encodeURIComponent(docName),{headers:{'Authorization':'Bearer '+tok}});
+    var d=await resp.json();
+    var chunks=d.chunks||[];
     if(!chunks.length){body.innerHTML='<div style="color:var(--text-faint);font-size:.88rem">No passages found for this document.</div>';return;}
-    // Show passages that best match the context
-    body.innerHTML=`<div class="source-doc-label">${esc(docName)}</div>`+
-      chunks.slice(0,8).map(c=>`<div class="source-passage" style="margin-bottom:1rem">${esc(c.content)}</div>`).join('');
+    window._sourceChunks=chunks;
+    window._sourceChunkIdx=typeof chunkIdx==='number'?Math.min(chunkIdx,chunks.length-1):0;
+    renderSourceChunks(docName);
   }catch(e){
-    body.innerHTML=`<div style="color:var(--text-faint);font-size:.88rem">Could not load passages: ${esc(e.message)}</div>`;
+    body.innerHTML='<div style="color:var(--text-faint);font-size:.88rem">Could not load passages: '+esc(e.message)+'</div>';
   }
+}
+function renderSourceChunks(docName){
+  var body=document.getElementById('sourcePanelBody');
+  var chunks=window._sourceChunks||[];
+  var idx=window._sourceChunkIdx||0;
+  var start=Math.max(0,idx-1);
+  var end=Math.min(chunks.length,idx+4);
+  var navHtml='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)">';
+  navHtml+='<button style="border:1px solid var(--border);border-radius:4px;padding:2px 10px;cursor:pointer;background:var(--white)" onclick="sourceNav(-5)"'+(start<=0?' disabled':'')+'>\u25C0 Earlier</button>';
+  navHtml+='<span style="font-size:.75rem;color:var(--text-faint)">Chunks '+(start+1)+'\u2013'+end+' of '+chunks.length+'</span>';
+  navHtml+='<button style="border:1px solid var(--border);border-radius:4px;padding:2px 10px;cursor:pointer;background:var(--white)" onclick="sourceNav(5)"'+(end>=chunks.length?' disabled':'')+'>Later \u25B6</button>';
+  navHtml+='</div>';
+  var passagesHtml='';
+  for(var i=start;i<end;i++){
+    var c=chunks[i];
+    var isTarget=i===idx;
+    passagesHtml+='<div class="source-passage" style="margin-bottom:.8rem;padding:.6rem;border-radius:5px;border:1px solid '+(isTarget?'var(--blue-light)':'var(--border)')+';background:'+(isTarget?'var(--blue-faint)':'var(--white)')+'"><div style="font-size:.7rem;font-weight:700;color:var(--text-faint);margin-bottom:.3rem">\u00B6 '+(c.chunk_index!==undefined?c.chunk_index+1:i+1)+'</div><div style="font-size:.84rem;line-height:1.6;white-space:pre-wrap">'+esc(c.content)+'</div></div>';
+  }
+  body.innerHTML='<div class="source-doc-label" style="font-weight:700;margin-bottom:.5rem">'+esc(docName)+'</div>'+navHtml+passagesHtml;
+}
+function sourceNav(delta){
+  window._sourceChunkIdx=Math.max(0,Math.min((window._sourceChunks||[]).length-1,(window._sourceChunkIdx||0)+delta));
+  var title=document.getElementById('sourcePanelTitle').textContent;
+  renderSourceChunks(title);
 }
 function closeSourcePanel(){document.getElementById('sourcePanel').classList.remove('open');}
 
@@ -1727,7 +1713,7 @@ function renderToolHistoryBar(toolName,historyId,bubble){
   toggle.textContent='\uD83D\uDCC2 Previous '+hist.length+' run'+(hist.length!==1?'s':'')+' of '+toolLabel;
   var list=document.createElement('div');
   list.className='tool-history-list';
-  hist.forEach(function(h){
+  var histToShow=(toolName==='draft'&&hist.length>1)?hist.slice(0,1):hist;histToShow.forEach(function(h){
     if(h.id===historyId)return;
     var item=document.createElement('div');
     item.className='tool-hist-item';
@@ -1838,7 +1824,7 @@ function renderMdWithSourceLinks(text){
 
 async function downloadWord(content,title){
   try{
-    const r=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify({content,matterName:currentMatter?.name||'Matter',jurisdiction,title})});
+    const r=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(token||localStorage.getItem('elj_token'))},body:JSON.stringify({content,matterName:currentMatter?.name||'Matter',jurisdiction,title})});
     if(!r.ok){showToast('Export failed');return;}
     const blob=await r.blob();const url=URL.createObjectURL(blob);
     const a=document.createElement('a');a.href=url;a.download=(title||'analysis').replace(/[^a-z0-9]/gi,'-').toLowerCase()+'.docx';a.click();URL.revokeObjectURL(url);
@@ -1916,7 +1902,7 @@ async function runDraft(){
   var body=document.getElementById('draftBody');
   if(body.firstChild)body.insertBefore(card,body.firstChild);else body.appendChild(card);
   try{
-    var resp=await fetch('/api/tools',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({matterId:matterId,jurisdiction:(typeof currentJurisdiction!=='undefined'?currentJurisdiction:'Bermuda'),tool:'draft',instructions:document.getElementById('draftInstructions').value.trim(),caseTypeId:cid,subcatId:document.getElementById('draftSubcat').value||null,docTypeId:did})});
+    var resp=await fetch('/api/tools',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({matterId:matterId,actingFor:currentMatter?currentMatter.acting_for||'':'',jurisdiction:(typeof currentJurisdiction!=='undefined'?currentJurisdiction:'Bermuda'),tool:'draft',instructions:document.getElementById('draftInstructions').value.trim(),caseTypeId:cid,subcatId:document.getElementById('draftSubcat').value||null,docTypeId:did})});
     var data=await resp.json();
     if(data.error)throw new Error(data.error);
     var ts=new Date().toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
@@ -1943,6 +1929,50 @@ async function runDraft(){
 }
 function downloadDraftWord(btn){var body=btn.closest('.draft-result-block').querySelector('.draft-result-body');var tok=localStorage.getItem('elj_token');fetch('/api/export?format=docx',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({text:body.innerText||body.textContent})}).then(function(r){return r.blob();}).then(function(blob){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='draft.docx';a.click();}).catch(function(){if(typeof showToast==='function')showToast('Download failed');});}
 
+
+// ── NAVIGATION ──
+function addFocusChip(){var name=prompt('Focus area name:');if(!name||!name.trim())return;var chip=document.createElement('span');chip.className='chip';chip.setAttribute('data-v',name.trim());chip.innerHTML=esc(name.trim())+' <button class="chip-del" onclick="this.parentElement.remove()">&times;</button>';var container=document.getElementById('focusChips');var addBtn=container.querySelector('.chip-add');container.insertBefore(chip,addBtn);}
+
+function switchMainNav(nav){
+  document.querySelectorAll('.main-nav-btn').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-nav')===nav);});
+  var mattersPanel=document.getElementById('mattersPanel');
+  var libraryPanel=document.getElementById('libraryPanel');
+  var rightPanel=document.getElementById('rightPanel');
+  var draftWs=document.getElementById('ws-drafting');
+  var chatWs=document.getElementById('ws-chat');
+  var toolsBar=document.getElementById('toolsBar');
+  var chatToolbar=document.querySelector('.chat-toolbar');
+  var leftPanel=document.querySelector('.left-panel');
+  // Hide everything first
+  if(draftWs){draftWs.style.display='none';draftWs.classList.remove('active');}
+  if(chatWs){chatWs.style.display='none';chatWs.classList.remove('active');}
+  document.querySelectorAll('.tool-workspace').forEach(function(ws){ws.style.display='none';ws.classList.remove('active');});
+  if(nav==='matters'){
+    if(leftPanel)leftPanel.style.display='';
+    if(mattersPanel)mattersPanel.style.display='';
+    if(libraryPanel)libraryPanel.style.display='none';
+    if(chatWs){chatWs.style.display='flex';chatWs.classList.add('active');}
+    if(toolsBar)toolsBar.style.display=currentMatter?'flex':'none';
+    if(chatToolbar)chatToolbar.style.display='';
+    if(rightPanel)rightPanel.style.display=currentMatter?'':'none';
+  }else if(nav==='library'){
+    if(leftPanel)leftPanel.style.display='';
+    if(mattersPanel)mattersPanel.style.display='none';
+    if(libraryPanel){libraryPanel.style.display='flex';loadLibrary();}
+    if(toolsBar)toolsBar.style.display='none';
+    if(chatToolbar)chatToolbar.style.display='none';
+    if(rightPanel)rightPanel.style.display='none';
+  }else if(nav==='draft'){
+    if(leftPanel)leftPanel.style.display='';
+    if(mattersPanel)mattersPanel.style.display='';
+    if(libraryPanel)libraryPanel.style.display='none';
+    if(toolsBar)toolsBar.style.display='none';
+    if(chatToolbar)chatToolbar.style.display='none';
+    if(draftWs){draftWs.style.display='flex';draftWs.classList.add('active');}
+    if(rightPanel)rightPanel.style.display=currentMatter?'':'none';
+    populateDraftSelects();
+  }
+}
 </script>
 </body>
 </html>

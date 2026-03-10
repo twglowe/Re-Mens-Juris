@@ -845,7 +845,7 @@ let token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matte
 // Tool history stored per tool per matter: toolHistoryCache[matterId][toolName] = [{id,question,answer,created_at}]
 let toolHistoryCache={};
 
-const stored=const stored=localStorage.getItem('elj_token');
+const const stored=localStorage.getItem('elj_token');
 if(stored){token=stored;}
 
 async function api(url,method='GET',body=null){

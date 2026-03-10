@@ -2522,5 +2522,324 @@ async function enhanceDraft(){
   </div>
 </div>
 <script>(function(){var _o=switchLeftPanel;switchLeftPanel=function(p){_o(p);var lws=document.getElementById("libraryWorkspace");var tbar=document.getElementById("toolsBar");var pw=document.getElementById("progressWrap");if(p==="library"){if(lws){lws.style.position="fixed";lws.style.top="56px";lws.style.left="0";lws.style.right="0";lws.style.bottom="0";lws.style.zIndex="100";}if(tbar)tbar.style.display="none";if(pw)pw.style.display="none";}else{if(lws){lws.style.position="";lws.style.top="";lws.style.left="";lws.style.right="";lws.style.bottom="";lws.style.zIndex="";}if(tbar)tbar.style.display="";if(pw)pw.style.display="";}};})();</script>
+<style>
+/* Chunk viewer panel */
+.chunk-viewer{position:fixed;top:0;right:0;width:440px;height:100vh;background:#fff;
+  box-shadow:-4px 0 24px rgba(0,0,0,.18);z-index:2000;display:flex;flex-direction:column;
+  transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);}
+.chunk-viewer.open{transform:translateX(0);}
+.cv-head{padding:.75rem 1rem;background:#0f2744;color:#fff;display:flex;
+  align-items:center;justify-content:space-between;flex-shrink:0;}
+.cv-head-title{font-size:.88rem;font-weight:600;flex:1;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.cv-close{background:none;border:none;color:#fff;cursor:pointer;font-size:1.3rem;
+  padding:0 .25rem;line-height:1;opacity:.8;}
+.cv-close:hover{opacity:1;}
+.cv-body{flex:1;overflow-y:auto;padding:.75rem;}
+.cv-chunk{padding:.6rem .75rem;margin-bottom:.5rem;border-radius:6px;
+  border:1px solid #e2e8f0;font-size:.82rem;line-height:1.6;color:#2d3748;}
+.cv-chunk.cv-hl{background:#fffbeb;border-color:#f6ad55;}
+.cv-idx{font-size:.7rem;color:#94a3b8;margin-bottom:.3rem;font-family:monospace;}
+/* Source reference links */
+.src-ref{color:#1d6fa4;cursor:pointer;text-decoration:underline dotted;
+  text-underline-offset:2px;}
+.src-ref:hover{color:#0f2744;text-decoration:underline;}
+/* Saved drafts panel */
+.draft-list-wrap{border-bottom:1px solid #e2e8f0;padding:.5rem .75rem .4rem;
+  background:#f8fafc;flex-shrink:0;}
+.draft-list-head{font-size:.78rem;font-weight:600;color:#4a5568;margin-bottom:.3rem;
+  display:flex;align-items:center;justify-content:space-between;}
+.draft-item{display:flex;align-items:center;gap:.4rem;padding:.18rem 0;font-size:.82rem;}
+.draft-item-title{flex:1;color:#1d6fa4;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.draft-item-title:hover{text-decoration:underline;}
+.draft-item-del{color:#e53e3e;cursor:pointer;font-size:.8rem;opacity:.55;flex-shrink:0;}
+.draft-item-del:hover{opacity:1;}
+/* Fix draft workspace gap and hide tabBar */
+.drafting-workspace{padding-top:0!important;}
+/* Copy to draft button on tool outputs */
+.copy-to-draft-btn{background:#e8f4ff;border:1px solid #bee3f8;color:#2b6cb0;
+  font-size:.78rem;padding:.25rem .65rem;border-radius:4px;cursor:pointer;
+  margin-left:.5rem;}
+.copy-to-draft-btn:hover{background:#bee3f8;}
+</style>
+<div id="chunkViewerPanel" class="chunk-viewer">
+  <div class="cv-head">
+    <span class="cv-head-title" id="cvTitle">Source document</span>
+    <button class="cv-close" onclick="closeChunkViewer()">&#x2715;</button>
+  </div>
+  <div class="cv-body" id="cvBody"></div>
+</div>
+<script>
+// ── Chunk viewer ──────────────────────────────────────────────────────────────
+function escHtml(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+async function showChunkViewer(docName,highlightIdx){
+  var panel=document.getElementById('chunkViewerPanel');
+  var body=document.getElementById('cvBody');
+  document.getElementById('cvTitle').textContent=docName;
+  body.innerHTML='<div style="color:#94a3b8;padding:1rem;font-size:.85rem">Loading…</div>';
+  panel.classList.add('open');
+  var mid=currentMatter&&currentMatter.id;
+  if(!mid)return;
+  var tok=localStorage.getItem('elj_token');
+  try{
+    var r=await fetch('/api/documents?matter_id='+encodeURIComponent(mid)+'&doc_name='+encodeURIComponent(docName),
+      {headers:{'Authorization':'Bearer '+tok}});
+    var d=await r.json();
+    var chunks=d.chunks||[];
+    if(!chunks.length){body.innerHTML='<div style="color:#94a3b8;padding:1rem;font-size:.85rem">No text found for this document.</div>';return;}
+    body.innerHTML=chunks.map(function(c){
+      var hl=(highlightIdx!==undefined&&c.chunk_index===parseInt(highlightIdx))?' cv-hl':'';
+      return '<div class="cv-chunk'+hl+'"><div class="cv-idx">Chunk '+c.chunk_index+'</div>'+escHtml(c.content)+'</div>';
+    }).join('');
+    var hlEl=body.querySelector('.cv-hl');
+    if(hlEl)setTimeout(function(){hlEl.scrollIntoView({block:'center',behavior:'smooth'});},80);
+  }catch(e){
+    body.innerHTML='<div style="color:#e53e3e;padding:1rem;font-size:.85rem">Error loading document text.</div>';
+  }
+}
+
+function closeChunkViewer(){
+  document.getElementById('chunkViewerPanel').classList.remove('open');
+}
+
+function parseSourceRefs(container){
+  if(!container)return;
+  var walker=document.createTreeWalker(container,NodeFilter.SHOW_TEXT,null,false);
+  var nodes=[];
+  var node;
+  while((node=walker.nextNode()))nodes.push(node);
+  nodes.forEach(function(n){
+    var txt=n.textContent;
+    if(!txt.includes('Source:'))return;
+    var re=/\(Source:\s*([^,)]+),\s*([^)]+)\)/g;
+    var match;
+    var parts=[];
+    var last=0;
+    while((match=re.exec(txt))!==null){
+      if(match.index>last)parts.push(document.createTextNode(txt.slice(last,match.index)));
+      var doc=match[1].trim();
+      var ref=match[2].trim();
+      var idx=parseInt((ref.match(/\d+/)||[0])[0]);
+      var span=document.createElement('span');
+      span.className='src-ref';
+      span.textContent='(Source: '+doc+', '+ref+')';
+      span.setAttribute('data-doc',doc);
+      span.setAttribute('data-idx',idx);
+      span.onclick=(function(d,i){return function(){showChunkViewer(d,i);};})(doc,idx);
+      parts.push(span);
+      last=match.index+match[0].length;
+    }
+    if(!parts.length)return;
+    if(last<txt.length)parts.push(document.createTextNode(txt.slice(last)));
+    var parent=n.parentNode;
+    parts.forEach(function(p){parent.insertBefore(p,n);});
+    parent.removeChild(n);
+  });
+}
+
+// ── Copy to Draft ─────────────────────────────────────────────────────────────
+var _toolContentMap={};
+
+function copyToolToDraft(toolName,content){
+  var typeMap={
+    chronology:'Chronology',persons:'Dramatis Personae',issues:'Issue Tracker',
+    inconsistency:'Inconsistency Analysis',proposition:'Proposition Finder',
+    citations:'Citations',briefing:'Briefing Note'
+  };
+  var docType=typeMap[toolName]||toolName;
+  var matter=currentMatter?currentMatter.name:'';
+  window._currentDraftContent=content;
+  window._currentDraftTitle=matter?(matter+' — '+docType):docType;
+  window._currentDraftDocType=docType;
+
+  // Switch to drafting tab
+  var dws=document.getElementById('ws-drafting');
+  if(dws){dws.style.display='';}
+  if(typeof switchTab==='function')switchTab('drafting');
+
+  // Pre-fill document type
+  var sel=document.getElementById('draftSetupDocType');
+  if(sel){
+    for(var i=0;i<sel.options.length;i++){
+      if(sel.options[i].text===docType){sel.value=sel.options[i].value;break;}
+    }
+  }
+
+  // Show output
+  var outArea=document.getElementById('draftOutputArea');
+  if(outArea)outArea.style.display='';
+  var outContent=document.getElementById('draftOutputContent');
+  if(outContent){
+    outContent.innerHTML=p15Markdown(content);
+    parseSourceRefs(outContent);
+  }
+  var outMatter=document.getElementById('draftOutputMatter');
+  if(outMatter)outMatter.textContent=matter;
+  var outDocType=document.getElementById('draftOutputDocType');
+  if(outDocType)outDocType.textContent=docType;
+}
+
+function p15Markdown(t){
+  return escHtml(t)
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g,'<em>$1</em>')
+    .replace(/^## (.+)$/gm,'<h2 style="font-size:1.05rem;margin:.75rem 0 .3rem;color:#0f2744">$1</h2>')
+    .replace(/^### (.+)$/gm,'<h3 style="font-size:.95rem;margin:.6rem 0 .25rem;color:#1d6fa4">$1</h3>')
+    .replace(/
+/g,'<br>');
+}
+
+// ── Saved drafts list ─────────────────────────────────────────────────────────
+async function loadDraftsList(){
+  if(!currentMatter)return;
+  var tok=localStorage.getItem('elj_token');
+  try{
+    var r=await fetch('/api/drafts?matter_id='+encodeURIComponent(currentMatter.id),
+      {headers:{'Authorization':'Bearer '+tok}});
+    if(!r.ok)return;
+    var d=await r.json();
+    renderDraftsList(d.drafts||[]);
+  }catch(e){}
+}
+
+function renderDraftsList(drafts){
+  var wrap=document.getElementById('p15DraftItems');
+  if(!wrap)return;
+  if(!drafts.length){
+    wrap.innerHTML='<div style="color:#94a3b8;font-size:.76rem;padding:.1rem 0">No saved drafts</div>';
+    return;
+  }
+  wrap.innerHTML=drafts.map(function(d){
+    var t=d.title||'Untitled';
+    return '<div class="draft-item">'
+      +'<span class="draft-item-title" title="'+escHtml(t)+'" onclick="openSavedDraft(this)"'
+      +' data-id="'+d.id+'" data-content="'+encodeURIComponent(d.content||'')+'"'
+      +' data-title="'+escHtml(t)+'"'
+      +' data-doctype="'+escHtml(d.document_type||'')+'"'
+      +' data-court="'+escHtml(d.court||'')+'"'
+      +' data-actionno="'+escHtml(d.action_no||'')+'"'
+      +' data-plaintiff="'+escHtml(d.plaintiff||'')+'"'
+      +' data-defendant="'+escHtml(d.defendant||'')+'"'
+      +' data-firm="'+escHtml(d.firm||'')+'"'
+      +'>'+escHtml(t)+'</span>'
+      +'<span class="draft-item-del" onclick="deleteDraftItem(''+d.id+'')" title="Delete">✕</span>'
+      +'</div>';
+  }).join('');
+}
+
+function openSavedDraft(el){
+  var content=decodeURIComponent(el.getAttribute('data-content')||'');
+  window._currentDraftContent=content;
+  window._currentDraftTitle=el.getAttribute('data-title')||'';
+  var outArea=document.getElementById('draftOutputArea');
+  if(outArea)outArea.style.display='';
+  var outContent=document.getElementById('draftOutputContent');
+  if(outContent){outContent.innerHTML=p15Markdown(content);parseSourceRefs(outContent);}
+  var outMatter=document.getElementById('draftOutputMatter');
+  if(outMatter)outMatter.textContent=currentMatter?currentMatter.name:'';
+  var outDocType=document.getElementById('draftOutputDocType');
+  if(outDocType)outDocType.textContent=el.getAttribute('data-doctype')||'';
+  var fields=[['draftCourt','data-court'],['draftActionNo','data-actionno'],
+    ['draftPlaintiff','data-plaintiff'],['draftDefendant','data-defendant'],
+    ['draftOnBehalf','data-firm']];
+  fields.forEach(function(f){var el2=document.getElementById(f[0]);if(el2)el2.value=el.getAttribute(f[1])||'';});
+}
+
+async function deleteDraftItem(id){
+  if(!confirm('Delete this draft?'))return;
+  var tok=localStorage.getItem('elj_token');
+  try{
+    await fetch('/api/drafts?id='+id,{method:'DELETE',headers:{'Authorization':'Bearer '+tok}});
+    loadDraftsList();
+  }catch(e){showToast('Delete failed');}
+}
+
+async function saveDraftToDb(){
+  if(!currentMatter){showToast('No matter selected');return;}
+  var content=window._currentDraftContent||(document.getElementById('draftOutputContent')||{}).innerText||'';
+  if(!content){showToast('No content to save');return;}
+  var tok=localStorage.getItem('elj_token');
+  try{
+    var body={
+      matter_id:currentMatter.id,
+      title:window._currentDraftTitle||'Draft',
+      document_type:(document.getElementById('draftSetupDocType')||{}).value||window._currentDraftDocType||'',
+      court:(document.getElementById('draftCourt')||{}).value||'',
+      action_no:(document.getElementById('draftActionNo')||{}).value||'',
+      plaintiff:(document.getElementById('draftPlaintiff')||{}).value||'',
+      defendant:(document.getElementById('draftDefendant')||{}).value||'',
+      firm:(document.getElementById('draftOnBehalf')||{}).value||'',
+      counsel_for:(document.getElementById('draftCounselFor')||{}).value||'',
+      content:content
+    };
+    var r=await fetch('/api/drafts',{method:'POST',
+      headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
+      body:JSON.stringify(body)});
+    if(r.ok){showToast('Draft saved');loadDraftsList();}
+    else showToast('Save failed');
+  }catch(e){showToast('Save failed');}
+}
+
+// ── Override switchTab: hide tabBar in drafting, load drafts ──────────────────
+(function(){
+  var _orig=window.switchTab;
+  window.switchTab=function(tabId){
+    if(_orig)_orig(tabId);
+    var tb=document.getElementById('tabBar');
+    if(tb)tb.style.display=(tabId==='drafting')?'none':'';
+    if(tabId==='drafting')loadDraftsList();
+  };
+})();
+
+// ── DOM setup ─────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',function(){
+  // Inject saved drafts panel at top of drafting workspace
+  var dws=document.getElementById('ws-drafting');
+  if(dws&&!document.getElementById('p15DraftPanel')){
+    var panel=document.createElement('div');
+    panel.id='p15DraftPanel';
+    panel.className='draft-list-wrap';
+    panel.innerHTML='<div class="draft-list-head">Saved Drafts'
+      +'<button onclick="saveDraftToDb()" style="font-size:.72rem;padding:.15rem .4rem;'
+      +'background:#0f2744;color:#fff;border:none;border-radius:3px;cursor:pointer;margin-left:.5rem">'
+      +'Save current</button></div>'
+      +'<div id="p15DraftItems"><div style="color:#94a3b8;font-size:.76rem">No saved drafts</div></div>';
+    dws.insertBefore(panel,dws.firstChild);
+  }
+
+  // Add Copy to Draft buttons to tool outputs using MutationObserver
+  var observer=new MutationObserver(function(muts){
+    muts.forEach(function(m){
+      m.addedNodes.forEach(function(node){
+        if(node.nodeType!==1)return;
+        // Parse source refs in any new content
+        parseSourceRefs(node);
+        // Add Copy to Draft button to tool result headers
+        var hdrs=node.querySelectorAll?node.querySelectorAll('.tool-result-header,.tool-output-header'):[];
+        hdrs.forEach(function(hdr){
+          if(!hdr.querySelector('.copy-to-draft-btn')){
+            var tw=hdr.closest('[data-tool]');
+            var tn=tw?tw.getAttribute('data-tool'):'';
+            var btn=document.createElement('button');
+            btn.className='copy-to-draft-btn';
+            btn.textContent='Copy to Draft';
+            btn.onclick=function(){
+              var contentEl=tw?tw.querySelector('.tool-result-content,.tool-content'):null;
+              if(contentEl)copyToolToDraft(tn,contentEl.innerText||contentEl.textContent||'');
+            };
+            hdr.appendChild(btn);
+          }
+        });
+      });
+    });
+  });
+  observer.observe(document.body,{childList:true,subtree:true});
+
+  // Also parse source refs in any already-rendered tool outputs
+  document.querySelectorAll('.tool-workspace').forEach(parseSourceRefs);
+});
+</script>
 </body>
 </html>

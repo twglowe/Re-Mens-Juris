@@ -499,15 +499,24 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
         </div>
         <div style="padding:.45rem .6rem;border-bottom:1px solid var(--border);flex-shrink:0">
           <input class="lib-search-input" id="libSearchInput" placeholder="Search precedents…" oninput="libFilterSearch()">
-          <select class="lib-select" id="libSearchCaseType" onchange="libFilterSearch()" style="margin-bottom:.25rem;font-size:.78rem">
-            <option value="">All case types</option>
-          </select>
-          <select class="lib-select" id="libSearchStage" onchange="libFilterSearch()" style="margin-bottom:.25rem;font-size:.78rem">
-            <option value="">All stages</option>
-          </select>
-          <select class="lib-select" id="libSearchDocType" onchange="libFilterSearch()" style="font-size:.78rem">
-            <option value="">All doc types</option>
-          </select>
+          <div style="display:flex;gap:.25rem;margin-bottom:.25rem;align-items:center">
+            <select class="lib-select" id="libSearchCaseType" onchange="libFilterSearch()" style="flex:1;font-size:.78rem">
+              <option value="">All case types</option>
+            </select>
+            <button class="lib-box-btn" onclick="libQuickAdd('casetype')" title="Add case type" style="flex-shrink:0;padding:.2rem .45rem">+</button>
+          </div>
+          <div style="display:flex;gap:.25rem;margin-bottom:.25rem;align-items:center">
+            <select class="lib-select" id="libSearchStage" onchange="libFilterSearch()" style="flex:1;font-size:.78rem">
+              <option value="">All stages</option>
+            </select>
+            <button class="lib-box-btn" onclick="libQuickAdd('subcat')" title="Add stage" style="flex-shrink:0;padding:.2rem .45rem">+</button>
+          </div>
+          <div style="display:flex;gap:.25rem;align-items:center">
+            <select class="lib-select" id="libSearchDocType" onchange="libFilterSearch()" style="flex:1;font-size:.78rem">
+              <option value="">All doc types</option>
+            </select>
+            <button class="lib-box-btn" onclick="libQuickAdd('doctype')" title="Add doc type" style="flex-shrink:0;padding:.2rem .45rem">+</button>
+          </div>
         </div>
         <div class="lib-search-results" id="libSearchResults">
           <div class="empty-state">Add case types and precedents to build your library.</div>
@@ -1533,11 +1542,13 @@ async function quickAddSave(){
       await api('/api/library','POST',{action:'create_case_type',name:name,jurisdiction:jurisdiction,subcats:[],docTypes:[]});
     }else if(quickAddType==='subcat'){
       var ctId=document.getElementById('libBoxCaseType')?document.getElementById('libBoxCaseType').value:null;
+      if(!ctId)ctId=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;
       if(!ctId)ctId=document.getElementById('draftCaseType')?document.getElementById('draftCaseType').value:null;
       if(!ctId){showToast('Select a case type first');return;}
       await api('/api/library','POST',{action:'create_subcat',name:name,case_type_id:ctId});
     }else if(quickAddType==='doctype'){
       var ctId2=document.getElementById('libBoxCaseType')?document.getElementById('libBoxCaseType').value:null;
+      if(!ctId2)ctId2=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;
       if(!ctId2)ctId2=document.getElementById('draftCaseType')?document.getElementById('draftCaseType').value:null;
       if(!ctId2){showToast('Select a case type first');return;}
       await api('/api/library','POST',{action:'create_doc_type',name:name,case_type_id:ctId2});

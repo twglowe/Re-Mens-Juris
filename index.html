@@ -395,7 +395,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .draft-doc-check input{accent-color:var(--blue);width:14px;height:14px;flex-shrink:0}
 .draft-src-box{background:var(--off-white);border:1.5px solid var(--border);border-radius:6px;padding:.5rem .65rem}
 .draft-src-box-title{font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-light);margin-bottom:.3rem}
-.draft-instructions-area{width:100%;padding:.6rem .75rem;border:1.5px solid var(--border);border-radius:6px;font-size:.9rem;font-family:'Source Sans 3',sans-serif;resize:vertical;min-height:140px;color:var(--text-dark);line-height:1.6}
+.draft-instructions-area{width:100%;padding:.6rem .75rem;border:1.5px solid var(--border);border-radius:6px;font-size:.9rem;font-family:'Source Sans 3',sans-serif;resize:none;color:var(--text-dark);line-height:1.6;flex:1;min-height:0}
 .draft-instructions-area:focus{border-color:var(--blue-light);outline:none}
 .draft-generate-btn{padding:.55rem 1.2rem;background:var(--navy);border:none;border-radius:7px;color:#fff;font-family:'Source Sans 3',sans-serif;font-size:.95rem;font-weight:700;cursor:pointer;align-self:flex-start;flex-shrink:0}
 .draft-generate-btn:hover{background:var(--blue-light)}
@@ -729,10 +729,16 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           </div>
           <!-- Sector 3: Instructions + Output -->
           <div class="draft-sector draft-sector-3">
-            <div class="draft-sec-head">Drafting</div>
-            <div class="draft-sec-body" id="draftInstructionsBody">
-              <textarea class="draft-instructions-area" id="draftMainInstructions" placeholder="Set out detailed instructions for the preparation of this document. Describe the structure, arguments, issues to address, and any specific points to include…"></textarea>
-              <button class="draft-generate-btn" id="draftGenerateBtn" onclick="generateDraft()">Generate Draft</button>
+            <div class="draft-sec-head" style="display:flex;justify-content:space-between;align-items:center">
+              <span>Drafting</span>
+              <button class="draft-generate-btn" id="draftGenerateBtn" onclick="generateDraft()" style="margin:0;padding:.3rem .9rem;font-size:.82rem">Generate Draft</button>
+            </div>
+            <!-- Action heading at top — scrollable, editable -->
+            <div id="draftActionHeading" style="padding:.5rem .75rem;border-bottom:1.5px solid var(--border);flex-shrink:0;background:var(--off-white);overflow-x:auto">
+              <div contenteditable="true" id="draftHeadingText" style="font-family:'Libre Baskerville',serif;font-size:.92rem;font-weight:700;color:var(--navy);white-space:pre-line;min-height:1.5em;outline:none;cursor:text" onclick="if(!this.textContent.trim()||this.textContent==='Click to set action heading…')this.textContent=''" onblur="if(!this.textContent.trim())this.textContent='Click to set action heading…'">Click to set action heading…</div>
+            </div>
+            <div class="draft-sec-body" id="draftInstructionsBody" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+              <textarea class="draft-instructions-area" id="draftMainInstructions" style="flex:1;min-height:300px;resize:none" placeholder="Set out detailed instructions for the preparation of this document.&#10;&#10;Describe the structure you want, the arguments to make, the issues to address, specific points to include, and any particular approach or style.&#10;&#10;The more detail you provide here, the better the draft will be. You can reference documents from Sector 2, library precedents, and any other material the AI should consider."></textarea>
               <div id="draftProgressMsg" style="display:none;padding:.5rem;background:var(--blue-pale);border-radius:6px;font-size:.82rem;font-weight:600;color:var(--blue)">Generating draft… this may take several minutes.</div>
             </div>
             <div class="draft-output-wrap hidden" id="draftOutputWrap">
@@ -1662,8 +1668,22 @@ function saveHeading(){
 }
 function updateHeadingBtnText(){
   var btn=document.getElementById('draftHeadingBtn');
-  if(draftHeading.party1&&draftHeading.party2){btn.textContent=draftHeading.party1+' v '+draftHeading.party2;}
-  else{btn.textContent='Click to set heading…';}
+  var inlineHeading=document.getElementById('draftHeadingText');
+  if(draftHeading.party1&&draftHeading.party2){
+    var text=draftHeading.party1+' v '+draftHeading.party2;
+    btn.textContent=text;
+    if(inlineHeading&&(inlineHeading.textContent==='Click to set action heading…'||!inlineHeading.textContent.trim())){
+      var lines=[];
+      if(draftHeading.court)lines.push(draftHeading.court);
+      if(draftHeading.caseNo)lines.push(draftHeading.caseNo);
+      lines.push('BETWEEN:');
+      lines.push(draftHeading.party1+(draftHeading.party1Role?'     '+draftHeading.party1Role:''));
+      lines.push('— and —');
+      lines.push(draftHeading.party2+(draftHeading.party2Role?'     '+draftHeading.party2Role:''));
+      if(draftHeading.docTitle){lines.push('════════════════════');lines.push(draftHeading.docTitle);lines.push('════════════════════');}
+      inlineHeading.textContent=lines.join('\n');
+    }
+  }else{btn.textContent='Click to set heading…';}
 }
 
 /* Generate Draft */

@@ -932,6 +932,33 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
   </div>
 </div>
 
+<!-- Precedent Upload Modal -->
+<div class="overlay" id="precUploadModal" style="display:none">
+  <div class="modal" style="max-width:500px;width:95%">
+    <h3>Upload Precedent Document</h3>
+    <label class="f-label">Document Name *</label>
+    <input type="text" id="precUpName" placeholder="e.g. Skeleton — ABC v DEF (2024)">
+    <label class="f-label" style="margin-top:.85rem">Case Type *</label>
+    <select id="precUpCaseType" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)"></select>
+    <label class="f-label" style="margin-top:.85rem">Procedural Stage</label>
+    <select id="precUpStage" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)"><option value="">— None —</option></select>
+    <label class="f-label" style="margin-top:.85rem">Document Type</label>
+    <select id="precUpDocType" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)"><option value="">— None —</option></select>
+    <label class="f-label" style="margin-top:.85rem">Jurisdiction</label>
+    <select id="precUpJur" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)">
+      <option value="">Any</option><option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option>
+    </select>
+    <label class="f-label" style="margin-top:.85rem">PDF Document *</label>
+    <input type="file" id="precUpFile" accept=".pdf" style="width:100%;padding:.5rem;border:2px solid var(--border);border-radius:7px;font-size:.92rem;background:var(--off-white)">
+    <div style="font-size:.75rem;color:var(--text-faint);margin-top:.2rem">The document will be chunked and stored in your library.</div>
+    <div id="precUpProgress" style="display:none;margin-top:.5rem;padding:.5rem;background:var(--blue-pale);border-radius:6px;font-size:.82rem;font-weight:600;color:var(--blue)">Uploading and processing…</div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal('precUploadModal')">Cancel</button>
+      <button class="btn-primary" id="precUpSaveBtn" onclick="precUploadSave()">Upload</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" style="display:none"></div>
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1489,11 +1516,57 @@ async function libSavePrecedentChanges(){
 }
 
 function libNewPrecedent(){
-  /* For now, open a prompt — full modal can be added later */
-  var name=prompt('Precedent document name:');
-  if(!name||!name.trim())return;
   if(!libraryData.caseTypes.length){showToast('Add a Case Type first');return;}
-  libCreatePrecedent(name.trim());
+  /* Populate the upload modal dropdowns */
+  var ctSel=document.getElementById('precUpCaseType');
+  ctSel.innerHTML=libraryData.caseTypes.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>';}).join('');
+  /* Pre-select from search filter if set */
+  var searchCt=document.getElementById('libSearchCaseType');
+  if(searchCt&&searchCt.value)ctSel.value=searchCt.value;
+  precUpCaseTypeChanged();
+  document.getElementById('precUpName').value='';
+  document.getElementById('precUpFile').value='';
+  document.getElementById('precUpProgress').style.display='none';
+  document.getElementById('precUpSaveBtn').disabled=false;
+  document.getElementById('precUploadModal').style.display='flex';
+  setTimeout(function(){document.getElementById('precUpName').focus();},100);
+}
+function precUpCaseTypeChanged(){
+  var ctId=document.getElementById('precUpCaseType').value;
+  var stSel=document.getElementById('precUpStage');
+  var dtSel=document.getElementById('precUpDocType');
+  stSel.innerHTML='<option value="">— None —</option>'+libraryData.subcats.filter(function(s){return s.case_type_id===ctId;}).map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
+  dtSel.innerHTML='<option value="">— None —</option>'+libraryData.docTypes.filter(function(d){return d.case_type_id===ctId;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
+}
+if(document.getElementById('precUpCaseType')){document.getElementById('precUpCaseType').addEventListener('change',precUpCaseTypeChanged);}
+async function precUploadSave(){
+  var name=document.getElementById('precUpName').value.trim();
+  var ctId=document.getElementById('precUpCaseType').value;
+  var file=document.getElementById('precUpFile').files[0];
+  if(!name){showToast('Please enter a document name');return;}
+  if(!ctId){showToast('Please select a case type');return;}
+  if(!file){showToast('Please select a PDF file');return;}
+  var btn=document.getElementById('precUpSaveBtn');
+  btn.disabled=true;btn.textContent='Uploading…';
+  document.getElementById('precUpProgress').style.display='';
+  try{
+    var fd=new FormData();
+    fd.append('action','create_precedent');
+    fd.append('name',name);
+    fd.append('case_type_id',ctId);
+    fd.append('subcategory_id',document.getElementById('precUpStage').value||'');
+    fd.append('doc_type_id',document.getElementById('precUpDocType').value||'');
+    fd.append('jurisdiction',document.getElementById('precUpJur').value||'');
+    fd.append('description','');
+    fd.append('file',file);
+    var tok=token||localStorage.getItem('elj_token');
+    var r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd});
+    if(!r.ok){var errData=await r.json();throw new Error(errData.error||'Upload failed');}
+    await loadLibrary();
+    closeModal('precUploadModal');
+    showToast('Precedent uploaded and indexed — select it in the list to edit details');
+  }catch(e){showToast('Error: '+e.message);}
+  finally{btn.disabled=false;btn.textContent='Upload';document.getElementById('precUpProgress').style.display='none';}
 }
 async function libCreatePrecedent(name){
   try{

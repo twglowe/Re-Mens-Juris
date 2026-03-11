@@ -21,10 +21,22 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST") {
-      const { name, jurisdiction, nature, issues } = req.body;
+      const { name, jurisdiction, nature, issues, acting_for } = req.body;
       if (!name) return res.status(400).json({ error: "Name required" });
       const { data, error } = await supabase.from("matters")
-        .insert({ name, jurisdiction: jurisdiction || "Bermuda", owner_id: user.id, document_count: 0, nature: nature || "", issues: issues || "" })
+        .insert({
+          name,
+          jurisdiction: jurisdiction || "Bermuda",
+          owner_id: user.id,
+          document_count: 0,
+          nature: nature || "",
+          issues: issues || "",
+          acting_for: acting_for || "",
+          client: "",
+          commencement_date: "",
+          law_firm: "",
+          responsible_individual: ""
+        })
         .select().single();
       if (error) throw error;
       return res.status(201).json({ matter: data });
@@ -32,13 +44,16 @@ export default async function handler(req, res) {
 
     if (req.method === "PATCH") {
       const { id } = req.query;
-      const { nature, issues, name } = req.body;
+      const body = req.body;
       const { data: matter } = await supabase.from("matters").select("owner_id").eq("id", id).single();
       if (!matter || matter.owner_id !== user.id) return res.status(403).json({ error: "Only the owner can edit this matter" });
+
       const updates = {};
-      if (nature !== undefined) updates.nature = nature;
-      if (issues !== undefined) updates.issues = issues;
-      if (name !== undefined) updates.name = name;
+      const fields = ["name", "nature", "issues", "acting_for", "client", "commencement_date", "law_firm", "responsible_individual"];
+      for (const f of fields) {
+        if (body[f] !== undefined) updates[f] = body[f];
+      }
+
       const { error } = await supabase.from("matters").update(updates).eq("id", id);
       if (error) throw error;
       return res.status(200).json({ success: true });
@@ -49,9 +64,10 @@ export default async function handler(req, res) {
       const { data: matter } = await supabase.from("matters").select("owner_id").eq("id", id).single();
       if (!matter || matter.owner_id !== user.id) return res.status(403).json({ error: "Only the owner can delete this matter" });
       await supabase.from("matter_shares").delete().eq("matter_id", id);
-      await supabase.from("conversation_history").delete().eq("matter_id", id);
+      await supabase.from("history").delete().eq("matter_id", id);
       await supabase.from("chunks").delete().eq("matter_id", id);
       await supabase.from("documents").delete().eq("matter_id", id);
+      await supabase.from("drafts").delete().eq("matter_id", id);
       const { error } = await supabase.from("matters").delete().eq("id", id);
       if (error) throw error;
       return res.status(200).json({ success: true });

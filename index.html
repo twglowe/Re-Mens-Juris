@@ -1782,9 +1782,11 @@ function draftMatterChanged(){
       draftHeading.court=courts[m.jurisdiction]||'';
     }
   }
-  updateHeadingBtnText();
-  /* Load matter docs for source selection */
-  loadDraftMatterDocs(id);
+  updateActionHeading();
+  /* Load matter docs for source selection, then try AI heading */
+  loadDraftMatterDocs(id).then(function(){
+    draftAISuggestHeading(id);
+  });
 }
 
 async function loadDraftMatterDocs(matterId){
@@ -1822,6 +1824,16 @@ function draftCaseTypeChanged(){
   document.getElementById('draftDocType').innerHTML='<option value="">— Select —</option>'+libraryData.docTypes.filter(function(d){return d.case_type_id===ctId;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
 }
 function draftStageChanged(){}
+
+/* When Doc Type changes, update the doc title in the heading if not already set manually */
+var draftDocTypeEl=document.getElementById('draftDocType');
+if(draftDocTypeEl){draftDocTypeEl.addEventListener('change',function(){
+  var dtName=getSelectedDocTypeName();
+  if(dtName&&!draftHeading.docTitle){
+    draftHeading.docTitle=dtName.toUpperCase();
+    updateActionHeading();
+  }
+});}
 
 /* Heading Editor */
 function openHeadingEditor(){
@@ -1867,24 +1879,40 @@ function saveHeading(){
   updateHeadingBtnText();
   showToast('Heading saved');
 }
-function updateHeadingBtnText(){
+function updateActionHeading(){
   var btn=document.getElementById('draftHeadingBtn');
   var inlineHeading=document.getElementById('draftHeadingText');
   if(draftHeading.party1&&draftHeading.party2){
-    var text=draftHeading.party1+' v '+draftHeading.party2;
-    btn.textContent=text;
-    if(inlineHeading&&(inlineHeading.textContent==='Click to set action heading…'||!inlineHeading.textContent.trim())){
-      var lines=[];
-      if(draftHeading.court)lines.push(draftHeading.court);
-      if(draftHeading.caseNo)lines.push(draftHeading.caseNo);
-      lines.push('BETWEEN:');
-      lines.push(draftHeading.party1+(draftHeading.party1Role?'     '+draftHeading.party1Role:''));
-      lines.push('— and —');
-      lines.push(draftHeading.party2+(draftHeading.party2Role?'     '+draftHeading.party2Role:''));
-      if(draftHeading.docTitle){lines.push('════════════════════');lines.push(draftHeading.docTitle);lines.push('════════════════════');}
-      inlineHeading.textContent=lines.join('\n');
+    btn.textContent=draftHeading.party1+' v '+draftHeading.party2;
+    /* Build formatted heading HTML for the action heading area */
+    var html='<div style="text-align:center;font-family:\'Libre Baskerville\',serif;line-height:1.7">';
+    if(draftHeading.court)html+='<div style="font-size:.88rem;font-weight:700">'+esc(draftHeading.court)+'</div>';
+    if(draftHeading.caseNo)html+='<div style="font-size:.85rem">'+esc(draftHeading.caseNo)+'</div>';
+    html+='<div style="margin:.4rem 0;font-size:.85rem">BETWEEN:</div>';
+    html+='<div style="font-size:.9rem;font-weight:700">'+esc(draftHeading.party1)+(draftHeading.party1Role?'<span style="font-weight:400;margin-left:2rem">'+esc(draftHeading.party1Role)+'</span>':'')+'</div>';
+    html+='<div style="font-size:.82rem;margin:.2rem 0">— and —</div>';
+    html+='<div style="font-size:.9rem;font-weight:700">'+esc(draftHeading.party2)+(draftHeading.party2Role?'<span style="font-weight:400;margin-left:2rem">'+esc(draftHeading.party2Role)+'</span>':'')+'</div>';
+    /* Doc title in CAPS between bold bars */
+    var docTitle=draftHeading.docTitle||getSelectedDocTypeName();
+    if(docTitle){
+      html+='<div style="margin:.6rem auto .2rem;width:80%;border-top:3px solid var(--navy)"></div>';
+      html+='<div style="font-size:1rem;font-weight:700;letter-spacing:.08em">'+esc(docTitle.toUpperCase())+'</div>';
+      html+='<div style="margin:.2rem auto .4rem;width:80%;border-top:3px solid var(--navy)"></div>';
     }
-  }else{btn.textContent='Click to set heading…';}
+    html+='</div>';
+    if(inlineHeading){inlineHeading.innerHTML=html;}
+  }else{
+    btn.textContent='Click to set heading…';
+    if(inlineHeading)inlineHeading.textContent='Click to set action heading…';
+  }
+}
+/* Alias for backward compatibility */
+function updateHeadingBtnText(){updateActionHeading();}
+
+function getSelectedDocTypeName(){
+  var dtSel=document.getElementById('draftDocType');
+  if(dtSel&&dtSel.value&&dtSel.selectedIndex>0)return dtSel.options[dtSel.selectedIndex].text;
+  return '';
 }
 
 /* Generate Draft */
@@ -1959,6 +1987,41 @@ function draftDownloadWord(){
   var content=editor.innerText||editor.textContent;
   downloadWord(content,'Draft — '+(draftHeading.docTitle||'document'));
 }
+/* ── v2.5: AI HEADING SUGGESTION (C1) ────────────────────────────────────── */
+async function draftAISuggestHeading(matterId){
+  /* Only suggest if heading is still basic (from matter name parsing) */
+  if(draftHeading.caseNo)return;/* Already has detail */
+  try{
+    var d=await api('/api/analyse','POST',{
+      matterId:matterId,
+      matterName:currentMatter?currentMatter.name:'',
+      matterNature:'',matterIssues:'',
+      messages:[{role:'user',content:'Read the first document in this matter and extract the case heading information. Return ONLY a JSON object with these fields (use empty string if not found): court, caseNo, party1, party1Role, party2, party2Role, docTitle. For example: {"court":"IN THE SUPREME COURT OF BERMUDA","caseNo":"Civil Jurisdiction 2024 No. 123","party1":"SMITH","party1Role":"Plaintiff","party2":"JONES LIMITED","party2Role":"Defendant","docTitle":"SKELETON ARGUMENT"}. Return ONLY the JSON, no other text.'}],
+      jurisdiction:jurisdiction,
+      queryType:'Factual Analysis',
+      focusAreas:[]
+    });
+    if(d&&d.result){
+      try{
+        var raw=d.result.replace(/```json|```/g,'').trim();
+        var s=raw.indexOf('{');var e=raw.lastIndexOf('}');
+        if(s>=0&&e>s){
+          var h=JSON.parse(raw.slice(s,e+1));
+          if(h.court&&!draftHeading.court)draftHeading.court=h.court;
+          if(h.caseNo)draftHeading.caseNo=h.caseNo;
+          if(h.party1)draftHeading.party1=h.party1.toUpperCase();
+          if(h.party1Role)draftHeading.party1Role=h.party1Role;
+          if(h.party2)draftHeading.party2=h.party2.toUpperCase();
+          if(h.party2Role)draftHeading.party2Role=h.party2Role;
+          if(h.docTitle)draftHeading.docTitle=h.docTitle.toUpperCase();
+          updateActionHeading();
+          showToast('Heading suggested from documents — click to edit');
+        }
+      }catch(pe){console.log('AI heading parse error:',pe);}
+    }
+  }catch(e){console.log('AI heading suggestion skipped:',e.message);}
+}
+
 /* ── v2.5: UPLOAD PRECEDENT MODAL DELETE (A4) ───────────────────────────── */
 function precModalDelete(type){
   if(type==='casetype'){

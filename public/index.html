@@ -1151,6 +1151,14 @@ function renderMatterRecord(){
   var m=currentMatter;
   panel.innerHTML=
     '<div class="mr-box"><div class="mr-box-label">Client</div><input id="mrClient" value="'+esc(m.client||'')+'" placeholder="Client name…"></div>'
+    +'<div class="mr-box"><div class="mr-box-label">Case Type</div>'
+    +'<div style="display:flex;gap:.3rem"><select id="mrCaseType" onchange="mrCaseTypeChanged()" style="flex:1;padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.85rem"><option value="">— Select —</option></select>'
+    +'<button class="lib-box-btn" onclick="libQuickAdd(\'casetype\')" title="Add new">+</button>'
+    +'<button class="lib-box-btn del" onclick="draftDeleteFromSelect(\'casetype\')" title="Delete">−</button></div></div>'
+    +'<div class="mr-box"><div class="mr-box-label">Procedural Stage</div>'
+    +'<div style="display:flex;gap:.3rem"><select id="mrStage" style="flex:1;padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.85rem"><option value="">— Select —</option></select>'
+    +'<button class="lib-box-btn" onclick="libQuickAdd(\'subcat\')" title="Add new">+</button>'
+    +'<button class="lib-box-btn del" onclick="draftDeleteFromSelect(\'subcat\')" title="Delete">−</button></div></div>'
     +'<div class="mr-box"><div class="mr-box-label">Date of Commencement</div><input id="mrDate" type="month" value="'+(m.commencement_date||'')+'"></div>'
     +'<div class="mr-box"><div class="mr-box-label">Instructing Law Firm</div>'
     +'<div style="display:flex;gap:.3rem"><select id="mrLawFirm" style="flex:1;padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.85rem"><option value="">— Select —</option></select>'
@@ -1158,6 +1166,7 @@ function renderMatterRecord(){
     +'<div class="mr-box"><div class="mr-box-label">Responsible Individual</div><input id="mrResponsible" value="'+esc(m.responsible_individual||'')+'" placeholder="Name…"></div>'
     +'<button class="mr-save-btn" onclick="saveMatterRecord()">Save Record</button>';
   loadLawFirms();
+  loadMrCaseTypes();
 }
 async function loadLawFirms(){
   try{
@@ -1167,6 +1176,18 @@ async function loadLawFirms(){
     var current=currentMatter?currentMatter.law_firm:'';
     sel.innerHTML='<option value="">— Select —</option>'+firms.map(function(f){return '<option value="'+esc(f.name)+'"'+(f.name===current?' selected':'')+'>'+esc(f.name)+'</option>';}).join('');
   }catch(e){console.error('loadLawFirms:',e);}
+}
+function loadMrCaseTypes(){
+  var ct=document.getElementById('mrCaseType');if(!ct)return;
+  var currentCtId=currentMatter?currentMatter.case_type_id:'';
+  ct.innerHTML='<option value="">— Select —</option>'+libraryData.caseTypes.map(function(c){return '<option value="'+c.id+'"'+(c.id===currentCtId?' selected':'')+'>'+esc(c.name)+'</option>';}).join('');
+  mrCaseTypeChanged();
+}
+function mrCaseTypeChanged(){
+  var ctId=document.getElementById('mrCaseType')?document.getElementById('mrCaseType').value:'';
+  var st=document.getElementById('mrStage');if(!st)return;
+  var currentStId=currentMatter?currentMatter.subcategory_id:'';
+  st.innerHTML='<option value="">— Select —</option>'+libraryData.subcats.filter(function(s){return s.case_type_id===ctId;}).map(function(s){return '<option value="'+s.id+'"'+(s.id===currentStId?' selected':'')+'>'+esc(s.name)+'</option>';}).join('');
 }
 async function addLawFirm(){
   var name=prompt('Law firm name:');if(!name||!name.trim())return;
@@ -1182,7 +1203,9 @@ async function saveMatterRecord(){
       client:document.getElementById('mrClient').value.trim(),
       commencement_date:document.getElementById('mrDate').value,
       law_firm:document.getElementById('mrLawFirm').value,
-      responsible_individual:document.getElementById('mrResponsible').value.trim()
+      responsible_individual:document.getElementById('mrResponsible').value.trim(),
+      case_type_id:document.getElementById('mrCaseType').value||null,
+      subcategory_id:document.getElementById('mrStage').value||null
     });
     await loadMatters();
     currentMatter=matters.find(function(m){return m.id===currentMatter.id;})||currentMatter;

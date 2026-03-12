@@ -346,7 +346,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .lib-box-actions{display:flex;gap:.3rem}
 .lib-box-btn{padding:.18rem .55rem;border:1.5px solid var(--blue-light);border-radius:4px;background:var(--white);color:var(--blue-light);font-size:.72rem;font-weight:700;cursor:pointer}
 .lib-box-btn:hover{background:var(--blue-light);color:#fff}
-.lib-box-btn.del{border-color:var(--error);color:var(--error)}
+.lib-box-btn.del{border-color:var(--error);color:var(--error);font-weight:700}
 .lib-box-btn.del:hover{background:var(--error);color:#fff}
 .lib-select{width:100%;padding:.38rem .6rem;border:1.5px solid var(--border);border-radius:5px;font-size:.88rem;font-family:'Source Sans 3',sans-serif;background:var(--white);color:var(--text-dark)}
 .lib-select:focus{border-color:var(--blue-light);outline:none}
@@ -407,6 +407,12 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .draft-editor-toolbar select{padding:.2rem .4rem;border:1px solid var(--border);border-radius:4px;font-size:.78rem;font-family:'Source Sans 3',sans-serif}
 .draft-editor{flex:1;overflow-y:auto;padding:1rem 1.2rem;font-family:'Libre Baskerville',serif;font-size:.95rem;line-height:1.8;color:var(--text-dark);outline:none;border:2px solid var(--blue-pale);background:#fffef7;min-height:200px}
 .draft-editor:focus{border-color:var(--blue-light)}
+.draft-editor p{margin-bottom:.6em}
+.draft-selected-docs{display:flex;flex-direction:column;gap:.2rem;margin-top:.25rem}
+.draft-sel-item{display:flex;align-items:center;gap:.4rem;padding:.2rem .45rem;background:var(--blue-faint);border:1px solid var(--border);border-radius:4px;font-size:.78rem;color:var(--text-dark)}
+.draft-sel-item span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.draft-sel-del{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:.9rem;padding:0 .15rem;flex-shrink:0}
+.draft-sel-del:hover{color:var(--error)}
 .draft-dialogue{padding:.5rem .75rem;border-top:1.5px solid var(--border);flex-shrink:0;background:var(--white)}
 .draft-dialogue-row{display:flex;gap:.5rem;align-items:flex-end}
 .draft-dialogue-input{flex:1;padding:.5rem .7rem;border:1.5px solid var(--border);border-radius:7px;font-size:.88rem;font-family:'Source Sans 3',sans-serif;resize:none;min-height:40px;max-height:100px;outline:none}
@@ -422,8 +428,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 
 /* ═══════════ v2.3 — Bigger chat input ═══════════ */
 textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
-</style>
-</head>
+</style></head>
 <body>
 <!-- ═══════════ LOGIN ═══════════ -->
 <div class="login-screen" id="loginScreen">
@@ -503,19 +508,22 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
             <select class="lib-select" id="libSearchCaseType" onchange="libFilterSearch()" style="flex:1;font-size:.78rem">
               <option value="">All case types</option>
             </select>
-            <button class="lib-box-btn" onclick="libQuickAdd('casetype')" title="Add case type" style="flex-shrink:0;padding:.2rem .45rem">+</button>
+            <button class="lib-box-btn" onclick="libQuickAdd('casetype')" title="Add case type" style="flex-shrink:0;padding:.25rem .5rem;font-size:.82rem;min-width:28px">+</button>
+            <button class="lib-box-btn del" onclick="libDeleteFromDropdown('casetype')" title="Delete selected case type" style="flex-shrink:0;padding:.25rem .5rem;font-size:.82rem;min-width:28px">−</button>
           </div>
           <div style="display:flex;gap:.25rem;margin-bottom:.25rem;align-items:center">
             <select class="lib-select" id="libSearchStage" onchange="libFilterSearch()" style="flex:1;font-size:.78rem">
               <option value="">All stages</option>
             </select>
-            <button class="lib-box-btn" onclick="libQuickAdd('subcat')" title="Add stage" style="flex-shrink:0;padding:.2rem .45rem">+</button>
+            <button class="lib-box-btn" onclick="libQuickAdd('subcat')" title="Add stage" style="flex-shrink:0;padding:.25rem .5rem;font-size:.82rem;min-width:28px">+</button>
+            <button class="lib-box-btn del" onclick="libDeleteFromDropdown('subcat')" title="Delete selected stage" style="flex-shrink:0;padding:.25rem .5rem;font-size:.82rem;min-width:28px">−</button>
           </div>
           <div style="display:flex;gap:.25rem;align-items:center">
             <select class="lib-select" id="libSearchDocType" onchange="libFilterSearch()" style="flex:1;font-size:.78rem">
               <option value="">All doc types</option>
             </select>
-            <button class="lib-box-btn" onclick="libQuickAdd('doctype')" title="Add doc type" style="flex-shrink:0;padding:.2rem .45rem">+</button>
+            <button class="lib-box-btn" onclick="libQuickAdd('doctype')" title="Add doc type" style="flex-shrink:0;padding:.25rem .5rem;font-size:.82rem;min-width:28px">+</button>
+            <button class="lib-box-btn del" onclick="libDeleteFromDropdown('doctype')" title="Delete selected doc type" style="flex-shrink:0;padding:.25rem .5rem;font-size:.82rem;min-width:28px">−</button>
           </div>
         </div>
         <div class="lib-search-results" id="libSearchResults">
@@ -544,6 +552,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
             <div style="display:flex;gap:.3rem">
               <select class="draft-field-select" id="draftCaseType" onchange="draftCaseTypeChanged()" style="flex:1"><option value="">— Select —</option></select>
               <button class="lib-box-btn" onclick="libQuickAdd('casetype')" title="Add new">+</button>
+              <button class="lib-box-btn del" onclick="draftDeleteFromSelect('casetype')" title="Delete selected">−</button>
             </div>
           </div>
           <div>
@@ -551,6 +560,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
             <div style="display:flex;gap:.3rem">
               <select class="draft-field-select" id="draftStage" onchange="draftStageChanged()" style="flex:1"><option value="">— Select —</option></select>
               <button class="lib-box-btn" onclick="libQuickAdd('subcat')" title="Add new">+</button>
+              <button class="lib-box-btn del" onclick="draftDeleteFromSelect('subcat')" title="Delete selected">−</button>
             </div>
           </div>
           <div>
@@ -558,6 +568,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
             <div style="display:flex;gap:.3rem">
               <select class="draft-field-select" id="draftDocType" style="flex:1"><option value="">— Select —</option></select>
               <button class="lib-box-btn" onclick="libQuickAdd('doctype')" title="Add new">+</button>
+              <button class="lib-box-btn del" onclick="draftDeleteFromSelect('doctype')" title="Delete selected">−</button>
             </div>
           </div>
           <div id="draftMatterDocsWrap" style="display:none">
@@ -637,40 +648,8 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           </div>
           <div id="libBoxesWrap" style="display:none;flex-direction:column;gap:.6rem">
             <div style="font-size:.92rem;font-weight:700;color:var(--navy);font-family:'Libre Baskerville',serif;margin-bottom:.2rem" id="libSelectedDocName">—</div>
-            <!-- Box 1: Case Type -->
-            <div class="lib-box">
-              <div class="lib-box-head">
-                <div class="lib-box-title">Case Type</div>
-                <div class="lib-box-actions">
-                  <button class="lib-box-btn" onclick="libQuickAdd('casetype')">+ New</button>
-                  <button class="lib-box-btn del" onclick="libDeleteSelected('casetype')">Del −</button>
-                </div>
-              </div>
-              <select class="lib-select" id="libBoxCaseType" onchange="libBoxCaseTypeChanged()" size="4" style="min-height:80px"></select>
-            </div>
-            <!-- Box 2: Procedural Stage -->
-            <div class="lib-box">
-              <div class="lib-box-head">
-                <div class="lib-box-title">Procedural Stage</div>
-                <div class="lib-box-actions">
-                  <button class="lib-box-btn" onclick="libQuickAdd('subcat')">+ New</button>
-                  <button class="lib-box-btn del" onclick="libDeleteSelected('subcat')">Del −</button>
-                </div>
-              </div>
-              <select class="lib-select" id="libBoxStage" onchange="libBoxStageChanged()" size="3" style="min-height:60px"></select>
-            </div>
-            <!-- Box 3: Document Type -->
-            <div class="lib-box">
-              <div class="lib-box-head">
-                <div class="lib-box-title">Document Type</div>
-                <div class="lib-box-actions">
-                  <button class="lib-box-btn" onclick="libQuickAdd('doctype')">+ New</button>
-                  <button class="lib-box-btn del" onclick="libDeleteSelected('doctype')">Del −</button>
-                </div>
-              </div>
-              <select class="lib-select" id="libBoxDocType" size="3" style="min-height:60px"></select>
-            </div>
-            <!-- Box 4: Context Documents -->
+            <div id="libPrecMeta" style="font-size:.78rem;color:var(--text-mid);margin-bottom:.3rem"></div>
+            <!-- Box 1: Context Documents -->
             <div class="lib-box">
               <div class="lib-box-head">
                 <div class="lib-box-title">Context Documents</div>
@@ -685,7 +664,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
                 <textarea class="lib-textarea" id="libContextExplanation" rows="2" placeholder="Explain the relationship between this document and its context…"></textarea>
               </div>
             </div>
-            <!-- Box 5: Commentary -->
+            <!-- Box 2: Commentary -->
             <div class="lib-box">
               <div class="lib-box-head">
                 <div class="lib-box-title">Commentary</div>
@@ -694,12 +673,15 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
               <div class="lib-own-doc-row">
                 <input type="checkbox" id="libIsOwnDoc"> <label for="libIsOwnDoc">This is my own document (not third-party)</label>
               </div>
-              <div style="margin-top:.35rem">
-                <div class="draft-field-label">AI Instructions</div>
-                <textarea class="lib-textarea" id="libAiInstructions" rows="2" placeholder="Specific notes for the AI about how to use this document…"></textarea>
-              </div>
-              <button class="btn-primary" style="margin-top:.6rem;font-size:.85rem;padding:.45rem 1rem" onclick="libSavePrecedentChanges()">Save Changes</button>
             </div>
+            <!-- Box 3: AI Instructions -->
+            <div class="lib-box">
+              <div class="lib-box-head">
+                <div class="lib-box-title">AI Instructions</div>
+              </div>
+              <textarea class="lib-textarea" id="libAiInstructions" rows="3" placeholder="Specific notes for the AI about how to use this document when drafting…"></textarea>
+            </div>
+            <button class="btn-primary" style="font-size:.85rem;padding:.45rem 1rem" onclick="libSavePrecedentChanges()">Save Changes</button>
           </div>
         </div>
       </div>
@@ -711,28 +693,72 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <div class="draft-sector draft-sector-2">
             <div class="draft-sec-head">Source Documents</div>
             <div class="draft-sec-body">
+              <!-- Box 1: Instructions document -->
               <div class="draft-src-box">
-                <div class="draft-src-box-title">Case-Specific Document</div>
-                <div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.3rem">
-                  <button class="lib-box-btn" onclick="draftUploadNew()">Upload New +</button>
-                  <span style="font-size:.75rem;color:var(--text-faint)">or select from matter:</span>
+                <div class="draft-src-box-title">Instructions</div>
+                <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
+                  <select class="draft-field-select" id="draftSrcDoc1" style="flex:1;font-size:.8rem"><option value="">— Select from matter —</option></select>
+                  <button class="lib-box-btn" onclick="draftSelectDoc('draftSrcDoc1','src1')" title="Add selected" style="min-width:26px">✓</button>
                 </div>
-                <select class="draft-field-select" id="draftSrcDoc1" style="font-size:.82rem">
-                  <option value="">— No document selected —</option>
-                </select>
+                <div style="margin-bottom:.3rem">
+                  <input type="file" id="draftUpFile1" accept=".pdf,.doc,.docx" style="display:none" onchange="draftUploadInPlace(this,'src1')">
+                  <button class="lib-box-btn" onclick="document.getElementById('draftUpFile1').click()" style="font-size:.78rem">📎 Upload from device</button>
+                </div>
+                <div class="draft-selected-docs" id="draftSelectedSrc1"></div>
               </div>
+              <!-- Box 2: Response Document -->
               <div class="draft-src-box">
                 <div class="draft-src-box-title">Response Document</div>
-                <p style="font-size:.78rem;color:var(--text-faint);margin-bottom:.3rem">The document to which this draft is a response:</p>
-                <select class="draft-field-select" id="draftSrcDoc2" style="font-size:.82rem">
-                  <option value="">— Select document —</option>
-                </select>
+                <p style="font-size:.75rem;color:var(--text-faint);margin-bottom:.25rem">The document this draft responds to:</p>
+                <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
+                  <select class="draft-field-select" id="draftSrcDoc2" style="flex:1;font-size:.8rem"><option value="">— Select from matter —</option></select>
+                  <button class="lib-box-btn" onclick="draftSelectDoc('draftSrcDoc2','src2')" title="Add selected" style="min-width:26px">✓</button>
+                </div>
+                <div style="margin-bottom:.3rem">
+                  <input type="file" id="draftUpFile2" accept=".pdf,.doc,.docx" style="display:none" onchange="draftUploadInPlace(this,'src2')">
+                  <button class="lib-box-btn" onclick="document.getElementById('draftUpFile2').click()" style="font-size:.78rem">📎 Upload from device</button>
+                </div>
+                <div class="draft-selected-docs" id="draftSelectedSrc2"></div>
               </div>
+              <!-- Box 3: Background & Tool Outputs -->
               <div class="draft-src-box">
                 <div class="draft-src-box-title">Background &amp; Tool Outputs</div>
-                <p style="font-size:.78rem;color:var(--text-faint);margin-bottom:.3rem">Other docs, tool outputs, or background:</p>
-                <div class="draft-doc-list" id="draftSrcDocs3" style="max-height:120px"></div>
-                <button class="lib-box-btn" style="margin-top:.3rem" onclick="draftUploadBackground()">Upload +</button>
+                <p style="font-size:.75rem;color:var(--text-faint);margin-bottom:.25rem">Matter docs, tool outputs, or other background:</p>
+                <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
+                  <select class="draft-field-select" id="draftSrcDoc3" style="flex:1;font-size:.8rem"><option value="">— Select doc or tool output —</option></select>
+                  <button class="lib-box-btn" onclick="draftSelectDoc('draftSrcDoc3','src3')" title="Add selected" style="min-width:26px">✓</button>
+                </div>
+                <div style="margin-bottom:.3rem">
+                  <input type="file" id="draftUpFile3" accept=".pdf,.doc,.docx" style="display:none" onchange="draftUploadInPlace(this,'src3')">
+                  <button class="lib-box-btn" onclick="document.getElementById('draftUpFile3').click()" style="font-size:.78rem">📎 Upload from device</button>
+                </div>
+                <div class="draft-selected-docs" id="draftSelectedSrc3"></div>
+              </div>
+              <!-- Box 4: Precedent Reference -->
+              <div class="draft-src-box">
+                <div class="draft-src-box-title">Precedent Reference</div>
+                <p style="font-size:.75rem;color:var(--text-faint);margin-bottom:.25rem">Select precedents from your library:</p>
+                <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
+                  <select class="draft-field-select" id="draftPrecCaseType" onchange="draftPrecCaseTypeChanged()" style="flex:1;font-size:.8rem">
+                    <option value="">— Filter by case type —</option>
+                  </select>
+                </div>
+                <div class="draft-doc-list" id="draftPrecList" style="max-height:100px"></div>
+                <div style="margin-top:.3rem">
+                  <input type="file" id="draftUpFilePrec" accept=".pdf,.doc,.docx" style="display:none" onchange="draftUploadInPlace(this,'prec')">
+                  <button class="lib-box-btn" onclick="document.getElementById('draftUpFilePrec').click()" style="font-size:.78rem">📎 Upload precedent from device</button>
+                </div>
+                <div class="draft-selected-docs" id="draftSelectedPrecs"></div>
+              </div>
+              <!-- Box 5: Context Documents -->
+              <div class="draft-src-box">
+                <div class="draft-src-box-title">Context Documents</div>
+                <p style="font-size:.75rem;color:var(--text-faint);margin-bottom:.25rem">Tag documents the AI should read for relevance:</p>
+                <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
+                  <select class="draft-field-select" id="draftCtxDoc" style="flex:1;font-size:.8rem"><option value="">— Select from matter —</option></select>
+                  <button class="lib-box-btn" onclick="draftSelectDoc('draftCtxDoc','ctx')" title="Add as context" style="min-width:26px">✓</button>
+                </div>
+                <div class="draft-selected-docs" id="draftSelectedCtx"></div>
               </div>
             </div>
           </div>
@@ -752,19 +778,30 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
             </div>
             <div class="draft-output-wrap hidden" id="draftOutputWrap">
               <div class="draft-editor-toolbar">
+                <select onchange="if(this.value){document.getElementById('draftEditor').style.fontFamily=this.value;document.execCommand('fontName',false,this.value);}this.blur()" title="Font Family" style="min-width:100px">
+                  <option value="'Libre Baskerville',serif">Baskerville</option>
+                  <option value="Arial,sans-serif">Arial</option>
+                  <option value="'Times New Roman',serif">Times New Roman</option>
+                  <option value="Georgia,serif">Georgia</option>
+                  <option value="Calibri,sans-serif">Calibri</option>
+                </select>
+                <select onchange="if(this.value)document.execCommand('fontSize',false,this.value);this.blur()" title="Font Size">
+                  <option value="">Size</option>
+                  <option value="1">8pt</option>
+                  <option value="2">10pt</option>
+                  <option value="3">11pt</option>
+                  <option value="4">14pt</option>
+                  <option value="5">18pt</option>
+                  <option value="6">24pt</option>
+                </select>
                 <button onclick="document.execCommand('bold')" title="Bold"><b>B</b></button>
                 <button onclick="document.execCommand('italic')" title="Italic"><i>I</i></button>
                 <button onclick="document.execCommand('underline')" title="Underline"><u>U</u></button>
-                <select onchange="if(this.value)document.execCommand('fontSize',false,this.value);this.selectedIndex=0" title="Font Size">
-                  <option value="">Size</option>
-                  <option value="2">Small</option>
-                  <option value="3">Normal</option>
-                  <option value="4">Large</option>
-                  <option value="5">X-Large</option>
-                </select>
-                <button onclick="document.execCommand('undo')" title="Undo">↩ Undo</button>
-                <button onclick="draftInsertText()" title="Insert text">📋 Insert</button>
-                <button onclick="draftInsertAI()" title="AI Insert">🤖 Insert AI</button>
+                <button onclick="draftToggleCaps()" title="CAPITALS">A↑</button>
+                <button onclick="document.execCommand('undo')" title="Undo">↩</button>
+                <button onclick="document.execCommand('redo')" title="Redo">↪</button>
+                <button onclick="draftInsertText()" title="Insert text">📋</button>
+                <button onclick="draftInsertAI()" title="AI Insert">🤖</button>
                 <button onclick="draftDownloadWord()" title="Download Word">⬇ Word</button>
               </div>
               <div class="draft-editor" id="draftEditor" contenteditable="true"></div>
@@ -939,11 +976,23 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
     <label class="f-label">Document Name *</label>
     <input type="text" id="precUpName" placeholder="e.g. Skeleton — ABC v DEF (2024)">
     <label class="f-label" style="margin-top:.85rem">Case Type *</label>
-    <select id="precUpCaseType" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)"></select>
+    <div style="display:flex;gap:.3rem;align-items:center">
+      <select id="precUpCaseType" style="flex:1;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)"></select>
+      <button class="lib-box-btn" onclick="libQuickAdd('casetype')" title="Add case type" style="padding:.4rem .6rem;font-size:.85rem">+</button>
+      <button class="lib-box-btn del" onclick="precModalDelete('casetype')" title="Delete selected" style="padding:.4rem .6rem;font-size:.85rem">−</button>
+    </div>
     <label class="f-label" style="margin-top:.85rem">Procedural Stage</label>
-    <select id="precUpStage" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)"><option value="">— None —</option></select>
+    <div style="display:flex;gap:.3rem;align-items:center">
+      <select id="precUpStage" style="flex:1;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)"><option value="">— None —</option></select>
+      <button class="lib-box-btn" onclick="libQuickAdd('subcat')" title="Add stage" style="padding:.4rem .6rem;font-size:.85rem">+</button>
+      <button class="lib-box-btn del" onclick="precModalDelete('subcat')" title="Delete selected" style="padding:.4rem .6rem;font-size:.85rem">−</button>
+    </div>
     <label class="f-label" style="margin-top:.85rem">Document Type</label>
-    <select id="precUpDocType" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)"><option value="">— None —</option></select>
+    <div style="display:flex;gap:.3rem;align-items:center">
+      <select id="precUpDocType" style="flex:1;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)"><option value="">— None —</option></select>
+      <button class="lib-box-btn" onclick="libQuickAdd('doctype')" title="Add doc type" style="padding:.4rem .6rem;font-size:.85rem">+</button>
+      <button class="lib-box-btn del" onclick="precModalDelete('doctype')" title="Delete selected" style="padding:.4rem .6rem;font-size:.85rem">−</button>
+    </div>
     <label class="f-label" style="margin-top:.85rem">Jurisdiction</label>
     <select id="precUpJur" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)">
       <option value="">Any</option><option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option>
@@ -962,7 +1011,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <div class="toast" style="display:none"></div>
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v2.3 — JAVASCRIPT
+   EX LIBRIS JURIS v2.5 — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -1222,7 +1271,12 @@ async function loadHistory(matterId){
 function renderHistory(){
   var list=document.getElementById('histList');
   if(!matterHistory.length){list.innerHTML='<div style="padding:.75rem .85rem;font-size:.82rem;color:var(--text-faint);font-style:italic">No previous queries for this matter.</div>';return;}
-  list.innerHTML=matterHistory.slice().reverse().map(function(h,i){return '<div class="history-item" onclick="loadHistItem('+(matterHistory.length-1-i)+')"><div class="history-q">'+esc(h.question.slice(0,90))+(h.question.length>90?'…':'')+'</div><div class="history-meta">'+(h.tool_name||'Q&A')+' · '+new Date(h.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</div></div>';}).join('');
+  list.innerHTML=matterHistory.slice().reverse().map(function(h,i){var realIdx=matterHistory.length-1-i;return '<div class="history-item" style="display:flex;align-items:center;gap:.4rem"><div style="flex:1;overflow:hidden;cursor:pointer" onclick="loadHistItem('+realIdx+')"><div class="history-q">'+esc(h.question.slice(0,90))+(h.question.length>90?'…':'')+'</div><div class="history-meta">'+(h.tool_name||'Q&A')+' · '+new Date(h.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</div></div><button onclick="event.stopPropagation();deleteHistItem(\''+h.id+'\')" style="background:none;border:1px solid var(--error);border-radius:4px;color:var(--error);cursor:pointer;font-size:1rem;padding:.1rem .4rem;flex-shrink:0;font-weight:700" title="Delete">×</button></div>';}).join('');
+}
+async function deleteHistItem(id){
+  if(!confirm('Delete this history item?'))return;
+  try{await api('/api/history?id='+id,'DELETE');if(currentMatter)await loadHistory(currentMatter.id);showToast('Deleted');}
+  catch(e){showToast('Error: '+e.message);}
 }
 function loadHistItem(i){
   var h=matterHistory[i];if(!h)return;
@@ -1430,9 +1484,13 @@ function libPopulateSearchFilters(){
   var st=document.getElementById('libSearchStage');
   var dt=document.getElementById('libSearchDocType');
   if(!ct)return;
+  var prevCt=ct.value,prevSt=st.value,prevDt=dt.value;
   ct.innerHTML='<option value="">All case types</option>'+libraryData.caseTypes.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>';}).join('');
   st.innerHTML='<option value="">All stages</option>'+libraryData.subcats.map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
   dt.innerHTML='<option value="">All doc types</option>'+libraryData.docTypes.map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
+  if(prevCt)ct.value=prevCt;
+  if(prevSt)st.value=prevSt;
+  if(prevDt)dt.value=prevDt;
 }
 
 function libFilterSearch(){
@@ -1463,24 +1521,24 @@ function libSelectPrecedent(id){
   selectedPrecedentId=id;
   var p=libraryData.precedents.find(function(x){return x.id===id;});
   if(!p)return;
-  /* Show the 5 boxes */
+  /* Show the panel */
   document.getElementById('libLandingState').style.display='none';
   var wrap=document.getElementById('libBoxesWrap');wrap.style.display='flex';
   document.getElementById('libSelectedDocName').textContent=p.name;
-  /* Box 1: Case Type — populate and select */
-  var ctSel=document.getElementById('libBoxCaseType');
-  ctSel.innerHTML=libraryData.caseTypes.map(function(c){return '<option value="'+c.id+'"'+(c.id===p.case_type_id?' selected':'')+'>'+esc(c.name)+'</option>';}).join('');
-  libBoxCaseTypeChanged();
-  /* Box 2: Stage — select current */
-  var stSel=document.getElementById('libBoxStage');
+  /* Show case type / stage / doc type as metadata text */
+  var metaParts=[];
+  var ct=libraryData.caseTypes.find(function(c){return c.id===p.case_type_id;});
+  if(ct)metaParts.push('Case Type: '+ct.name);
   var subId=p.subcategory_id||p.subcat_id||'';
-  if(subId){stSel.value=subId;}
-  /* Box 3: Doc Type — select current */
-  var dtSel=document.getElementById('libBoxDocType');
-  if(p.doc_type_id){dtSel.value=p.doc_type_id;}
-  /* Box 4: Context */
+  var sc=libraryData.subcats.find(function(s){return s.id===subId;});
+  if(sc)metaParts.push('Stage: '+sc.name);
+  var dt=libraryData.docTypes.find(function(d){return d.id===p.doc_type_id;});
+  if(dt)metaParts.push('Doc Type: '+dt.name);
+  if(p.jurisdiction)metaParts.push('Jurisdiction: '+p.jurisdiction);
+  document.getElementById('libPrecMeta').textContent=metaParts.join(' · ')||'No classification set';
+  /* Context */
   document.getElementById('libContextExplanation').value=p.context_relationship||'';
-  /* Box 5: Commentary */
+  /* Commentary */
   document.getElementById('libCommentary').value=p.commentary||'';
   document.getElementById('libIsOwnDoc').checked=!!p.is_own_style;
   document.getElementById('libAiInstructions').value=p.ai_instructions||'';
@@ -1488,13 +1546,7 @@ function libSelectPrecedent(id){
   libFilterSearch();
 }
 
-function libBoxCaseTypeChanged(){
-  var ctId=document.getElementById('libBoxCaseType').value;
-  var stSel=document.getElementById('libBoxStage');
-  var dtSel=document.getElementById('libBoxDocType');
-  stSel.innerHTML=libraryData.subcats.filter(function(s){return s.case_type_id===ctId;}).map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
-  dtSel.innerHTML=libraryData.docTypes.filter(function(d){return d.case_type_id===ctId;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
-}
+function libBoxCaseTypeChanged(){}
 function libBoxStageChanged(){}
 
 async function libSavePrecedentChanges(){
@@ -1503,9 +1555,6 @@ async function libSavePrecedentChanges(){
     await api('/api/library','POST',{
       action:'update_precedent',
       id:selectedPrecedentId,
-      case_type_id:document.getElementById('libBoxCaseType').value||null,
-      subcat_id:document.getElementById('libBoxStage').value||null,
-      doc_type_id:document.getElementById('libBoxDocType').value||null,
       commentary:document.getElementById('libCommentary').value,
       is_own_style:document.getElementById('libIsOwnDoc').checked,
       ai_instructions:document.getElementById('libAiInstructions').value,
@@ -1579,6 +1628,29 @@ async function libCreatePrecedent(name){
 function libUploadContext(){showToast('Context document upload — coming soon');}
 function libTagContext(){showToast('Tag existing document as context — coming soon');}
 
+/* Delete from Library left column dropdowns */
+function libDeleteFromDropdown(type){
+  if(type==='casetype'){
+    var sel=document.getElementById('libSearchCaseType');
+    if(!sel||!sel.value){showToast('Select a case type from the dropdown first');return;}
+    var name=sel.options[sel.selectedIndex].text;
+    if(!confirm('Delete case type "'+name+'" and all its stages, doc types, and precedents?'))return;
+    api('/api/library','DELETE',{action:'delete_case_type',id:sel.value}).then(function(){loadLibrary();showToast('Deleted: '+name);}).catch(function(e){showToast('Error: '+e.message);});
+  }else if(type==='subcat'){
+    var sel2=document.getElementById('libSearchStage');
+    if(!sel2||!sel2.value){showToast('Select a stage from the dropdown first');return;}
+    var name2=sel2.options[sel2.selectedIndex].text;
+    if(!confirm('Delete stage "'+name2+'"?'))return;
+    api('/api/library','DELETE',{action:'delete_subcat',id:sel2.value}).then(function(){loadLibrary();showToast('Deleted: '+name2);}).catch(function(e){showToast('Error: '+e.message);});
+  }else if(type==='doctype'){
+    var sel3=document.getElementById('libSearchDocType');
+    if(!sel3||!sel3.value){showToast('Select a doc type from the dropdown first');return;}
+    var name3=sel3.options[sel3.selectedIndex].text;
+    if(!confirm('Delete doc type "'+name3+'"?'))return;
+    api('/api/library','DELETE',{action:'delete_doc_type',id:sel3.value}).then(function(){loadLibrary();showToast('Deleted: '+name3);}).catch(function(e){showToast('Error: '+e.message);});
+  }
+}
+
 function libDeleteSelected(type){
   if(type==='casetype'){
     var sel=document.getElementById('libBoxCaseType');
@@ -1614,16 +1686,18 @@ async function quickAddSave(){
     if(quickAddType==='casetype'){
       await api('/api/library','POST',{action:'create_case_type',name:name,jurisdiction:jurisdiction,subcats:[],docTypes:[]});
     }else if(quickAddType==='subcat'){
-      var ctId=document.getElementById('libBoxCaseType')?document.getElementById('libBoxCaseType').value:null;
-      if(!ctId)ctId=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;
-      if(!ctId)ctId=document.getElementById('draftCaseType')?document.getElementById('draftCaseType').value:null;
-      if(!ctId){showToast('Select a case type first');return;}
+      var ctId=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;
+      if(!ctId){var sel=document.getElementById('libBoxCaseType');if(sel)ctId=sel.value;}
+      if(!ctId){var dsel=document.getElementById('draftCaseType');if(dsel)ctId=dsel.value;}
+      if(!ctId&&libraryData.caseTypes.length){ctId=libraryData.caseTypes[0].id;}
+      if(!ctId){showToast('Add a case type first');return;}
       await api('/api/library','POST',{action:'create_subcat',name:name,case_type_id:ctId});
     }else if(quickAddType==='doctype'){
-      var ctId2=document.getElementById('libBoxCaseType')?document.getElementById('libBoxCaseType').value:null;
-      if(!ctId2)ctId2=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;
-      if(!ctId2)ctId2=document.getElementById('draftCaseType')?document.getElementById('draftCaseType').value:null;
-      if(!ctId2){showToast('Select a case type first');return;}
+      var ctId2=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;
+      if(!ctId2){var sel2=document.getElementById('libBoxCaseType');if(sel2)ctId2=sel2.value;}
+      if(!ctId2){var dsel2=document.getElementById('draftCaseType');if(dsel2)ctId2=dsel2.value;}
+      if(!ctId2&&libraryData.caseTypes.length){ctId2=libraryData.caseTypes[0].id;}
+      if(!ctId2){showToast('Add a case type first');return;}
       await api('/api/library','POST',{action:'create_doc_type',name:name,case_type_id:ctId2});
     }
     closeModal('quickAddModal');
@@ -1645,6 +1719,21 @@ function libPopulateDraftSelects(){
     ms.innerHTML='<option value="">— Select matter —</option>'+matters.map(function(m){return '<option value="'+m.id+'">'+esc(m.name)+'</option>';}).join('');
     if(val)ms.value=val;
     if(currentMatter&&!val)ms.value=currentMatter.id;
+  }
+  /* v2.5: Populate precedent case type filter */
+  var pct=document.getElementById('draftPrecCaseType');
+  if(pct){
+    var pval=pct.value;
+    pct.innerHTML='<option value="">— Filter by case type —</option>'+libraryData.caseTypes.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>';}).join('');
+    if(pval)pct.value=pval;
+  }
+  /* Also update upload modal dropdowns if open */
+  var precUpCt=document.getElementById('precUpCaseType');
+  if(precUpCt){
+    var pucVal=precUpCt.value;
+    precUpCt.innerHTML=libraryData.caseTypes.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>';}).join('');
+    if(pucVal)precUpCt.value=pucVal;
+    precUpCaseTypeChanged();
   }
 }
 
@@ -1686,16 +1775,21 @@ async function loadDraftMatterDocs(matterId){
       wrap.style.display='';
       list.innerHTML=docs.map(function(doc){return '<label class="draft-doc-check"><input type="checkbox" value="'+doc.id+'" data-name="'+esc(doc.name)+'"> '+esc(doc.name)+' <span style="font-size:.7rem;color:var(--text-faint)">['+esc(doc.doc_type)+']</span></label>';}).join('');
     }else{wrap.style.display='none';}
-    /* Populate Sector 2 selects */
-    var optHtml='<option value="">— Select document —</option>'+docs.map(function(doc){return '<option value="'+doc.id+'">'+esc(doc.name)+'</option>';}).join('');
-    document.getElementById('draftSrcDoc1').innerHTML='<option value="">— No document selected —</option>'+docs.map(function(doc){return '<option value="'+doc.id+'">'+esc(doc.name)+'</option>';}).join('');
-    document.getElementById('draftSrcDoc2').innerHTML=optHtml;
-    /* Sector 2 Box 3 — checkboxes for background docs + tool outputs */
+    /* Populate Sector 2 doc selects — Instructions, Response, Context */
+    var docOpts=docs.map(function(doc){return '<option value="'+doc.id+'">'+esc(doc.name)+' ['+esc(doc.doc_type)+']</option>';}).join('');
+    document.getElementById('draftSrcDoc1').innerHTML='<option value="">— Select from matter —</option>'+docOpts;
+    document.getElementById('draftSrcDoc2').innerHTML='<option value="">— Select from matter —</option>'+docOpts;
+    document.getElementById('draftCtxDoc').innerHTML='<option value="">— Select from matter —</option>'+docOpts;
+    /* Background select — matter docs + tool outputs from history */
     var histDocs=[];
     try{var hd=await api('/api/history?matter_id='+matterId);histDocs=(hd&&hd.history?hd.history:[]).filter(function(h){return h.tool_name;});}catch(e){}
-    var box3=document.getElementById('draftSrcDocs3');
-    box3.innerHTML=docs.map(function(doc){return '<label class="draft-doc-check"><input type="checkbox" value="doc:'+doc.id+'" data-name="'+esc(doc.name)+'"> 📄 '+esc(doc.name)+'</label>';}).join('')
-      +histDocs.map(function(h){return '<label class="draft-doc-check"><input type="checkbox" value="hist:'+h.id+'" data-name="'+esc(h.tool_name+': '+h.question.slice(0,40))+'"> 🔧 '+esc(h.tool_name+': '+h.question.slice(0,40))+'</label>';}).join('');
+    var bgOpts=docs.map(function(doc){return '<option value="doc:'+doc.id+'">📄 '+esc(doc.name)+'</option>';}).join('')
+      +histDocs.map(function(h){return '<option value="hist:'+h.id+'">🔧 '+esc(h.tool_name+': '+h.question.slice(0,50))+'</option>';}).join('');
+    document.getElementById('draftSrcDoc3').innerHTML='<option value="">— Select doc or tool output —</option>'+bgOpts;
+    /* Reset selected docs for new matter */
+    draftSelectedDocs={src1:[],src2:[],src3:[],ctx:[]};
+    draftSelectedPrecedents=[];
+    renderDraftSelectedDocs('src1');renderDraftSelectedDocs('src2');renderDraftSelectedDocs('src3');renderDraftSelectedDocs('ctx');renderDraftSelectedPrecs();
   }catch(e){console.error('loadDraftMatterDocs:',e);}
 }
 
@@ -1793,6 +1887,18 @@ async function generateDraft(){
     if(m)body.matterName=m.name;
     if(m)body.matterNature=m.nature||'';
     if(m)body.matterIssues=m.issues||'';
+    /* v2.5: Build library context from selected precedents */
+    if(draftSelectedPrecedents.length>0){
+      var ctName='';var ct=libraryData.caseTypes.find(function(c){return c.id===ctId;});if(ct)ctName=ct.name;
+      var stName='';var st=libraryData.subcats.find(function(s){return s.id===stId;});if(st)stName=st.name;
+      var dtName='';var dt=libraryData.docTypes.find(function(d){return d.id===dtId;});if(dt)dtName=dt.name;
+      body.libraryContext={
+        selectedPrecedentIds:draftSelectedPrecedents.map(function(p){return p.id;}),
+        caseTypeName:ctName,
+        subcategoryName:stName,
+        docTypeName:dtName
+      };
+    }
     var d=await api('/api/tools','POST',body);
     var resultText=d&&(d.result||d.text||d.answer)||'';
     /* Show the editor */
@@ -1830,8 +1936,171 @@ function draftDownloadWord(){
   var content=editor.innerText||editor.textContent;
   downloadWord(content,'Draft — '+(draftHeading.docTitle||'document'));
 }
-function draftUploadNew(){showToast('Upload new document — use the right panel to upload, then select it here');}
-function draftUploadBackground(){showToast('Upload background document — use the right panel to upload');}
+/* ── v2.5: UPLOAD PRECEDENT MODAL DELETE (A4) ───────────────────────────── */
+function precModalDelete(type){
+  if(type==='casetype'){
+    var sel=document.getElementById('precUpCaseType');
+    if(!sel||!sel.value){showToast('Select a case type first');return;}
+    var name=sel.options[sel.selectedIndex].text;
+    if(!confirm('Delete case type "'+name+'" and all its stages, doc types, and precedents?'))return;
+    api('/api/library','DELETE',{action:'delete_case_type',id:sel.value}).then(function(){loadLibrary();precUpCaseTypeChanged();showToast('Deleted: '+name);}).catch(function(e){showToast('Error: '+e.message);});
+  }else if(type==='subcat'){
+    var sel2=document.getElementById('precUpStage');
+    if(!sel2||!sel2.value){showToast('Select a stage first');return;}
+    var name2=sel2.options[sel2.selectedIndex].text;
+    if(!confirm('Delete stage "'+name2+'"?'))return;
+    api('/api/library','DELETE',{action:'delete_subcat',id:sel2.value}).then(function(){loadLibrary();precUpCaseTypeChanged();showToast('Deleted: '+name2);}).catch(function(e){showToast('Error: '+e.message);});
+  }else if(type==='doctype'){
+    var sel3=document.getElementById('precUpDocType');
+    if(!sel3||!sel3.value){showToast('Select a doc type first');return;}
+    var name3=sel3.options[sel3.selectedIndex].text;
+    if(!confirm('Delete doc type "'+name3+'"?'))return;
+    api('/api/library','DELETE',{action:'delete_doc_type',id:sel3.value}).then(function(){loadLibrary();precUpCaseTypeChanged();showToast('Deleted: '+name3);}).catch(function(e){showToast('Error: '+e.message);});
+  }
+}
+
+/* ── v2.5: DRAFT LEFT COLUMN DELETE (C4) ─────────────────────────────────── */
+function draftDeleteFromSelect(type){
+  if(type==='casetype'){
+    var sel=document.getElementById('draftCaseType');
+    if(!sel||!sel.value){showToast('Select a case type first');return;}
+    var name=sel.options[sel.selectedIndex].text;
+    if(!confirm('Delete case type "'+name+'" and all its stages, doc types, and precedents?'))return;
+    api('/api/library','DELETE',{action:'delete_case_type',id:sel.value}).then(function(){loadLibrary();showToast('Deleted: '+name);}).catch(function(e){showToast('Error: '+e.message);});
+  }else if(type==='subcat'){
+    var sel2=document.getElementById('draftStage');
+    if(!sel2||!sel2.value){showToast('Select a stage first');return;}
+    var name2=sel2.options[sel2.selectedIndex].text;
+    if(!confirm('Delete stage "'+name2+'"?'))return;
+    api('/api/library','DELETE',{action:'delete_subcat',id:sel2.value}).then(function(){loadLibrary();showToast('Deleted: '+name2);}).catch(function(e){showToast('Error: '+e.message);});
+  }else if(type==='doctype'){
+    var sel3=document.getElementById('draftDocType');
+    if(!sel3||!sel3.value){showToast('Select a doc type first');return;}
+    var name3=sel3.options[sel3.selectedIndex].text;
+    if(!confirm('Delete doc type "'+name3+'"?'))return;
+    api('/api/library','DELETE',{action:'delete_doc_type',id:sel3.value}).then(function(){loadLibrary();showToast('Deleted: '+name3);}).catch(function(e){showToast('Error: '+e.message);});
+  }
+}
+
+/* ── v2.5: DRAFT IN-PLACE UPLOAD & DOC SELECTION (C6/C7/C8) ─────────────── */
+var draftSelectedDocs={src1:[],src2:[],src3:[],ctx:[],prec:[]};
+var draftSelectedPrecedents=[];
+
+function draftSelectDoc(selectId,boxKey){
+  var sel=document.getElementById(selectId);
+  if(!sel||!sel.value)return;
+  var rawVal=sel.value;
+  var docName=sel.options[sel.selectedIndex].text;
+  /* Determine type from value prefix */
+  var docType='doc';
+  var docId=rawVal;
+  if(rawVal.indexOf('hist:')===0){docType='hist';docId=rawVal.slice(5);}
+  else if(rawVal.indexOf('doc:')===0){docType='doc';docId=rawVal.slice(4);}
+  if(draftSelectedDocs[boxKey].some(function(d){return d.id===docId&&d.rawVal===rawVal;}))return;
+  draftSelectedDocs[boxKey].push({id:docId,rawVal:rawVal,name:docName.replace(/^📄 |^🔧 /,''),type:docType});
+  sel.value='';
+  renderDraftSelectedDocs(boxKey);
+}
+
+function draftRemoveSelectedDoc(boxKey,idx){
+  draftSelectedDocs[boxKey].splice(idx,1);
+  renderDraftSelectedDocs(boxKey);
+}
+
+function renderDraftSelectedDocs(boxKey){
+  var containerIds={src1:'draftSelectedSrc1',src2:'draftSelectedSrc2',src3:'draftSelectedSrc3',ctx:'draftSelectedCtx',prec:'draftSelectedPrecs'};
+  var container=document.getElementById(containerIds[boxKey]);
+  if(!container)return;
+  if(!draftSelectedDocs[boxKey]||!draftSelectedDocs[boxKey].length){container.innerHTML='';return;}
+  container.innerHTML=draftSelectedDocs[boxKey].map(function(d,i){
+    var icon=d.type==='upload'?'📤 ':d.type==='hist'?'🔧 ':'📄 ';
+    return '<div class="draft-sel-item"><span title="'+esc(d.name)+'">'+icon+esc(d.name)+'</span><button class="draft-sel-del" onclick="draftRemoveSelectedDoc(\''+boxKey+'\','+i+')" title="Remove">×</button></div>';
+  }).join('');
+}
+
+async function draftUploadInPlace(input,boxKey){
+  var file=input.files[0];
+  if(!file)return;
+  var matterId=document.getElementById('draftMatterSelect').value;
+  if(!matterId){showToast('Select a matter first');input.value='';return;}
+  var isPdf=file.name.toLowerCase().endsWith('.pdf');
+  var isWord=file.name.toLowerCase().endsWith('.doc')||file.name.toLowerCase().endsWith('.docx');
+  if(!isPdf&&!isWord){showToast('Please select a PDF or Word document');input.value='';return;}
+  showToast('Uploading '+file.name+'…');
+  try{
+    var text='';
+    if(isPdf){
+      text=await extractPdfText(file);
+      if(!text||text.trim().length<50){showToast('No readable text in '+file.name);input.value='';return;}
+    }else{
+      /* For Word files, read as text (basic extraction) */
+      text=await new Promise(function(resolve){var reader=new FileReader();reader.onload=function(e){resolve(e.target.result);};reader.readAsText(file);});
+      if(!text||text.trim().length<20){showToast('Could not extract text from '+file.name+'. Try converting to PDF first.');input.value='';return;}
+    }
+    var docType='Other';
+    var d=await api('/api/upload','POST',{matterId:matterId,fileName:file.name,textContent:text,docType:docType});
+    if(d){
+      showToast('✓ '+file.name+' uploaded — '+(d.chunks||0)+' passages indexed');
+      draftSelectedDocs[boxKey].push({id:d.id||'uploaded',rawVal:d.id||'uploaded',name:file.name.replace(/\.(pdf|docx?)$/i,''),type:'upload'});
+      renderDraftSelectedDocs(boxKey);
+      await loadDraftMatterDocs(matterId);
+      await loadDocuments(matterId);
+      await loadMatters();
+    }
+  }catch(e){showToast('Upload error: '+e.message);}
+  input.value='';
+}
+
+/* ── v2.5: PRECEDENT REFERENCE PICKER (C11) ──────────────────────────────── */
+function draftPrecCaseTypeChanged(){
+  var ctId=document.getElementById('draftPrecCaseType').value;
+  var list=document.getElementById('draftPrecList');
+  if(!ctId){list.innerHTML='<div style="font-size:.78rem;color:var(--text-faint);font-style:italic;padding:.3rem">Select a case type to see precedents.</div>';return;}
+  var filtered=libraryData.precedents.filter(function(p){return p.case_type_id===ctId;});
+  if(!filtered.length){list.innerHTML='<div style="font-size:.78rem;color:var(--text-faint);font-style:italic;padding:.3rem">No precedents for this case type.</div>';return;}
+  list.innerHTML=filtered.map(function(p){
+    var checked=draftSelectedPrecedents.some(function(sp){return sp.id===p.id;});
+    return '<label class="draft-doc-check"><input type="checkbox" value="'+p.id+'" data-name="'+esc(p.name)+'"'+(checked?' checked':'')+' onchange="draftTogglePrecedent(this)"> '+esc(p.name)+'</label>';
+  }).join('');
+}
+
+function draftTogglePrecedent(cb){
+  var id=cb.value;
+  var name=cb.getAttribute('data-name');
+  if(cb.checked){
+    if(!draftSelectedPrecedents.some(function(p){return p.id===id;})){
+      draftSelectedPrecedents.push({id:id,name:name});
+    }
+  }else{
+    draftSelectedPrecedents=draftSelectedPrecedents.filter(function(p){return p.id!==id;});
+  }
+  renderDraftSelectedPrecs();
+}
+
+function draftRemovePrecedent(idx){
+  draftSelectedPrecedents.splice(idx,1);
+  renderDraftSelectedPrecs();
+  draftPrecCaseTypeChanged();
+}
+
+function renderDraftSelectedPrecs(){
+  var container=document.getElementById('draftSelectedPrecs');
+  if(!container)return;
+  if(!draftSelectedPrecedents.length){container.innerHTML='';return;}
+  container.innerHTML=draftSelectedPrecedents.map(function(p,i){
+    return '<div class="draft-sel-item"><span title="'+esc(p.name)+'">📚 '+esc(p.name)+'</span><button class="draft-sel-del" onclick="draftRemovePrecedent('+i+')" title="Remove">×</button></div>';
+  }).join('');
+}
+
+/* ── v2.5: CAPS TOGGLE (C13) ────────────────────────────────────────────── */
+function draftToggleCaps(){
+  var sel=window.getSelection();
+  if(!sel||sel.rangeCount===0||sel.isCollapsed)return;
+  var text=sel.toString();
+  var upper=text.toUpperCase();
+  var replacement=(text===upper)?text.toLowerCase():upper;
+  document.execCommand('insertText',false,replacement);
+}
 
 /* Draft dialogue (further instructions) */
 async function draftDialogueSend(){
@@ -2034,7 +2303,7 @@ function switchMainNav(nav){
     leftPanel.style.display='';
     draftLeft.style.display='flex';
     draftCentre.style.display='flex';
-    if(rightPanel)rightPanel.style.display=currentMatter?'':'none';
+    if(rightPanel)rightPanel.style.display='none';
     libPopulateDraftSelects();
   }
 }
@@ -2074,6 +2343,4 @@ function clearMessages(){document.getElementById('messagesArea').innerHTML='';}
 function sysMsg(text){var area=document.getElementById('messagesArea');var el=document.createElement('div');el.style.cssText='text-align:center;font-size:.78rem;font-weight:500;color:var(--text-faint);padding:.45rem;font-style:italic;';el.innerHTML=renderMd(text);area.appendChild(el);area.scrollTop=area.scrollHeight;}
 
 init();
-</script>
-</body>
-</html>
+</script></body></html>

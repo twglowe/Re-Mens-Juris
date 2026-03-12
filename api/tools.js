@@ -12,8 +12,14 @@ const OUTPUT_COST_PER_M = 15.00;
 async function getUser(req) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  return error ? null : user;
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error) { console.error("Auth error:", error.message); return null; }
+    return user;
+  } catch (e) {
+    console.error("Auth exception:", e.message);
+    return null;
+  }
 }
 
 async function getAllChunks(matterId, docTypes = null, limit = 3000) {
@@ -64,7 +70,7 @@ function docsToText(byDoc) {
 async function runTool(system, userPrompt) {
   const response = await anthropic.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-    max_tokens: 4096,
+    max_tokens: 8192,
     system,
     messages: [{ role: "user", content: userPrompt }],
   });
@@ -304,78 +310,120 @@ export default async function handler(req, res) {
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
-    // ── DRAFT GENERATOR (v2.3: courtHeading support) ────────────────────────
+    // ── DRAFT GENERATOR (v2.5: auto-precedent matching + learning) ──────────
     else if (tool === "draft") {
       const libraryContext = req.body?.libraryContext || null;
+      const caseTypeId = req.body?.caseTypeId || null;
+      const docTypeId = req.body?.docTypeId || null;
+      const subcatId = req.body?.subcatId || null;
       let libraryText = '';
-      if (libraryContext) {
+
+      // v2.5: Collect precedent IDs — from manual selection AND auto-matching
+      let allPrecedentIds = [];
+      if (libraryContext && libraryContext.selectedPrecedentIds) {
+        allPrecedentIds = [...libraryContext.selectedPrecedentIds];
+      }
+
+      // v2.5: Auto-fetch matching precedents if case type is set but none manually selected
+      if (caseTypeId && allPrecedentIds.length === 0) {
+        const autoQuery = supabase.from('precedent_docs')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('case_type_id', caseTypeId);
+        if (docTypeId) autoQuery.eq('doc_type_id', docTypeId);
+        const { data: autoPrecs } = await autoQuery.limit(5);
+        if (autoPrecs) allPrecedentIds = autoPrecs.map(p => p.id);
+      }
+
+      // Build library text from precedents
+      if (allPrecedentIds.length > 0) {
         const libParts = [];
-        if (libraryContext.selectedSections && libraryContext.selectedSections.length > 0) {
-          const secText = libraryContext.selectedSections
-            .map(s => '=== STANDARD SECTION: ' + s.title + ' ===\n' + s.content)
-            .join('\n\n');
-          libParts.push('## STANDARD SECTIONS TO INCORPORATE\n\nIncorporate these sections with only minor contextual adaptation:\n\n' + secText);
-        }
-        if (libraryContext.selectedPrecedentIds && libraryContext.selectedPrecedentIds.length > 0) {
-          const ownTexts = [];
-          const thirdTexts = [];
-          for (const docId of libraryContext.selectedPrecedentIds) {
-            const { data: pChunks } = await supabase
-              .from('precedent_chunks')
-              .select('content, chunk_index')
-              .eq('precedent_doc_id', docId)
-              .order('chunk_index')
-              .limit(80);
-            const { data: precMeta } = await supabase
-              .from('precedent_docs')
-              .select('name, context_relationship, context_doc_id, ai_instructions, is_own_style, commentary')
-              .eq('id', docId)
-              .single();
-            if (pChunks && pChunks.length > 0) {
-              const label = precMeta ? precMeta.name : docId;
-              let precEntry = '=== PRECEDENT: ' + label + ' ===\n';
-              if (precMeta && precMeta.ai_instructions) {
-                precEntry += '[Author note: ' + precMeta.ai_instructions + ']\n\n';
-              }
-              if (precMeta && precMeta.commentary) {
-                precEntry += '[Purpose: ' + precMeta.commentary + ']\n\n';
-              }
-              precEntry += pChunks.map(c => c.content).join('\n\n');
-              if (precMeta && precMeta.context_doc_id) {
-                const { data: ctxChunks } = await supabase
-                  .from('precedent_chunks')
-                  .select('content, chunk_index')
-                  .eq('precedent_doc_id', precMeta.context_doc_id)
-                  .order('chunk_index')
-                  .limit(40);
-                if (ctxChunks && ctxChunks.length > 0) {
-                  const rel = precMeta.context_relationship || 'relates to';
-                  precEntry += '\n\n--- CONTEXT: this precedent ' + rel + ' the following ---\n' + ctxChunks.map(c => c.content).join('\n\n');
-                }
-              }
-              if (precMeta && precMeta.is_own_style) {
-                ownTexts.push(precEntry);
-              } else {
-                thirdTexts.push(precEntry);
+        const ownTexts = [];
+        const thirdTexts = [];
+        for (const docId of allPrecedentIds) {
+          const { data: pChunks } = await supabase
+            .from('precedent_chunks')
+            .select('content, chunk_index')
+            .eq('precedent_doc_id', docId)
+            .order('chunk_index')
+            .limit(80);
+          const { data: precMeta } = await supabase
+            .from('precedent_docs')
+            .select('name, context_relationship, context_doc_id, ai_instructions, is_own_style, commentary')
+            .eq('id', docId)
+            .single();
+          if (pChunks && pChunks.length > 0) {
+            const label = precMeta ? precMeta.name : docId;
+            let precEntry = '=== PRECEDENT: ' + label + ' ===\n';
+            if (precMeta && precMeta.ai_instructions) {
+              precEntry += '[Author instructions: ' + precMeta.ai_instructions + ']\n\n';
+            }
+            if (precMeta && precMeta.commentary) {
+              precEntry += '[Commentary — read carefully and apply: ' + precMeta.commentary + ']\n\n';
+            }
+            precEntry += pChunks.map(c => c.content).join('\n\n');
+            if (precMeta && precMeta.context_doc_id) {
+              const { data: ctxChunks } = await supabase
+                .from('precedent_chunks')
+                .select('content, chunk_index')
+                .eq('precedent_doc_id', precMeta.context_doc_id)
+                .order('chunk_index')
+                .limit(40);
+              if (ctxChunks && ctxChunks.length > 0) {
+                const rel = precMeta.context_relationship || 'relates to';
+                precEntry += '\n\n--- CONTEXT: this precedent ' + rel + ' the following ---\n' + ctxChunks.map(c => c.content).join('\n\n');
               }
             }
-          }
-          const precTexts = [];
-          if (ownTexts.length > 0) {
-            precTexts.push('### MY DRAFTING STYLE\nLearn structure, argument sequence and language from these documents:\n\n' + ownTexts.join('\n\n'));
-          }
-          if (thirdTexts.length > 0) {
-            precTexts.push('### THIRD PARTY PRECEDENTS\nUse as benchmarks for structure and legal argument:\n\n' + thirdTexts.join('\n\n'));
-          }
-          if (precTexts.length > 0) {
-            libParts.push('## PRECEDENT DOCUMENTS\n\n' + precTexts.join('\n\n---\n\n'));
+            if (precMeta && precMeta.is_own_style) {
+              ownTexts.push(precEntry);
+            } else {
+              thirdTexts.push(precEntry);
+            }
           }
         }
-        if (libParts.length > 0) {
-          const ctLabel = [libraryContext.caseTypeName, libraryContext.subcategoryName, libraryContext.docTypeName].filter(Boolean).join(' — ');
-          libraryText = '\n\n# LIBRARY CONTEXT (' + ctLabel + ')\n\n' + libParts.join('\n\n');
+        const precTexts = [];
+        if (ownTexts.length > 0) {
+          precTexts.push('### MY DRAFTING STYLE\nStudy these documents carefully. Learn and replicate: the document structure, heading hierarchy, argument sequence, paragraph style, tone, and language. Your draft must follow this style closely:\n\n' + ownTexts.join('\n\n'));
+        }
+        if (thirdTexts.length > 0) {
+          precTexts.push('### THIRD PARTY PRECEDENTS\nUse these as benchmarks for structure, legal argument, and completeness. Adapt their approach to our client\'s position:\n\n' + thirdTexts.join('\n\n'));
+        }
+        if (precTexts.length > 0) {
+          const ctLabel = [
+            libraryContext?.caseTypeName,
+            libraryContext?.subcategoryName,
+            libraryContext?.docTypeName
+          ].filter(Boolean).join(' — ') || 'Auto-matched';
+          libraryText = '\n\n# PRECEDENT LIBRARY (' + ctLabel + ')\n\nYou MUST study these precedents before drafting. Learn from their structure, standard sections, argument methods, and language. Apply what you learn to the current draft.\n\n' + precTexts.join('\n\n---\n\n');
         }
       }
+
+      // v2.5: Include standard sections if provided
+      if (libraryContext && libraryContext.selectedSections && libraryContext.selectedSections.length > 0) {
+        const secText = libraryContext.selectedSections
+          .map(s => '=== STANDARD SECTION: ' + s.title + ' ===\n' + s.content)
+          .join('\n\n');
+        libraryText += '\n\n## STANDARD SECTIONS TO INCORPORATE\n\nIncorporate these sections with only minor contextual adaptation:\n\n' + secText;
+      }
+
+      // v2.5: Fetch past draft outputs for this matter as learning context
+      let learningText = '';
+      try {
+        const { data: pastDrafts } = await supabase
+          .from('conversation_history')
+          .select('question, answer, created_at')
+          .eq('matter_id', matterId)
+          .eq('user_id', user.id)
+          .eq('tool_name', 'draft')
+          .order('created_at', { ascending: false })
+          .limit(3);
+        if (pastDrafts && pastDrafts.length > 0) {
+          const pastSummaries = pastDrafts.map(d =>
+            '--- Previous draft (' + new Date(d.created_at).toLocaleDateString('en-GB') + ') ---\nInstructions: ' + d.question.slice(0, 200) + '\nDraft excerpt: ' + d.answer.slice(0, 800) + '...'
+          ).join('\n\n');
+          learningText = '\n\n# PREVIOUS DRAFTS FOR THIS MATTER\n\nLearn from these earlier drafts — maintain consistency in style, terminology, and argument structure:\n\n' + pastSummaries;
+        }
+      } catch (e) { console.log('Past drafts fetch skipped:', e.message); }
 
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
@@ -385,7 +433,15 @@ export default async function handler(req, res) {
         ? `\n\nIMPORTANT: Begin the document with this exact court heading (do not alter the heading itself):\n\n${formatCourtHeading(courtHeading)}\n\nThen continue with the body of the document.`
         : "";
 
-      const systemBase = `You are a senior litigation counsel in ${jur} drafting a legal document for "${matterName}". Apply ${jur} law, procedure, and drafting conventions.${actingFor ? ` You are acting for the ${actingFor}.` : ""}\n${matterContext}${libraryText}${headingInstruction}`;
+      const systemBase = `You are a senior litigation counsel in ${jur} drafting a legal document for "${matterName}". Apply ${jur} law, procedure, and drafting conventions.${actingFor ? ` You are acting for the ${actingFor}.` : ""}
+
+CRITICAL INSTRUCTIONS:
+1. If precedent documents are provided below, you MUST study them first. Learn their structure, standard sections, argument methods, heading hierarchy, and language style. Replicate this approach in your draft.
+2. If commentary or AI instructions are attached to a precedent, follow them precisely — they contain the author's specific guidance on how to use that document.
+3. If previous drafts for this matter exist, maintain consistency with their style, terminology, and argument structure.
+4. Apply ${jur} court rules and conventions throughout.
+
+${matterContext}${libraryText}${learningText}${headingInstruction}`;
 
       const r = await runBatched(systemBase,
         (batchText, batchNum, total) => `Extract all facts, legal points, and arguments from batch ${batchNum} of ${total} relevant to: ${instructions || "Draft a skeleton argument"}\n\nDOCUMENTS:\n\n${batchText}`,

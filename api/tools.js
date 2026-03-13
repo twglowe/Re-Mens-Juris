@@ -22,7 +22,7 @@ async function getUser(req) {
   }
 }
 
-async function getAllChunks(matterId, docTypes = null, limit = 3000) {
+async function getAllChunks(matterId, docTypes = null, limit = 2000) {
   let query = supabase.from("chunks")
     .select("content, document_name, doc_type")
     .eq("matter_id", matterId)
@@ -43,12 +43,14 @@ function chunksToDocMap(chunks) {
   return byDoc;
 }
 
-function batchDocs(byDoc, maxChars = 30000) {
+// v3.0: Larger batch size (60k) = fewer batches = fewer API calls = faster
+function batchDocs(byDoc, maxChars = 60000) {
   const batches = [];
   let current = {};
   let currentSize = 0;
   for (const [name, data] of Object.entries(byDoc)) {
-    const truncated = data.text.length > 60000 ? data.text.slice(0, 60000) + '\n[...truncated for processing...]' : data.text;
+    // Truncate very large individual docs to 50k chars
+    const truncated = data.text.length > 50000 ? data.text.slice(0, 50000) + '\n[...truncated for processing...]' : data.text;
     const docData = { ...data, text: truncated };
     const docSize = truncated.length + name.length + 50;
     if (currentSize + docSize > maxChars && Object.keys(current).length > 0) {
@@ -67,10 +69,11 @@ function docsToText(byDoc) {
   return Object.entries(byDoc).map(([n, d]) => `=== ${n} [${d.type}] ===\n${d.text}`).join("\n\n");
 }
 
-async function runTool(system, userPrompt) {
+// v3.0: Extraction uses fewer output tokens (4096); synthesis gets full 8192
+async function runTool(system, userPrompt, maxTokens = 8192) {
   const response = await anthropic.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-    max_tokens: 8192,
+    max_tokens: maxTokens,
     system,
     messages: [{ role: "user", content: userPrompt }],
   });
@@ -81,6 +84,7 @@ async function runTool(system, userPrompt) {
   return { text, inputTokens, outputTokens, cost };
 }
 
+// v3.0: Higher parallelism (4) and extraction passes use 4096 max_tokens
 async function runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc) {
   const batches = batchDocs(byDoc);
   let totalInput = 0, totalOutput = 0, totalCost = 0;
@@ -89,12 +93,12 @@ async function runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc) {
     return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cost: r.cost };
   }
   const extracts = [];
-  const PARALLEL = 3;
+  const PARALLEL = 4;
   for (let i = 0; i < batches.length; i += PARALLEL) {
     const slice = batches.slice(i, i + PARALLEL);
     const results = await Promise.all(slice.map((batch, j) => {
       const batchText = docsToText(batch);
-      return runTool(systemBase, extractPromptFn(batchText, i + j + 1, batches.length));
+      return runTool(systemBase, extractPromptFn(batchText, i + j + 1, batches.length), 4096);
     }));
     for (const r of results) {
       extracts.push(r.text);
@@ -120,7 +124,6 @@ async function logUsage(matterId, userId, toolName, inputTokens, outputTokens, c
   } catch (e) { console.error("Usage log error:", e); }
 }
 
-// v2.3: Format court heading as text block
 function formatCourtHeading(h) {
   if (!h || (!h.court && !h.party1)) return "";
   const lines = [];
@@ -148,7 +151,6 @@ export default async function handler(req, res) {
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-  // v2.3: Extract actingFor and courtHeading
   const { tool, matterId, matterName, matterNature, matterIssues, jurisdiction,
           anchorDocNames, instructions, actingFor, courtHeading,
           citationSource, citationTargets } = req.body;
@@ -156,7 +158,6 @@ export default async function handler(req, res) {
   if (!tool || !matterId) return res.status(400).json({ error: "tool and matterId required" });
 
   const jur = jurisdiction || "Bermuda";
-  // v2.3: Include actingFor in matter context
   const matterContext = [
     matterNature ? `Nature of the dispute: ${matterNature}` : "",
     matterIssues ? `Key issues: ${matterIssues}` : "",
@@ -201,16 +202,26 @@ export default async function handler(req, res) {
         otherDocs = Object.fromEntries(entries.slice(mid));
       }
       const systemBase = `You are a senior litigation counsel conducting forensic inconsistency analysis for "${matterName}" in ${jur}.\n${matterContext}`;
-      const anchorText = docsToText(anchorDocs);
+      // v3.0: Truncate anchor text to 40k to leave room for comparison batches
+      let anchorText = docsToText(anchorDocs);
+      if (anchorText.length > 40000) anchorText = anchorText.slice(0, 40000) + '\n[...anchor truncated...]';
       const otherBatches = batchDocs(otherDocs);
       let allFindings = [];
       let totalInput = 0, totalOutput = 0, totalCost = 0;
-      for (let i = 0; i < otherBatches.length; i++) {
-        const r = await runTool(systemBase,
-          `Find every inconsistency between ANCHOR DOCUMENTS and this batch.\n\n### [N]. [Description]\n**Anchor:** [Document and passage]\n**Contradiction:** [Document and passage]\n**Significance:** CRITICAL / SIGNIFICANT / MINOR\n**Tactical note:** [How to use or address]\n\nANCHOR:\n\n${anchorText}\n\nOTHER (batch ${i+1}/${otherBatches.length}):\n\n${docsToText(otherBatches[i])}\n\n${instructions ? `Instructions: ${instructions}` : ""}`
-        );
-        allFindings.push(r.text);
-        totalInput += r.inputTokens; totalOutput += r.outputTokens; totalCost += r.cost;
+      // v3.0: Run comparison batches in parallel pairs
+      const PARALLEL = 2;
+      for (let i = 0; i < otherBatches.length; i += PARALLEL) {
+        const slice = otherBatches.slice(i, i + PARALLEL);
+        const results = await Promise.all(slice.map((batch, j) =>
+          runTool(systemBase,
+            `Find every inconsistency between ANCHOR DOCUMENTS and this batch.\n\n### [N]. [Description]\n**Anchor:** [Document and passage]\n**Contradiction:** [Document and passage]\n**Significance:** CRITICAL / SIGNIFICANT / MINOR\n**Tactical note:** [How to use or address]\n\nANCHOR:\n\n${anchorText}\n\nOTHER (batch ${i+j+1}/${otherBatches.length}):\n\n${docsToText(batch)}\n\n${instructions ? `Instructions: ${instructions}` : ""}`,
+            4096
+          )
+        ));
+        for (const r of results) {
+          allFindings.push(r.text);
+          totalInput += r.inputTokens; totalOutput += r.outputTokens; totalCost += r.cost;
+        }
       }
       if (allFindings.length === 1) {
         result = allFindings[0] + "\n\n⚠️ Professional Caution: AI-generated analysis. Verify quotations before reliance.";
@@ -269,18 +280,16 @@ export default async function handler(req, res) {
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
-    // ── CITATION CHECKER (v2.3: accept citationSource and citationTargets) ──
+    // ── CITATION CHECKER ────────────────────────────────────────────────────
     else if (tool === "citations") {
       let skeletonChunks, caselawChunks;
       if (citationSource) {
-        // v2.3: Use specific source document
         skeletonChunks = await getAllChunks(matterId);
         skeletonChunks = skeletonChunks.filter(c => c.document_name === citationSource);
       } else {
         skeletonChunks = await getAllChunks(matterId, ["Skeleton Argument", "Pleading"]);
       }
       if (citationTargets && citationTargets.length > 0) {
-        // v2.3: Use specific target case law documents
         const allChunks = await getAllChunks(matterId);
         caselawChunks = allChunks.filter(c => citationTargets.includes(c.document_name));
       } else {
@@ -318,13 +327,11 @@ export default async function handler(req, res) {
       const subcatId = req.body?.subcatId || null;
       let libraryText = '';
 
-      // v2.5: Collect precedent IDs — from manual selection AND auto-matching
       let allPrecedentIds = [];
       if (libraryContext && libraryContext.selectedPrecedentIds) {
         allPrecedentIds = [...libraryContext.selectedPrecedentIds];
       }
 
-      // v2.5: Auto-fetch matching precedents if case type is set but none manually selected
       if (caseTypeId && allPrecedentIds.length === 0) {
         const autoQuery = supabase.from('precedent_docs')
           .select('id')
@@ -335,7 +342,6 @@ export default async function handler(req, res) {
         if (autoPrecs) allPrecedentIds = autoPrecs.map(p => p.id);
       }
 
-      // Build library text from precedents
       if (allPrecedentIds.length > 0) {
         const libParts = [];
         const ownTexts = [];
@@ -398,7 +404,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // v2.5: Include standard sections if provided
       if (libraryContext && libraryContext.selectedSections && libraryContext.selectedSections.length > 0) {
         const secText = libraryContext.selectedSections
           .map(s => '=== STANDARD SECTION: ' + s.title + ' ===\n' + s.content)
@@ -406,7 +411,6 @@ export default async function handler(req, res) {
         libraryText += '\n\n## STANDARD SECTIONS TO INCORPORATE\n\nIncorporate these sections with only minor contextual adaptation:\n\n' + secText;
       }
 
-      // v2.5: Fetch past draft outputs for this matter as learning context
       let learningText = '';
       try {
         const { data: pastDrafts } = await supabase
@@ -428,7 +432,6 @@ export default async function handler(req, res) {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
 
-      // v2.3: Include court heading instruction if provided
       const headingInstruction = courtHeading && (courtHeading.court || courtHeading.party1)
         ? `\n\nIMPORTANT: Begin the document with this exact court heading (do not alter the heading itself):\n\n${formatCourtHeading(courtHeading)}\n\nThen continue with the body of the document.`
         : "";

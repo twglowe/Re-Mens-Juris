@@ -998,12 +998,27 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
       <option value="">Any</option><option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option>
     </select>
     <label class="f-label" style="margin-top:.85rem">PDF Document *</label>
-    <input type="file" id="precUpFile" accept=".pdf" style="width:100%;padding:.5rem;border:2px solid var(--border);border-radius:7px;font-size:.92rem;background:var(--off-white)">
+    <input type="file" id="precUpFile" accept=".pdf" style="width:100%;padding:.5rem;border:2px solid var(--border);border-radius:7px;font-size:.92rem;background:var(--off-white)" onchange="precUpFileChanged(this)">
+    <div id="precUpAiHint" style="display:none;margin-top:.3rem;padding:.4rem .6rem;background:var(--blue-faint);border:1px solid var(--border);border-radius:5px;font-size:.78rem;color:var(--blue);font-weight:500">Reading PDF to suggest a name…</div>
     <div style="font-size:.75rem;color:var(--text-faint);margin-top:.2rem">The document will be chunked and stored in your library.</div>
     <div id="precUpProgress" style="display:none;margin-top:.5rem;padding:.5rem;background:var(--blue-pale);border-radius:6px;font-size:.82rem;font-weight:600;color:var(--blue)">Uploading and processing…</div>
+    <!-- A5: Commentary step — shown after upload completes -->
+    <div id="precUpCommentaryStep" style="display:none">
+      <div style="padding:.5rem .6rem;background:var(--green-pale);border:1px solid var(--green-border);border-radius:6px;font-size:.82rem;font-weight:600;color:var(--success);margin-bottom:.6rem">✓ Precedent uploaded and indexed.</div>
+      <label class="f-label">Commentary</label>
+      <textarea id="precUpCommentary" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.92rem;min-height:80px;resize:vertical" placeholder="Explain the function and purpose of this document. The AI uses this when preparing drafts."></textarea>
+      <label class="f-label" style="margin-top:.6rem">AI Instructions</label>
+      <textarea id="precUpAiInstr" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.92rem;min-height:60px;resize:vertical" placeholder="Specific notes for the AI about how to use this document when drafting…"></textarea>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem">
+        <input type="checkbox" id="precUpIsOwn" style="accent-color:var(--blue);width:16px;height:16px">
+        <label for="precUpIsOwn" style="font-size:.82rem;color:var(--text-mid)">This is my own document (not third-party)</label>
+      </div>
+    </div>
     <div class="modal-btns">
-      <button class="btn-secondary" onclick="closeModal('precUploadModal')">Cancel</button>
+      <button class="btn-secondary" onclick="closePrecUpModal()">Cancel</button>
       <button class="btn-primary" id="precUpSaveBtn" onclick="precUploadSave()">Upload</button>
+      <button class="btn-primary" id="precUpSaveCommentaryBtn" onclick="precUpSaveCommentary()" style="display:none">Save &amp; Close</button>
+      <button class="btn-secondary" id="precUpSkipBtn" onclick="closePrecUpModal()" style="display:none">Skip</button>
     </div>
   </div>
 </div>
@@ -1011,7 +1026,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <div class="toast" style="display:none"></div>
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v2.5 — JAVASCRIPT
+   EX LIBRIS JURIS v3.0 — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -1656,6 +1671,12 @@ function libNewPrecedent(){
   document.getElementById('precUpFile').value='';
   document.getElementById('precUpProgress').style.display='none';
   document.getElementById('precUpSaveBtn').disabled=false;
+  document.getElementById('precUpSaveBtn').style.display='';
+  document.getElementById('precUpSaveCommentaryBtn').style.display='none';
+  document.getElementById('precUpSkipBtn').style.display='none';
+  document.getElementById('precUpCommentaryStep').style.display='none';
+  document.getElementById('precUpAiHint').style.display='none';
+  precUpLastId=null;
   document.getElementById('precUploadModal').style.display='flex';
   setTimeout(function(){document.getElementById('precUpName').focus();},100);
 }
@@ -1667,6 +1688,7 @@ function precUpCaseTypeChanged(){
   dtSel.innerHTML='<option value="">— None —</option>'+libraryData.docTypes.filter(function(d){return d.case_type_id===ctId;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
 }
 if(document.getElementById('precUpCaseType')){document.getElementById('precUpCaseType').addEventListener('change',precUpCaseTypeChanged);}
+var precUpLastId=null;
 async function precUploadSave(){
   var name=document.getElementById('precUpName').value.trim();
   var ctId=document.getElementById('precUpCaseType').value;
@@ -1690,11 +1712,65 @@ async function precUploadSave(){
     var tok=token||localStorage.getItem('elj_token');
     var r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd});
     if(!r.ok){var errData=await r.json();throw new Error(errData.error||'Upload failed');}
+    var result=await r.json();
+    precUpLastId=result.id||null;
     await loadLibrary();
-    closeModal('precUploadModal');
-    showToast('Precedent uploaded and indexed — select it in the list to edit details');
-  }catch(e){showToast('Error: '+e.message);}
-  finally{btn.disabled=false;btn.textContent='Upload';document.getElementById('precUpProgress').style.display='none';}
+    /* A5: Show commentary step instead of closing modal */
+    document.getElementById('precUpProgress').style.display='none';
+    document.getElementById('precUpCommentaryStep').style.display='';
+    document.getElementById('precUpSaveBtn').style.display='none';
+    document.getElementById('precUpSaveCommentaryBtn').style.display='';
+    document.getElementById('precUpSkipBtn').style.display='';
+    document.getElementById('precUpCommentary').value='';
+    document.getElementById('precUpAiInstr').value='';
+    document.getElementById('precUpIsOwn').checked=false;
+    document.getElementById('precUpCommentary').focus();
+  }catch(e){showToast('Error: '+e.message);document.getElementById('precUpProgress').style.display='none';}
+  finally{btn.disabled=false;btn.textContent='Upload';}
+}
+/* A5: Save commentary after upload */
+async function precUpSaveCommentary(){
+  if(!precUpLastId){closePrecUpModal();return;}
+  try{
+    await api('/api/library','POST',{
+      action:'update_precedent',
+      id:precUpLastId,
+      commentary:document.getElementById('precUpCommentary').value,
+      ai_instructions:document.getElementById('precUpAiInstr').value,
+      is_own_style:document.getElementById('precUpIsOwn').checked
+    });
+    showToast('Commentary saved');
+  }catch(e){showToast('Error saving commentary: '+e.message);}
+  closePrecUpModal();
+}
+function closePrecUpModal(){
+  precUpLastId=null;
+  closeModal('precUploadModal');
+}
+/* A3: AI auto-fills document name when PDF selected */
+async function precUpFileChanged(input){
+  if(!input.files||!input.files[0])return;
+  var file=input.files[0];
+  var nameField=document.getElementById('precUpName');
+  /* Only suggest if the name field is empty */
+  if(nameField.value.trim())return;
+  var hint=document.getElementById('precUpAiHint');
+  hint.style.display='';hint.textContent='Reading PDF to suggest a name…';
+  try{
+    var text=await extractPdfText(file);
+    if(!text||text.trim().length<30){hint.style.display='none';return;}
+    /* Send first 2000 chars to AI for name suggestion */
+    var snippet=text.slice(0,2000);
+    var d=await api('/api/analyse','POST',{matterId:'',matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are reading the first pages of a legal document. Extract the most likely document name — this should be the case name (e.g. "Smith v Jones") or the first party name if no case name is found. Return ONLY the suggested name, nothing else. No quotes, no explanation.\n\nTEXT:\n'+snippet}],jurisdiction:jurisdiction,queryType:'Factual Analysis',focusAreas:[]});
+    if(d&&d.result){
+      var suggested=d.result.trim().replace(/^["']|["']$/g,'').slice(0,120);
+      if(suggested&&suggested.length>2){
+        nameField.value=suggested;
+        hint.textContent='Suggested: '+suggested+' (edit if needed)';
+        hint.style.color='var(--success)';
+      }else{hint.style.display='none';}
+    }else{hint.style.display='none';}
+  }catch(e){hint.style.display='none';console.log('AI name suggestion error:',e.message);}
 }
 async function libCreatePrecedent(name){
   try{
@@ -1878,8 +1954,27 @@ function draftCaseTypeChanged(){
   var ctId=document.getElementById('draftCaseType').value;
   document.getElementById('draftStage').innerHTML='<option value="">— Select —</option>'+libraryData.subcats.filter(function(s){return s.case_type_id===ctId;}).map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
   document.getElementById('draftDocType').innerHTML='<option value="">— Select —</option>'+libraryData.docTypes.filter(function(d){return d.case_type_id===ctId;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
+  draftAutoSaveChoices();
 }
-function draftStageChanged(){}
+function draftStageChanged(){draftAutoSaveChoices();}
+
+/* C3: Auto-save draft left column choices to drafts table */
+var _draftAutoSaveTimer=null;
+function draftAutoSaveChoices(){
+  if(_draftAutoSaveTimer)clearTimeout(_draftAutoSaveTimer);
+  _draftAutoSaveTimer=setTimeout(function(){
+    var matterId=document.getElementById('draftMatterSelect').value;
+    if(!matterId)return;
+    var choices={
+      case_type_id:document.getElementById('draftCaseType').value||null,
+      subcategory_id:document.getElementById('draftStage').value||null,
+      doc_type_id:document.getElementById('draftDocType').value||null,
+      heading_data:JSON.stringify(draftHeading),
+      instructions:document.getElementById('draftMainInstructions').value||''
+    };
+    api('/api/drafts?matter_id='+matterId,'POST',choices).catch(function(e){console.log('Draft auto-save:',e.message);});
+  },1500);
+}
 
 /* When Doc Type changes, update the doc title in the heading if not already set manually */
 var draftDocTypeEl=document.getElementById('draftDocType');
@@ -1889,8 +1984,11 @@ if(draftDocTypeEl){draftDocTypeEl.addEventListener('change',function(){
     draftHeading.docTitle=dtName.toUpperCase();
     updateActionHeading();
   }
+  draftAutoSaveChoices();
 });}
-
+/* C3: Auto-save when instructions change */
+var draftInstrEl=document.getElementById('draftMainInstructions');
+if(draftInstrEl){draftInstrEl.addEventListener('input',function(){draftAutoSaveChoices();});}
 /* Heading Editor */
 function openHeadingEditor(){
   document.getElementById('hdCourt').value=draftHeading.court;
@@ -1934,6 +2032,17 @@ function saveHeading(){
   closeModal('headingModal');
   updateHeadingBtnText();
   showToast('Heading saved');
+  /* C2: If party names form a case name, offer to update the matter */
+  var matterId=document.getElementById('draftMatterSelect').value;
+  if(matterId&&draftHeading.party1&&draftHeading.party2){
+    var m=matters.find(function(x){return x.id===matterId;});
+    if(m){
+      var newName=draftHeading.party1+' v '+draftHeading.party2;
+      if(newName!==m.name&&confirm('Update the matter name to "'+newName+'"?')){
+        api('/api/matters?id='+matterId,'PATCH',{name:newName}).then(function(){loadMatters();showToast('Matter name updated');}).catch(function(e){showToast('Error: '+e.message);});
+      }
+    }
+  }
 }
 function updateActionHeading(){
   var btn=document.getElementById('draftHeadingBtn');

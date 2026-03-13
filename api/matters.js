@@ -35,7 +35,9 @@ export default async function handler(req, res) {
           client: "",
           commencement_date: "",
           law_firm: "",
-          responsible_individual: ""
+          responsible_individual: "",
+          case_type_id: null,
+          subcategory_id: null
         })
         .select().single();
       if (error) throw error;
@@ -49,7 +51,7 @@ export default async function handler(req, res) {
       if (!matter || matter.owner_id !== user.id) return res.status(403).json({ error: "Only the owner can edit this matter" });
 
       const updates = {};
-      const fields = ["name", "nature", "issues", "acting_for", "client", "commencement_date", "law_firm", "responsible_individual"];
+      const fields = ["name", "nature", "issues", "acting_for", "client", "commencement_date", "law_firm", "responsible_individual", "case_type_id", "subcategory_id"];
       for (const f of fields) {
         if (body[f] !== undefined) updates[f] = body[f];
       }
@@ -64,7 +66,7 @@ export default async function handler(req, res) {
       const { data: matter } = await supabase.from("matters").select("owner_id").eq("id", id).single();
       if (!matter || matter.owner_id !== user.id) return res.status(403).json({ error: "Only the owner can delete this matter" });
       await supabase.from("matter_shares").delete().eq("matter_id", id);
-      await supabase.from("history").delete().eq("matter_id", id);
+      await supabase.from("conversation_history").delete().eq("matter_id", id);
       await supabase.from("chunks").delete().eq("matter_id", id);
       await supabase.from("documents").delete().eq("matter_id", id);
       await supabase.from("drafts").delete().eq("matter_id", id);

@@ -1032,11 +1032,62 @@ async function api(url,method,body){
   if(token)opts.headers['Authorization']='Bearer '+token;
   if(body)opts.body=JSON.stringify(body);
   var r=await fetch(url,opts);
+  /* v2.5: Token refresh — if 401, try to get a fresh token */
+  if(r.status===401&&token&&!url.includes('action=login')){
+    var refreshed=await tryRefreshToken();
+    if(refreshed){
+      opts.headers['Authorization']='Bearer '+token;
+      r=await fetch(url,opts);
+    }else{
+      token=null;localStorage.removeItem('elj_token');showLogin();
+      throw new Error('Session expired — please sign in again');
+    }
+  }
   var ct=r.headers.get('content-type')||'';
   if(!ct.includes('application/json')){var t=await r.text();throw new Error(t.slice(0,120));}
   var d=await r.json();
   if(!r.ok)throw new Error(d.error||'Request failed');
   return d;
+}
+
+/* v2.5: Try to refresh an expired token by re-verifying or re-authenticating */
+async function tryRefreshToken(){
+  /* First try: use the Supabase refresh token if stored */
+  var refreshToken=localStorage.getItem('elj_refresh_token');
+  if(refreshToken){
+    try{
+      var r=await fetch('/api/auth?action=refresh','POST',{headers:{'Content-Type':'application/json'},body:JSON.stringify({refresh_token:refreshToken})});
+      if(r&&r.ok){
+        var d=await r.json();
+        if(d.token){
+          token=d.token;
+          localStorage.setItem('elj_token',token);
+          if(d.refresh_token)localStorage.setItem('elj_refresh_token',d.refresh_token);
+          return true;
+        }
+      }
+    }catch(e){console.log('Refresh attempt failed:',e.message);}
+  }
+  /* Second try: if we have stored credentials, re-authenticate silently */
+  var storedEmail=localStorage.getItem('elj_email');
+  var storedPassB64=localStorage.getItem('elj_pass');
+  if(storedEmail&&storedPassB64){
+    try{
+      var storedPass=atob(storedPassB64);
+      var r2=await fetch('/api/auth?action=login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:storedEmail,password:storedPass})});
+      if(r2.ok){
+        var d2=await r2.json();
+        if(d2.token){
+          token=d2.token;
+          localStorage.setItem('elj_token',token);
+          if(d2.refresh_token)localStorage.setItem('elj_refresh_token',d2.refresh_token);
+          currentUser=d2.user;
+          return true;
+        }
+      }
+    }catch(e){console.log('Re-auth attempt failed:',e.message);}
+  }
+  return false;
 }
 
 /* ── INIT ────────────────────────────────────────────────────────────────── */
@@ -1051,7 +1102,7 @@ async function init(){
 }
 function showLogin(){document.getElementById('loginScreen').style.display='flex';document.getElementById('appShell').style.display='none';}
 function showApp(){document.getElementById('loginScreen').style.display='none';document.getElementById('appShell').style.display='flex';}
-async function logout(){token=null;localStorage.removeItem('elj_token');currentUser=null;currentMatter=null;showLogin();}
+async function logout(){token=null;localStorage.removeItem('elj_token');localStorage.removeItem('elj_email');localStorage.removeItem('elj_pass');localStorage.removeItem('elj_refresh_token');currentUser=null;currentMatter=null;showLogin();}
 
 /* ── AUTH ─────────────────────────────────────────────────────────────────── */
 document.getElementById('loginBtn').addEventListener('click',async function(){
@@ -1062,7 +1113,12 @@ document.getElementById('loginBtn').addEventListener('click',async function(){
   try{
     var d=await api('/api/auth?action=login','POST',{email:email,password:password});
     token=d.token;
-    if(document.getElementById('rememberMe').checked)localStorage.setItem('elj_token',token);
+    if(document.getElementById('rememberMe').checked){
+      localStorage.setItem('elj_token',token);
+      localStorage.setItem('elj_email',email);
+      localStorage.setItem('elj_pass',btoa(password));
+      if(d.refresh_token)localStorage.setItem('elj_refresh_token',d.refresh_token);
+    }
     currentUser=d.user;
     document.getElementById('userLabel').textContent=currentUser.name||currentUser.email;
     showApp();await loadMatters();await loadLibrary();

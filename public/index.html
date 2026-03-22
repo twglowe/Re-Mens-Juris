@@ -1026,7 +1026,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <div class="toast" style="display:none"></div>
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v3.0 — JAVASCRIPT
+   EX LIBRIS JURIS v3.1 — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -1551,9 +1551,41 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   if(needsFullScan){progressWrap.classList.add('on');progressLabel.textContent='Running '+toolLabel+'… (may take several minutes for large matters)';var pct=0;progressInterval=setInterval(function(){pct=Math.min(pct+1,90);progressFill.style.width=pct+'%';},2000);}
   var typing=document.createElement('div');typing.className='msg msg-assistant msg-tool';typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';msgsArea.appendChild(typing);msgsArea.scrollTop=msgsArea.scrollHeight;
   try{
-    var d=await api('/api/tools','POST',{tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',jurisdiction:jurisdiction,anchorDocNames:anchorDocNames,instructions:instructions});
+    /* v3.1: SSE streaming fetch */
+    var response=await fetch('/api/tools',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'text/event-stream'},body:JSON.stringify({tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',jurisdiction:jurisdiction,anchorDocNames:anchorDocNames,instructions:instructions})});
+    if(!response.ok&&!(response.headers.get('content-type')||'').includes('text/event-stream')){var errData=await response.json();throw new Error(errData.error||'Request failed');}
+    var reader=response.body.getReader();
+    var decoder=new TextDecoder();
+    var sseBuffer='';
+    var finalResult=null;
+    while(true){
+      var chunk=await reader.read();
+      if(chunk.done)break;
+      sseBuffer+=decoder.decode(chunk.value,{stream:true});
+      var sseLines=sseBuffer.split('\n');
+      sseBuffer=sseLines.pop();
+      var evtName='';
+      for(var li=0;li<sseLines.length;li++){
+        var line=sseLines[li].trim();
+        if(!line||line.startsWith(':'))continue;
+        if(line.startsWith('event: ')){evtName=line.slice(7);}
+        else if(line.startsWith('data: ')&&evtName){
+          try{
+            var evtData=JSON.parse(line.slice(6));
+            if(evtName==='progress'){
+              var pctCalc=Math.round((evtData.batch/Math.max(evtData.total,1))*85);
+              progressFill.style.width=pctCalc+'%';
+              var phaseLabel=evtData.phase==='extracting'?'Extracting':evtData.phase==='synthesising'?'Synthesising results':evtData.phase==='comparing'?'Comparing':'Analysing';
+              progressLabel.textContent=phaseLabel+'\u2026 batch '+evtData.batch+' of '+evtData.total;
+            }else if(evtName==='result'){finalResult=evtData;}
+            else if(evtName==='error'){throw new Error(evtData.error||'Tool failed');}
+          }catch(pe){if(evtName==='error')throw pe;}
+          evtName='';
+        }
+      }
+    }
     typing.remove();
-    if(d&&d.result){var isProp=toolName==='proposition';var costStr=d.usage&&d.usage.costUsd?' · $'+d.usage.costUsd.toFixed(4):'';var hId=await saveHistory(toolLabel+(instructions?': '+instructions:''),d.result,toolName);appendMsgTo(msgsArea,'assistant',d.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);}
+    if(finalResult&&finalResult.result){var isProp=toolName==='proposition';var costStr=finalResult.usage&&finalResult.usage.costUsd?' · $'+finalResult.usage.costUsd.toFixed(4):'';var hId=await saveHistory(toolLabel+(instructions?': '+instructions:''),finalResult.result,toolName);appendMsgTo(msgsArea,'assistant',finalResult.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);}
   }catch(e){typing.remove();var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';errEl.textContent='\u26A0\uFE0F Tool error: '+e.message;msgsArea.appendChild(errEl);}
   finally{if(progressInterval)clearInterval(progressInterval);progressFill.style.width='100%';setTimeout(function(){progressWrap.classList.remove('on');progressFill.style.width='0%';},800);}
 });
@@ -2115,8 +2147,38 @@ async function generateDraft(){
         docTypeName:dtName
       };
     }
-    var d=await api('/api/tools','POST',body);
-    var resultText=d&&(d.result||d.text||d.answer)||'';
+    /* v3.1: SSE streaming for draft generation */
+    var response=await fetch('/api/tools',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'text/event-stream'},body:JSON.stringify(body)});
+    if(!response.ok&&!(response.headers.get('content-type')||'').includes('text/event-stream')){var errData=await response.json();throw new Error(errData.error||'Request failed');}
+    var reader=response.body.getReader();
+    var decoder=new TextDecoder();
+    var sseBuffer='';
+    var finalResult=null;
+    while(true){
+      var chunk=await reader.read();
+      if(chunk.done)break;
+      sseBuffer+=decoder.decode(chunk.value,{stream:true});
+      var sseLines=sseBuffer.split('\n');
+      sseBuffer=sseLines.pop();
+      var evtName='';
+      for(var li=0;li<sseLines.length;li++){
+        var line=sseLines[li].trim();
+        if(!line||line.startsWith(':'))continue;
+        if(line.startsWith('event: ')){evtName=line.slice(7);}
+        else if(line.startsWith('data: ')&&evtName){
+          try{
+            var evtData=JSON.parse(line.slice(6));
+            if(evtName==='progress'){
+              var phaseLabel=evtData.phase==='extracting'?'Extracting':evtData.phase==='synthesising'?'Synthesising':'Analysing';
+              prog.textContent=phaseLabel+'\u2026 batch '+evtData.batch+' of '+evtData.total;
+            }else if(evtName==='result'){finalResult=evtData;}
+            else if(evtName==='error'){throw new Error(evtData.error||'Draft failed');}
+          }catch(pe){if(evtName==='error')throw pe;}
+          evtName='';
+        }
+      }
+    }
+    var resultText=finalResult&&finalResult.result||'';
     /* Show the editor */
     document.getElementById('draftInstructionsBody').style.display='none';
     var outputWrap=document.getElementById('draftOutputWrap');

@@ -55,6 +55,10 @@ export default async function handler(req, res) {
       for (const f of fields) {
         if (body[f] !== undefined) updates[f] = body[f];
       }
+      /* v3.2: heading_data is JSONB — store as-is */
+      if (body.heading_data !== undefined) {
+        updates.heading_data = body.heading_data;
+      }
 
       const { error } = await supabase.from("matters").update(updates).eq("id", id);
       if (error) throw error;

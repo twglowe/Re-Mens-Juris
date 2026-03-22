@@ -606,7 +606,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <button class="tool-btn" onclick="openTool('inconsistency')">🔍 Inconsistency</button>
           <button class="tool-btn" onclick="openTool('proposition')">🎯 Proposition Finder</button>
           <button class="tool-btn" onclick="openTool('chronology')">📅 Chronology</button>
-          <button class="tool-btn" onclick="openTool('persons')">👥 Persons Index</button>
+          <button class="tool-btn" onclick="openTool('persons')">👥 Dramatis Personae</button>
           <button class="tool-btn" onclick="openTool('issues')">⚖ Issue Tracker</button>
           <button class="tool-btn" onclick="openTool('citations')">📚 Citations</button>
           <button class="tool-btn" onclick="openTool('briefing')">📋 Briefing Note</button>
@@ -1026,7 +1026,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <div class="toast" style="display:none"></div>
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v3.1 — JAVASCRIPT
+   EX LIBRIS JURIS v3.2 — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -1220,6 +1220,7 @@ function renderMatterRecord(){
   var panel=document.getElementById('matterRecordPanel');
   if(!currentMatter){panel.innerHTML='<div style="font-size:.82rem;color:var(--text-faint);font-style:italic;padding:.5rem 0">Select a matter to view its record.</div>';return;}
   var m=currentMatter;
+  var hd=m.heading_data||{};
   panel.innerHTML=
     '<div class="mr-box"><div class="mr-box-label">Client</div><input id="mrClient" value="'+esc(m.client||'')+'" placeholder="Client name…"></div>'
     +'<div class="mr-box"><div class="mr-box-label">Case Type</div>'
@@ -1235,6 +1236,12 @@ function renderMatterRecord(){
     +'<div style="display:flex;gap:.3rem"><select id="mrLawFirm" style="flex:1;padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:5px;font-size:.85rem"><option value="">— Select —</option></select>'
     +'<button class="lib-box-btn" onclick="addLawFirm()" title="Add firm">+</button></div></div>'
     +'<div class="mr-box"><div class="mr-box-label">Responsible Individual</div><input id="mrResponsible" value="'+esc(m.responsible_individual||'')+'" placeholder="Name…"></div>'
+    +'<div class="mr-box" style="border:2px solid var(--blue-light);background:var(--blue-faint)"><div class="mr-box-label" style="color:var(--blue);font-size:.72rem">⚖ Court Heading (appears on all tool outputs)</div>'
+    +'<input id="mrHdCourt" value="'+esc(hd.court||'')+'" placeholder="e.g. IN THE SUPREME COURT OF BERMUDA" style="margin-bottom:.3rem">'
+    +'<input id="mrHdCaseNo" value="'+esc(hd.caseNo||'')+'" placeholder="e.g. Civil Jurisdiction 2024 No. 123" style="margin-bottom:.3rem">'
+    +'<div style="display:flex;gap:.3rem;margin-bottom:.3rem"><input id="mrHdParty1" value="'+esc(hd.party1||'')+'" placeholder="Party 1 name" style="flex:1"><input id="mrHdParty1Role" value="'+esc(hd.party1Role||'')+'" placeholder="Role (e.g. Plaintiff)" style="width:100px"></div>'
+    +'<div style="display:flex;gap:.3rem;margin-bottom:.3rem"><input id="mrHdParty2" value="'+esc(hd.party2||'')+'" placeholder="Party 2 name" style="flex:1"><input id="mrHdParty2Role" value="'+esc(hd.party2Role||'')+'" placeholder="Role (e.g. Defendant)" style="width:100px"></div>'
+    +'</div>'
     +'<button class="mr-save-btn" onclick="saveMatterRecord()">Save Record</button>';
   loadLawFirms();
   loadMrCaseTypes();
@@ -1270,13 +1277,22 @@ async function addLawFirm(){
 async function saveMatterRecord(){
   if(!currentMatter)return;
   try{
+    var headingData={
+      court:(document.getElementById('mrHdCourt')?document.getElementById('mrHdCourt').value.trim():''),
+      caseNo:(document.getElementById('mrHdCaseNo')?document.getElementById('mrHdCaseNo').value.trim():''),
+      party1:(document.getElementById('mrHdParty1')?document.getElementById('mrHdParty1').value.trim():''),
+      party1Role:(document.getElementById('mrHdParty1Role')?document.getElementById('mrHdParty1Role').value.trim():''),
+      party2:(document.getElementById('mrHdParty2')?document.getElementById('mrHdParty2').value.trim():''),
+      party2Role:(document.getElementById('mrHdParty2Role')?document.getElementById('mrHdParty2Role').value.trim():'')
+    };
     await api('/api/matters?id='+currentMatter.id,'PATCH',{
       client:document.getElementById('mrClient').value.trim(),
       commencement_date:document.getElementById('mrDate').value,
       law_firm:document.getElementById('mrLawFirm').value,
       responsible_individual:document.getElementById('mrResponsible').value.trim(),
       case_type_id:document.getElementById('mrCaseType').value||null,
-      subcategory_id:document.getElementById('mrStage').value||null
+      subcategory_id:document.getElementById('mrStage').value||null,
+      heading_data:headingData
     });
     await loadMatters();
     currentMatter=matters.find(function(m){return m.id===currentMatter.id;})||currentMatter;
@@ -1411,24 +1427,26 @@ async function uploadFiles(files){
     var file=files[fi];
     prog.textContent='Extracting text: '+file.name+'…';prog.classList.add('on');
     try{
-      var text=await extractPdfText(file);
-      if(!text||text.trim().length<50){errEl.textContent='No readable text in '+file.name+'. Try OCR at ilovepdf.com first.';errEl.classList.add('on');continue;}
-      prog.textContent='Uploading: '+file.name+' ('+Math.round(text.length/1024)+'KB text)…';
-      var d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,textContent:text,docType:docType});
-      if(d)showToast('\u2713 '+file.name+' — '+d.chunks+' passages indexed');
+      var pages=await extractPdfText(file);
+      var fullText=pages.map(function(p){return p.text;}).join('\n\n');
+      if(!fullText||fullText.trim().length<50){errEl.textContent='No readable text in '+file.name+'. Try OCR at ilovepdf.com first.';errEl.classList.add('on');continue;}
+      prog.textContent='Uploading: '+file.name+' ('+Math.round(fullText.length/1024)+'KB text, '+pages.length+' pages)…';
+      var d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,pageTexts:pages,docType:docType});
+      if(d)showToast('\u2713 '+file.name+' — '+d.chunks+' passages indexed'+(d.pageAware?' (page-aware)':''));
     }catch(e){errEl.textContent='Failed: '+file.name+' — '+e.message;errEl.classList.add('on');}
   }
   prog.classList.remove('on');await loadDocuments(currentMatter.id);await loadMatters();
 }
+/* v3.2: Extract text per page for page-aware chunking */
 async function extractPdfText(file){
   var pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
   if(!pdfjsLib)throw new Error('PDF library not loaded. Refresh and try again.');
   pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   var buf=await file.arrayBuffer();
   var pdf=await pdfjsLib.getDocument({data:buf}).promise;
-  var allText=[];
-  for(var i=1;i<=pdf.numPages;i++){var page=await pdf.getPage(i);var tc=await page.getTextContent();var pageText=tc.items.map(function(item){return item.str;}).join(' ');allText.push(pageText);}
-  return allText.join('\n\n');
+  var pages=[];
+  for(var i=1;i<=pdf.numPages;i++){var page=await pdf.getPage(i);var tc=await page.getTextContent();var pageText=tc.items.map(function(item){return item.str;}).join(' ');pages.push({page:i,text:pageText});}
+  return pages;
 }
 /* ── CHAT ─────────────────────────────────────────────────────────────────── */
 async function sendMessage(){
@@ -1460,11 +1478,18 @@ function clearChat(){clearMessages();if(currentMatter)sysMsg('Chat cleared. Docu
 var toolDefs={
   inconsistency:{title:'🔍 Inconsistency Tracker',body:function(){return '<p class="tool-desc">Select anchor documents (your baseline factual position). The system finds all contradictions in the remaining documents.</p><div class="focus-label">Anchor Documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to compare all)</span></div><div class="anchor-list" id="anchorList">'+documents.map(function(d){return '<label class="anchor-item"><input type="checkbox" value="'+esc(d.name)+'"> '+esc(d.name)+' <span style="color:var(--text-faint);font-size:.72rem">['+d.doc_type+']</span></label>';}).join('')+'</div><div class="focus-label" style="margin-top:.85rem">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the dates of payments"></textarea>';}},
   proposition:{title:'🎯 Proposition Evidence Finder',body:function(){return '<p class="tool-desc">State a proposition or factual assertion. The system finds all evidence supporting or contradicting it and grades each reference by strength.</p><div class="focus-label">Proposition or Statement</div><textarea id="toolInstructions" placeholder="e.g. The defendant had knowledge of the transactions before 1 January 2023" style="min-height:80px"></textarea>';}},
-  chronology:{title:'📅 Chronology Builder',body:function(){return '<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology.</p><div class="focus-label">Focus or Date Range <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on events after January 2022"></textarea>';}},
-  persons:{title:'👥 Persons & Entities Index',body:function(){return '<p class="tool-desc">Identifies every person and entity across all documents — with organisational and procedural roles auto-detected.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the directors and shareholders"></textarea>';}},
+  chronology:{title:'📅 Chronology Builder',body:function(){return '<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology with page and paragraph references.</p>'
+    +'<div class="focus-label">Date Range <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional — any format)</span></div>'
+    +'<input type="text" id="chronoDateRange" class="f-input" style="margin-bottom:.6rem;padding:.5rem .7rem;font-size:.88rem" placeholder="e.g. January 2020 to March 2023, or after 1 Jan 2022">'
+    +'<div class="focus-label">Focus on Individuals or Entities <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>'
+    +'<input type="text" id="chronoEntities" class="f-input" style="margin-bottom:.6rem;padding:.5rem .7rem;font-size:.88rem" placeholder="e.g. John Smith, Acme Ltd — comma-separated">'
+    +'<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem"><input type="checkbox" id="chronoCorresFilter" style="width:16px;height:16px;accent-color:var(--blue)"><label for="chronoCorresFilter" style="font-size:.82rem;color:var(--text-mid);font-weight:500;cursor:pointer">Only include correspondence if referenced in a pleading or affidavit</label></div>'
+    +'<div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>'
+    +'<textarea id="toolInstructions" placeholder="e.g. Focus on the share transfer events"></textarea>';}},
+  persons:{title:'👥 Dramatis Personae',body:function(){return '<p class="tool-desc">Identifies every person and entity across all documents with descriptions and references. Excludes attorneys and judges. References are ordered: first in pleadings/petitions, then in affidavits.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the directors and shareholders"></textarea>';}},
   issues:{title:'⚖ Issue Tracker',body:function(){return '<p class="tool-desc">Maps every legal and factual issue and assesses the supporting evidence for each party.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the limitation defence"></textarea>';}},
   citations:{title:'📚 Citation Checker',body:function(){return '<p class="tool-desc">Checks citations in skeleton arguments and pleadings against uploaded judgments.</p><p style="font-size:.84rem;color:var(--text-faint)">Upload the relevant case law before running this tool.</p>';}},
-  briefing:{title:'📋 Briefing Note',body:function(){return '<p class="tool-desc">Produces a structured briefing note covering background, parties, claim, key facts, legal issues, evidence, procedural position and next steps.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Written for a colleague unfamiliar with the matter"></textarea>';}}
+  briefing:{title:'📋 Briefing Note',body:function(){return '<p class="tool-desc">Produces a structured briefing note: sets out the issues, explains common ground and admissions, then analyses how the case can be established on disputed matters.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Written for a colleague unfamiliar with the matter"></textarea>';}}
 };
 
 /* ── TAB MANAGEMENT ──────────────────────────────────────────────────────── */
@@ -1532,12 +1557,19 @@ function showToolResult(toolName){
   return msgs;
 }
 
-/* ── TOOL EXECUTION ──────────────────────────────────────────────────────── */
+/* ── TOOL EXECUTION (v3.2: SSE streaming + chronology params + heading) ── */
 document.getElementById('toolRunBtn').addEventListener('click',async function(){
   if(!pendingTool||!currentMatter)return;
   var instructions=document.getElementById('toolInstructions')?document.getElementById('toolInstructions').value.trim():'';
   var anchorDocNames=[];
   if(pendingTool==='inconsistency'){document.querySelectorAll('#anchorList input:checked').forEach(function(cb){anchorDocNames.push(cb.value);});}
+  /* v3.2: Chronology extra params */
+  var chronologyDateRange='';var chronologyEntities='';var chronologyCorrespondenceFilter=false;
+  if(pendingTool==='chronology'){
+    var drEl=document.getElementById('chronoDateRange');if(drEl)chronologyDateRange=drEl.value.trim();
+    var enEl=document.getElementById('chronoEntities');if(enEl)chronologyEntities=enEl.value.trim();
+    var cfEl=document.getElementById('chronoCorresFilter');if(cfEl)chronologyCorrespondenceFilter=cfEl.checked;
+  }
   closeModal('toolModal');
   var toolName=pendingTool;
   var toolLabel=toolDefs[toolName]?toolDefs[toolName].title:toolName;
@@ -1551,41 +1583,50 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   if(needsFullScan){progressWrap.classList.add('on');progressLabel.textContent='Running '+toolLabel+'… (may take several minutes for large matters)';var pct=0;progressInterval=setInterval(function(){pct=Math.min(pct+1,90);progressFill.style.width=pct+'%';},2000);}
   var typing=document.createElement('div');typing.className='msg msg-assistant msg-tool';typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';msgsArea.appendChild(typing);msgsArea.scrollTop=msgsArea.scrollHeight;
   try{
-    /* v3.1: SSE streaming fetch */
-    var response=await fetch('/api/tools',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'text/event-stream'},body:JSON.stringify({tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',jurisdiction:jurisdiction,anchorDocNames:anchorDocNames,instructions:instructions})});
-    if(!response.ok&&!(response.headers.get('content-type')||'').includes('text/event-stream')){var errData=await response.json();throw new Error(errData.error||'Request failed');}
-    var reader=response.body.getReader();
-    var decoder=new TextDecoder();
-    var sseBuffer='';
+    var body={tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',jurisdiction:jurisdiction,anchorDocNames:anchorDocNames,instructions:instructions};
+    if(chronologyDateRange)body.chronologyDateRange=chronologyDateRange;
+    if(chronologyEntities)body.chronologyEntities=chronologyEntities;
+    if(chronologyCorrespondenceFilter)body.chronologyCorrespondenceFilter=true;
+    /* v3.2: SSE streaming fetch */
     var finalResult=null;
-    while(true){
-      var chunk=await reader.read();
-      if(chunk.done)break;
-      sseBuffer+=decoder.decode(chunk.value,{stream:true});
-      var sseLines=sseBuffer.split('\n');
-      sseBuffer=sseLines.pop();
-      var evtName='';
-      for(var li=0;li<sseLines.length;li++){
-        var line=sseLines[li].trim();
-        if(!line||line.startsWith(':'))continue;
-        if(line.startsWith('event: ')){evtName=line.slice(7);}
-        else if(line.startsWith('data: ')&&evtName){
-          try{
-            var evtData=JSON.parse(line.slice(6));
-            if(evtName==='progress'){
-              var pctCalc=Math.round((evtData.batch/Math.max(evtData.total,1))*85);
-              progressFill.style.width=pctCalc+'%';
-              var phaseLabel=evtData.phase==='extracting'?'Extracting':evtData.phase==='synthesising'?'Synthesising results':evtData.phase==='comparing'?'Comparing':'Analysing';
-              progressLabel.textContent=phaseLabel+'\u2026 batch '+evtData.batch+' of '+evtData.total;
-            }else if(evtName==='result'){finalResult=evtData;}
-            else if(evtName==='error'){throw new Error(evtData.error||'Tool failed');}
-          }catch(pe){if(evtName==='error')throw pe;}
-          evtName='';
+    var tok=token||localStorage.getItem('elj_token');
+    var response=await fetch('/api/tools',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok,'Accept':'text/event-stream'},body:JSON.stringify(body)});
+    if(!response.ok){var errText=await response.text();try{var ej=JSON.parse(errText);throw new Error(ej.error||'Tool failed');}catch(pe){if(pe.message&&pe.message!=='Tool failed')throw pe;throw new Error(errText.slice(0,120));}}
+    var ct=response.headers.get('content-type')||'';
+    if(ct.indexOf('text/event-stream')!==-1){
+      var reader=response.body.getReader();var decoder=new TextDecoder();var buf='';
+      while(true){
+        var chunk=await reader.read();if(chunk.done)break;
+        buf+=decoder.decode(chunk.value,{stream:true});
+        var lines=buf.split('\n');buf=lines.pop();
+        var evtName='';
+        for(var li=0;li<lines.length;li++){
+          var line=lines[li];
+          if(line.indexOf('event: ')===0)evtName=line.slice(7).trim();
+          else if(line.indexOf('data: ')===0){
+            var raw=line.slice(6);
+            try{var evtData=JSON.parse(raw);
+              if(evtName==='progress'){
+                var phase=evtData.phase||'';var bn=evtData.batch||0;var bt=evtData.total||0;
+                var phaseLabel=phase==='extracting'?'Extracting':phase==='synthesising'?'Synthesising results':phase==='comparing'?'Comparing':phase==='analysing'?'Analysing':'Processing';
+                progressLabel.textContent=phaseLabel+'… batch '+bn+' of '+bt;
+                if(bt>0)progressFill.style.width=Math.round((bn/bt)*90)+'%';
+              }else if(evtName==='result'){finalResult=evtData;}
+              else if(evtName==='error'){throw new Error(evtData.error||'Tool failed');}
+            }catch(pe2){if(pe2.message&&pe2.message!=='Tool failed')throw pe2;}
+            evtName='';
+          }
         }
       }
+    }else{
+      /* JSON fallback (non-SSE) */
+      var d=await response.json();
+      if(d.error)throw new Error(d.error);
+      finalResult=d;
     }
     typing.remove();
     if(finalResult&&finalResult.result){var isProp=toolName==='proposition';var costStr=finalResult.usage&&finalResult.usage.costUsd?' · $'+finalResult.usage.costUsd.toFixed(4):'';var hId=await saveHistory(toolLabel+(instructions?': '+instructions:''),finalResult.result,toolName);appendMsgTo(msgsArea,'assistant',finalResult.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);}
+    else{typing.remove();var noRes=document.createElement('div');noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem;';noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);}
   }catch(e){typing.remove();var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';errEl.textContent='\u26A0\uFE0F Tool error: '+e.message;msgsArea.appendChild(errEl);}
   finally{if(progressInterval)clearInterval(progressInterval);progressFill.style.width='100%';setTimeout(function(){progressWrap.classList.remove('on');progressFill.style.width='0%';},800);}
 });
@@ -2123,7 +2164,7 @@ async function generateDraft(){
   var stId=document.getElementById('draftStage').value;
   /* Show progress */
   document.getElementById('draftGenerateBtn').disabled=true;
-  var prog=document.getElementById('draftProgressMsg');prog.style.display='';
+  var prog=document.getElementById('draftProgressMsg');prog.style.display='';prog.textContent='Generating draft… this may take several minutes.';
   try{
     var body={matterId:matterId,tool:'draft',instructions:instructions,jurisdiction:jurisdiction,actingFor:'',courtHeading:draftHeading};
     if(ctId)body.caseTypeId=ctId;
@@ -2147,38 +2188,39 @@ async function generateDraft(){
         docTypeName:dtName
       };
     }
-    /* v3.1: SSE streaming for draft generation */
-    var response=await fetch('/api/tools',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'text/event-stream'},body:JSON.stringify(body)});
-    if(!response.ok&&!(response.headers.get('content-type')||'').includes('text/event-stream')){var errData=await response.json();throw new Error(errData.error||'Request failed');}
-    var reader=response.body.getReader();
-    var decoder=new TextDecoder();
-    var sseBuffer='';
+    /* v3.2: SSE streaming fetch */
     var finalResult=null;
-    while(true){
-      var chunk=await reader.read();
-      if(chunk.done)break;
-      sseBuffer+=decoder.decode(chunk.value,{stream:true});
-      var sseLines=sseBuffer.split('\n');
-      sseBuffer=sseLines.pop();
-      var evtName='';
-      for(var li=0;li<sseLines.length;li++){
-        var line=sseLines[li].trim();
-        if(!line||line.startsWith(':'))continue;
-        if(line.startsWith('event: ')){evtName=line.slice(7);}
-        else if(line.startsWith('data: ')&&evtName){
-          try{
-            var evtData=JSON.parse(line.slice(6));
-            if(evtName==='progress'){
-              var phaseLabel=evtData.phase==='extracting'?'Extracting':evtData.phase==='synthesising'?'Synthesising':'Analysing';
-              prog.textContent=phaseLabel+'\u2026 batch '+evtData.batch+' of '+evtData.total;
-            }else if(evtName==='result'){finalResult=evtData;}
-            else if(evtName==='error'){throw new Error(evtData.error||'Draft failed');}
-          }catch(pe){if(evtName==='error')throw pe;}
-          evtName='';
+    var tok=token||localStorage.getItem('elj_token');
+    var response=await fetch('/api/tools',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok,'Accept':'text/event-stream'},body:JSON.stringify(body)});
+    if(!response.ok){var errText=await response.text();try{var ej=JSON.parse(errText);throw new Error(ej.error||'Draft failed');}catch(pe){if(pe.message&&pe.message!=='Draft failed')throw pe;throw new Error(errText.slice(0,120));}}
+    var rct=response.headers.get('content-type')||'';
+    if(rct.indexOf('text/event-stream')!==-1){
+      var reader=response.body.getReader();var decoder=new TextDecoder();var buf='';
+      while(true){
+        var chunk=await reader.read();if(chunk.done)break;
+        buf+=decoder.decode(chunk.value,{stream:true});
+        var lines=buf.split('\n');buf=lines.pop();
+        var evtName='';
+        for(var li=0;li<lines.length;li++){
+          var line=lines[li];
+          if(line.indexOf('event: ')===0)evtName=line.slice(7).trim();
+          else if(line.indexOf('data: ')===0){
+            var raw=line.slice(6);
+            try{var evtData=JSON.parse(raw);
+              if(evtName==='progress'){prog.textContent=(evtData.phase||'Processing')+'… batch '+(evtData.batch||0)+' of '+(evtData.total||0);}
+              else if(evtName==='result'){finalResult=evtData;}
+              else if(evtName==='error'){throw new Error(evtData.error||'Draft failed');}
+            }catch(pe2){if(pe2.message&&pe2.message!=='Draft failed')throw pe2;}
+            evtName='';
+          }
         }
       }
+    }else{
+      var d=await response.json();
+      if(d.error)throw new Error(d.error);
+      finalResult=d;
     }
-    var resultText=finalResult&&finalResult.result||'';
+    var resultText=finalResult&&(finalResult.result||finalResult.text||finalResult.answer)||'';
     /* Show the editor */
     document.getElementById('draftInstructionsBody').style.display='none';
     var outputWrap=document.getElementById('draftOutputWrap');

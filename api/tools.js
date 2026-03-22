@@ -22,9 +22,10 @@ async function getUser(req) {
   }
 }
 
+/* v3.2: Now selects page_number for page references */
 async function getAllChunks(matterId, docTypes = null, limit = 2000) {
   let query = supabase.from("chunks")
-    .select("content, document_name, doc_type")
+    .select("content, document_name, doc_type, chunk_index, page_number")
     .eq("matter_id", matterId)
     .order("chunk_index", { ascending: true })
     .limit(limit);
@@ -37,19 +38,20 @@ async function getAllChunks(matterId, docTypes = null, limit = 2000) {
 function chunksToDocMap(chunks) {
   const byDoc = {};
   for (const c of chunks) {
-    if (!byDoc[c.document_name]) byDoc[c.document_name] = { type: c.doc_type, text: "" };
+    if (!byDoc[c.document_name]) byDoc[c.document_name] = { type: c.doc_type, text: "", pages: [] };
     byDoc[c.document_name].text += c.content + "\n\n";
+    if (c.page_number != null) {
+      byDoc[c.document_name].pages.push({ chunkIndex: c.chunk_index, page: c.page_number, snippet: c.content.slice(0, 80) });
+    }
   }
   return byDoc;
 }
 
-// v3.0: Larger batch size (60k) = fewer batches = fewer API calls = faster
 function batchDocs(byDoc, maxChars = 60000) {
   const batches = [];
   let current = {};
   let currentSize = 0;
   for (const [name, data] of Object.entries(byDoc)) {
-    // Truncate very large individual docs to 50k chars
     const truncated = data.text.length > 50000 ? data.text.slice(0, 50000) + '\n[...truncated for processing...]' : data.text;
     const docData = { ...data, text: truncated };
     const docSize = truncated.length + name.length + 50;
@@ -65,11 +67,37 @@ function batchDocs(byDoc, maxChars = 60000) {
   return batches;
 }
 
+/* v3.2: docsToText now includes page references when available */
 function docsToText(byDoc) {
-  return Object.entries(byDoc).map(([n, d]) => `=== ${n} [${d.type}] ===\n${d.text}`).join("\n\n");
+  return Object.entries(byDoc).map(([n, d]) => {
+    let header = `=== ${n} [${d.type}] ===`;
+    if (d.pages && d.pages.length > 0) {
+      const pageRange = d.pages.map(p => p.page);
+      const minPage = Math.min(...pageRange);
+      const maxPage = Math.max(...pageRange);
+      header += ` (pages ${minPage}–${maxPage})`;
+    }
+    return `${header}\n${d.text}`;
+  }).join("\n\n");
 }
 
-// v3.0: Extraction uses fewer output tokens (4096); synthesis gets full 8192
+/* v3.2: Build page reference index for a docMap */
+function buildPageIndex(byDoc) {
+  const lines = [];
+  for (const [name, data] of Object.entries(byDoc)) {
+    if (data.pages && data.pages.length > 0) {
+      const grouped = {};
+      for (const p of data.pages) {
+        if (!grouped[p.page]) grouped[p.page] = [];
+        grouped[p.page].push(p.chunkIndex + 1);
+      }
+      const refs = Object.entries(grouped).map(([pg, idxs]) => `p.${pg} (¶${idxs.join(',')})`).join(', ');
+      lines.push(`${name}: ${refs}`);
+    }
+  }
+  return lines.length > 0 ? '\n\nPAGE REFERENCE INDEX:\n' + lines.join('\n') : '';
+}
+
 async function runTool(system, userPrompt, maxTokens = 8192) {
   const response = await anthropic.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
@@ -84,7 +112,7 @@ async function runTool(system, userPrompt, maxTokens = 8192) {
   return { text, inputTokens, outputTokens, cost };
 }
 
-// v3.0: Non-streaming fallback — kept for clients that do not send Accept: text/event-stream
+/* v3.0: Original batched runner (non-SSE fallback) */
 async function runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc) {
   const batches = batchDocs(byDoc);
   let totalInput = 0, totalOutput = 0, totalCost = 0;
@@ -102,50 +130,52 @@ async function runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc) {
     }));
     for (const r of results) {
       extracts.push(r.text);
-      totalInput += r.inputTokens;
-      totalOutput += r.outputTokens;
-      totalCost += r.cost;
+      totalInput += r.inputTokens; totalOutput += r.outputTokens; totalCost += r.cost;
     }
   }
   const combinedExtracts = extracts.map((e, i) => `=== BATCH ${i+1} FINDINGS ===\n${e}`).join("\n\n");
   const r = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length));
-  totalInput += r.inputTokens;
-  totalOutput += r.outputTokens;
-  totalCost += r.cost;
+  totalInput += r.inputTokens; totalOutput += r.outputTokens; totalCost += r.cost;
   return { text: r.text, inputTokens: totalInput, outputTokens: totalOutput, cost: totalCost };
 }
 
-// v3.1: SSE streaming version — sends progress events to the frontend
+/* v3.1: SSE-aware batched runner */
 async function runBatchedStreaming(systemBase, extractPromptFn, synthPromptFn, byDoc, sendEvent) {
   const batches = batchDocs(byDoc);
   let totalInput = 0, totalOutput = 0, totalCost = 0;
   sendEvent('batches', { total: batches.length });
-
   if (batches.length === 1) {
     sendEvent('progress', { phase: 'analysing', batch: 1, total: 1 });
     const r = await runTool(systemBase, synthPromptFn(docsToText(batches[0]), null));
     return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cost: r.cost };
   }
-
   const extracts = [];
   const PARALLEL = 4;
   for (let i = 0; i < batches.length; i += PARALLEL) {
-    const slice = batches.slice(i, i + PARALLEL);
     sendEvent('progress', { phase: 'extracting', batch: i + 1, total: batches.length });
+    const slice = batches.slice(i, i + PARALLEL);
     const results = await Promise.all(slice.map((batch, j) => {
-      return runTool(systemBase, extractPromptFn(docsToText(batch), i + j + 1, batches.length), 4096);
+      const batchText = docsToText(batch);
+      return runTool(systemBase, extractPromptFn(batchText, i + j + 1, batches.length), 4096);
     }));
     for (const r of results) {
       extracts.push(r.text);
       totalInput += r.inputTokens; totalOutput += r.outputTokens; totalCost += r.cost;
     }
   }
-
   sendEvent('progress', { phase: 'synthesising', batch: batches.length, total: batches.length });
   const combinedExtracts = extracts.map((e, i) => `=== BATCH ${i+1} FINDINGS ===\n${e}`).join("\n\n");
   const r = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length));
   totalInput += r.inputTokens; totalOutput += r.outputTokens; totalCost += r.cost;
   return { text: r.text, inputTokens: totalInput, outputTokens: totalOutput, cost: totalCost };
+}
+
+/* v3.1: Picks streaming or non-streaming runner */
+async function doBatched(systemBase, extractPromptFn, synthPromptFn, byDoc, sendEvent) {
+  if (sendEvent) {
+    return runBatchedStreaming(systemBase, extractPromptFn, synthPromptFn, byDoc, sendEvent);
+  }
+  return runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc);
 }
 
 async function logUsage(matterId, userId, toolName, inputTokens, outputTokens, cost) {
@@ -186,7 +216,8 @@ export default async function handler(req, res) {
 
   const { tool, matterId, matterName, matterNature, matterIssues, jurisdiction,
           anchorDocNames, instructions, actingFor, courtHeading,
-          citationSource, citationTargets } = req.body;
+          citationSource, citationTargets,
+          chronologyDateRange, chronologyEntities, chronologyCorrespondenceFilter } = req.body;
 
   if (!tool || !matterId) return res.status(400).json({ error: "tool and matterId required" });
 
@@ -197,33 +228,47 @@ export default async function handler(req, res) {
     actingFor ? `Acting for: ${actingFor}` : "",
   ].filter(Boolean).join("\n");
 
-  // v3.1: SSE setup — check if client wants streaming
+  /* v3.2: Get heading from matter record if not passed directly */
+  let heading = courtHeading || null;
+  if (!heading) {
+    try {
+      const { data: matterRow } = await supabase.from("matters")
+        .select("heading_data")
+        .eq("id", matterId).single();
+      if (matterRow && matterRow.heading_data && (matterRow.heading_data.court || matterRow.heading_data.party1)) {
+        heading = matterRow.heading_data;
+      }
+    } catch (e) { /* no heading — fine */ }
+  }
+  const headingText = heading ? formatCourtHeading(heading) : "";
+
+  /* v3.1: SSE setup */
   const useSSE = req.headers.accept === 'text/event-stream';
-  let sendEvent, endStream, pingInterval;
+  let sendEvent = null;
+  let endStream = null;
+
   if (useSSE) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no',
     });
+
     sendEvent = (event, data) => {
-      try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); }
-      catch (e) { /* connection closed */ }
+      try {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      } catch (e) { /* connection closed */ }
     };
-    pingInterval = setInterval(() => {
-      try { res.write(': keep-alive\n\n'); } catch (e) { /* connection closed */ }
+
+    const keepAlive = setInterval(() => {
+      try { res.write(': ping\n\n'); } catch (e) { clearInterval(keepAlive); }
     }, 25000);
+
     endStream = () => {
-      if (pingInterval) clearInterval(pingInterval);
+      clearInterval(keepAlive);
       try { res.end(); } catch (e) { /* already closed */ }
     };
   }
-
-  // v3.1: helper — picks streaming or non-streaming runBatched
-  const doBatched = (sys, extractFn, synthFn, docs) =>
-    useSSE ? runBatchedStreaming(sys, extractFn, synthFn, docs, sendEvent)
-           : runBatched(sys, extractFn, synthFn, docs);
 
   try {
     let result = "";
@@ -237,14 +282,15 @@ export default async function handler(req, res) {
       }
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
+      const pageIndex = buildPageIndex(byDoc);
       const systemBase = `You are a senior litigation counsel in ${jur} conducting an evidence assessment for the matter "${matterName}".\n${matterContext}`;
       const r = await doBatched(
         systemBase,
-        (batchText, batchNum, total) => `PROPOSITION: "${instructions}"\n\nBatch ${batchNum} of ${total}. Extract ALL relevant passages — supporting, contradicting, or neutral.\n\nFor each:\n### [Document] — [Brief description]\nGRADE: [1-5]\n[Relevant passage]\n**Analysis:** [Relevance to proposition]\n\nGrading: 5=strong direct, 4=good supportive, 3=moderate indirect, 2=weak tangential, 1=contrary\n\nDOCUMENTS:\n\n${batchText}`,
+        (batchText, batchNum, total) => `PROPOSITION: "${instructions}"\n\nBatch ${batchNum} of ${total}. Extract ALL relevant passages — supporting, contradicting, or neutral.\n\nFor each:\n### [Document] — [Brief description]\nGRADE: [1-5]\n[Relevant passage]\n**Analysis:** [Relevance to proposition]\n**Reference:** [page and paragraph if available]\n\nGrading: 5=strong direct, 4=good supportive, 3=moderate indirect, 2=weak tangential, 1=contrary${pageIndex}\n\nDOCUMENTS:\n\n${batchText}`,
         (combined, numBatches) => numBatches
-          ? `PROPOSITION: "${instructions}"\n\nSynthesise findings from ${numBatches} batches into a single evidence assessment.\n\nRetain format:\n### [Document] — [Description]\nGRADE: [1-5]\n[Passage]\n**Analysis:** [Relevance]\n\nThen:\n## Overall Assessment\nStrength of evidence for/against and view on balance of probabilities.\n\n⚠️ Professional Caution: AI-generated analysis. Verify all passages before reliance.\n\nFINDINGS:\n\n${combined}`
-          : `PROPOSITION: "${instructions}"\n\nFind ALL evidence — supporting, contradicting, or neutral.\n\n### [Document] — [Description]\nGRADE: [1-5] (5=strong direct, 4=good supportive, 3=moderate indirect, 2=weak tangential, 1=contrary)\n[Relevant passage]\n**Analysis:** [Relevance]\n\n## Overall Assessment\nSummary and preliminary view.\n\n⚠️ Professional Caution: AI-generated. Verify all passages before reliance.\n\nDOCUMENTS:\n\n${combined}`,
-        byDoc
+          ? `PROPOSITION: "${instructions}"\n\nSynthesise findings from ${numBatches} batches into a single evidence assessment.\n\nRetain format:\n### [Document] — [Description]\nGRADE: [1-5]\n[Passage]\n**Analysis:** [Relevance]\n**Reference:** [page and paragraph]\n\nThen:\n## Overall Assessment\nStrength of evidence for/against and view on balance of probabilities.\n\n⚠️ Professional Caution: AI-generated analysis. Verify all passages before reliance.\n\nFINDINGS:\n\n${combined}`
+          : `PROPOSITION: "${instructions}"\n\nFind ALL evidence — supporting, contradicting, or neutral.\n\n### [Document] — [Description]\nGRADE: [1-5] (5=strong direct, 4=good supportive, 3=moderate indirect, 2=weak tangential, 1=contrary)\n[Relevant passage]\n**Analysis:** [Relevance]\n**Reference:** [page and paragraph if available]\n\n## Overall Assessment\nSummary and preliminary view.\n\n⚠️ Professional Caution: AI-generated. Verify all passages before reliance.${pageIndex}\n\nDOCUMENTS:\n\n${combined}`,
+        byDoc, sendEvent
       );
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
@@ -266,25 +312,23 @@ export default async function handler(req, res) {
         otherDocs = Object.fromEntries(entries.slice(mid));
       }
       const systemBase = `You are a senior litigation counsel conducting forensic inconsistency analysis for "${matterName}" in ${jur}.\n${matterContext}`;
-      // v3.0: Truncate anchor text to 40k to leave room for comparison batches
       let anchorText = docsToText(anchorDocs);
       if (anchorText.length > 40000) anchorText = anchorText.slice(0, 40000) + '\n[...anchor truncated...]';
       const otherBatches = batchDocs(otherDocs);
       let allFindings = [];
       let totalInput = 0, totalOutput = 0, totalCost = 0;
 
-      // v3.1: Send batch count for inconsistency
-      if (useSSE) sendEvent('batches', { total: otherBatches.length + 1 });
+      if (useSSE) {
+        sendEvent('batches', { total: otherBatches.length + 1 });
+      }
 
-      // v3.0: Run comparison batches in parallel pairs
       const PARALLEL = 2;
       for (let i = 0; i < otherBatches.length; i += PARALLEL) {
-        const slice = otherBatches.slice(i, i + PARALLEL);
-        // v3.1: Send progress for comparison batches
         if (useSSE) sendEvent('progress', { phase: 'comparing', batch: i + 1, total: otherBatches.length });
+        const slice = otherBatches.slice(i, i + PARALLEL);
         const results = await Promise.all(slice.map((batch, j) =>
           runTool(systemBase,
-            `Find every inconsistency between ANCHOR DOCUMENTS and this batch.\n\n### [N]. [Description]\n**Anchor:** [Document and passage]\n**Contradiction:** [Document and passage]\n**Significance:** CRITICAL / SIGNIFICANT / MINOR\n**Tactical note:** [How to use or address]\n\nANCHOR:\n\n${anchorText}\n\nOTHER (batch ${i+j+1}/${otherBatches.length}):\n\n${docsToText(batch)}\n\n${instructions ? `Instructions: ${instructions}` : ""}`,
+            `Find every inconsistency between ANCHOR DOCUMENTS and this batch.\n\n### [N]. [Description]\n**Anchor:** [Document and passage, with page reference if available]\n**Contradiction:** [Document and passage, with page reference if available]\n**Significance:** CRITICAL / SIGNIFICANT / MINOR\n**Tactical note:** [How to use or address]\n\nANCHOR:\n\n${anchorText}\n\nOTHER (batch ${i+j+1}/${otherBatches.length}):\n\n${docsToText(batch)}\n\n${instructions ? `Instructions: ${instructions}` : ""}`,
             4096
           )
         ));
@@ -296,7 +340,6 @@ export default async function handler(req, res) {
       if (allFindings.length === 1) {
         result = allFindings[0] + "\n\n⚠️ Professional Caution: AI-generated analysis. Verify quotations before reliance.";
       } else {
-        // v3.1: Send synthesis progress
         if (useSSE) sendEvent('progress', { phase: 'synthesising', batch: otherBatches.length, total: otherBatches.length });
         const synth = await runTool(systemBase,
           `Consolidate these inconsistency findings, remove duplicates, sort by significance (CRITICAL first).\n\nEnd with:\n## Summary\nOverall factual assessment.\n\n⚠️ Professional Caution: AI-generated. Verify quotations before reliance.\n\nFINDINGS:\n\n${allFindings.map((f,i)=>`=== BATCH ${i+1} ===\n${f}`).join("\n\n")}`
@@ -307,32 +350,52 @@ export default async function handler(req, res) {
       inputTokens = totalInput; outputTokens = totalOutput; cost = totalCost;
     }
 
-    // ── CHRONOLOGY ──────────────────────────────────────────────────────────
+    // ── CHRONOLOGY (v3.2: date range, entity focus, page refs, correspondence filter) ──
     else if (tool === "chronology") {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
+      const pageIndex = buildPageIndex(byDoc);
+
+      /* v3.2: Build additional instruction parts */
+      let chronoInstructions = instructions || '';
+      if (chronologyDateRange) {
+        chronoInstructions += `\n\nDATE RANGE FILTER: Only include events within the date range: ${chronologyDateRange}. Exclude all events outside this range.`;
+      }
+      if (chronologyEntities && chronologyEntities.trim()) {
+        chronoInstructions += `\n\nENTITY FOCUS: Focus specifically on these individuals or entities: ${chronologyEntities}. Include only events directly involving or relevant to them. Title the output "Documents Relevant to ${chronologyEntities}".`;
+      }
+      if (chronologyCorrespondenceFilter) {
+        chronoInstructions += `\n\nCORRESPONDENCE FILTER: Only include correspondence (letters, emails) if the letter or email is specifically referred to, quoted, or exhibited in a pleading, petition, or affidavit in the matter. Exclude correspondence that is not referenced in a sworn statement or pleading.`;
+      }
+
+      const focusBlock = chronoInstructions.trim() ? `Focus/Filters: ${chronoInstructions.trim()}\n\n` : '';
+      const entityTitle = (chronologyEntities && chronologyEntities.trim())
+        ? `Documents Relevant to ${chronologyEntities.trim()}`
+        : `Chronology — ${matterName}`;
+
       const systemBase = `You are a senior litigation counsel constructing a comprehensive chronology for "${matterName}" in ${jur}.\n${matterContext}`;
       const r = await doBatched(systemBase,
-        (batchText, batchNum, total) => `Extract EVERY date and event from batch ${batchNum} of ${total}. Be exhaustive.\n\n**[DATE]** — [Event] *(Source: [document])*\n\nFlag conflicts: **[DATE] (DISPUTED)**\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${batchText}`,
+        (batchText, batchNum, total) => `Extract EVERY date and event from batch ${batchNum} of ${total}. Be exhaustive.\n\n**[DATE]** — [Event] *(Source: [document], p.[page number] ¶[paragraph])* \n\nInclude page and paragraph references where available. Flag conflicts: **[DATE] (DISPUTED)**\n\n${focusBlock}DOCUMENTS:\n\n${batchText}${pageIndex}`,
         (combined, numBatches) => numBatches
-          ? `Synthesise chronology from ${numBatches} batches into a single de-duplicated chronology sorted by date.\n\n## Chronology — ${matterName}\n\n**[DATE]** — [Event] *(Source: [document])*\n\nGroup by year. Flag disputed dates.\n\n## Key Dates Summary\nThe 10-15 most significant dates.\n\n⚠️ Professional Caution: AI-generated chronology. Verify all dates before reliance.\n\nEXTRACTS:\n\n${combined}`
-          : `Construct a complete chronology. Be exhaustive.\n\n## Chronology — ${matterName}\n\n**[DATE]** — [Event] *(Source: [document])*\n\nAll date formats. Flag disputed dates.\n\n## Key Dates Summary\n\n⚠️ Professional Caution: AI-generated. Verify all dates before reliance.\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${combined}`,
-        byDoc
+          ? `Synthesise chronology from ${numBatches} batches into a single de-duplicated chronology sorted by date.\n\n## ${entityTitle}\n\n**[DATE]** — [Event] *(Source: [document], p.[page] ¶[paragraph])*\n\nGroup by year. Flag disputed dates. Include page and paragraph references.\n\n## Key Dates Summary\nThe 10-15 most significant dates.\n\n⚠️ Professional Caution: AI-generated chronology. Verify all dates before reliance.\n\n${focusBlock}EXTRACTS:\n\n${combined}`
+          : `Construct a complete chronology. Be exhaustive.\n\n## ${entityTitle}\n\n**[DATE]** — [Event] *(Source: [document], p.[page] ¶[paragraph])*\n\nAll date formats. Flag disputed dates. Include page and paragraph references where available.\n\n## Key Dates Summary\n\n⚠️ Professional Caution: AI-generated. Verify all dates before reliance.\n\n${focusBlock}DOCUMENTS:\n\n${combined}${pageIndex}`,
+        byDoc, sendEvent
       );
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
-    // ── PERSONS INDEX ───────────────────────────────────────────────────────
+    // ── DRAMATIS PERSONAE (v3.2: renamed, restructured) ─────────────────────
     else if (tool === "persons") {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
-      const systemBase = `You are a senior litigation counsel compiling a persons and entities index for "${matterName}" in ${jur}.\n${matterContext}`;
+      const pageIndex = buildPageIndex(byDoc);
+      const systemBase = `You are a senior litigation counsel compiling a dramatis personae for "${matterName}" in ${jur}.\n${matterContext}`;
       const r = await doBatched(systemBase,
-        (batchText, batchNum, total) => `Extract EVERY person and entity from batch ${batchNum} of ${total}.\n\n### [Name]\n**Also known as:** [aliases]\n**Organisational roles:** [director, shareholder, trustee etc.]\n**Procedural role:** [claimant, defendant, witness etc.]\n**Mentioned in:** [documents]\n**Key facts:** [what this batch reveals]\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${batchText}`,
+        (batchText, batchNum, total) => `Extract EVERY person and entity from batch ${batchNum} of ${total}.\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Name]\n**Description:** [A concise description of who this person/entity is and their relevance to the proceedings]\n**References in pleadings/petitions:** [List each reference with document name, page and paragraph]\n**References in affidavits:** [List each reference with document name, page and paragraph]\n**References in other documents:** [List each reference with document name, page and paragraph]\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${batchText}${pageIndex}`,
         (combined, numBatches) => numBatches
-          ? `Synthesise persons from ${numBatches} batches. Merge entries. Sort alphabetically.\n\n## Persons & Entities Index — ${matterName}\n\n### [Full Name]\n**Also known as:** [aliases]\n**Organisational roles:** [with details]\n**Procedural role:** [role]\n**Mentioned in:** [documents]\n**Key facts:** [comprehensive summary]\n\n⚠️ Professional Caution: AI-generated. Verify before reliance.\n\nEXTRACTS:\n\n${combined}`
-          : `Compile a complete persons and entities index. Include EVERYONE.\n\n## Persons & Entities Index — ${matterName}\n\n### [Full Name]\n**Also known as:** [aliases]\n**Organisational roles:** [director, shareholder etc. with details]\n**Procedural role:** [claimant, defendant etc.]\n**Mentioned in:** [documents]\n**Key facts:** [all evidence reveals]\n\nSort alphabetically.\n\n⚠️ Professional Caution: AI-generated. Verify before reliance.\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${combined}`,
-        byDoc
+          ? `Synthesise persons from ${numBatches} batches. Merge entries for the same person/entity. Sort alphabetically.\n\n## Dramatis Personae — ${matterName}\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Full Name]\n**Description:** [Concise description of who they are and their relevance]\n**References in pleadings/petitions:** [document, page, paragraph — listed first]\n**References in affidavits:** [document, page, paragraph — listed second]\n**References in other documents:** [document, page, paragraph — listed third]\n\n⚠️ Professional Caution: AI-generated. Verify before reliance.\n\nEXTRACTS:\n\n${combined}`
+          : `Compile a complete dramatis personae. Include EVERY person and entity.\n\n## Dramatis Personae — ${matterName}\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Full Name]\n**Description:** [Concise description of who they are and their relevance to the proceedings]\n**References in pleadings/petitions:** [document, page, paragraph — listed first]\n**References in affidavits:** [document, page, paragraph — listed second]\n**References in other documents:** [document, page, paragraph — listed third]\n\nSort alphabetically.\n\n⚠️ Professional Caution: AI-generated. Verify before reliance.\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${combined}${pageIndex}`,
+        byDoc, sendEvent
       );
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
@@ -341,20 +404,20 @@ export default async function handler(req, res) {
     else if (tool === "issues") {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
+      const pageIndex = buildPageIndex(byDoc);
       const systemBase = `You are a senior litigation counsel in ${jur} mapping issues for "${matterName}".\n${matterContext}`;
       const r = await doBatched(systemBase,
-        (batchText, batchNum, total) => `Identify every legal and factual issue from batch ${batchNum} of ${total}.\n\n### Issue: [description]\n**Type:** Legal / Factual / Mixed\n**Evidence for Claimant:** [documents and passages]\n**Evidence for Defendant:** [documents and passages]\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${batchText}`,
+        (batchText, batchNum, total) => `Identify every legal and factual issue from batch ${batchNum} of ${total}.\n\n### Issue: [description]\n**Type:** Legal / Factual / Mixed\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${batchText}${pageIndex}`,
         (combined, numBatches) => numBatches
-          ? `Synthesise issues from ${numBatches} batches. Merge duplicates.\n\n## Issue Tracker — ${matterName}\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents and passages]\n**Evidence for Defendant:** [documents and passages]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n⚠️ Professional Caution: AI-generated. Verify before reliance.\n\nFINDINGS:\n\n${combined}`
-          : `Produce a complete issue tracker.\n\n## Issue Tracker — ${matterName}\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents and passages]\n**Evidence for Defendant:** [documents and passages]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n⚠️ Professional Caution: AI-generated. Verify before reliance.\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${combined}`,
-        byDoc
+          ? `Synthesise issues from ${numBatches} batches. Merge duplicates.\n\n## Issue Tracker — ${matterName}\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n⚠️ Professional Caution: AI-generated. Verify before reliance.\n\nFINDINGS:\n\n${combined}`
+          : `Produce a complete issue tracker.\n\n## Issue Tracker — ${matterName}\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n⚠️ Professional Caution: AI-generated. Verify before reliance.\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${combined}${pageIndex}`,
+        byDoc, sendEvent
       );
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
     // ── CITATION CHECKER ────────────────────────────────────────────────────
     else if (tool === "citations") {
-      // v3.1: Send progress for single-call tool
       if (useSSE) sendEvent('progress', { phase: 'analysing', batch: 1, total: 1 });
       let skeletonChunks, caselawChunks;
       if (citationSource) {
@@ -378,22 +441,23 @@ export default async function handler(req, res) {
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
-    // ── BRIEFING NOTE ───────────────────────────────────────────────────────
+    // ── BRIEFING NOTE (v3.2: restructured — issues first, then common ground, then disputed matters) ──
     else if (tool === "briefing") {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
+      const pageIndex = buildPageIndex(byDoc);
       const systemBase = `You are a senior litigation counsel in ${jur} producing a briefing note for "${matterName}".\n${matterContext}`;
       const r = await doBatched(systemBase,
-        (batchText, batchNum, total) => `Extract key facts, legal issues, evidence and procedural information from batch ${batchNum} of ${total} for a briefing note.\n\nDOCUMENTS:\n\n${batchText}`,
+        (batchText, batchNum, total) => `Extract key facts, legal issues, evidence, admissions, common ground, and procedural information from batch ${batchNum} of ${total} for a briefing note.\n\nPay particular attention to:\n- What issues are raised in the proceedings\n- What facts or matters are admitted or agreed (common ground)\n- What facts or matters are in dispute and what evidence supports each side\n\nDOCUMENTS:\n\n${batchText}${pageIndex}`,
         (combined, numBatches) => numBatches
-          ? `Using findings from ${numBatches} batches, produce a complete briefing note.\n\n## Briefing Note — ${matterName}\n**Jurisdiction:** ${jur}\n**Date:** ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}\n\n## 1. Background\n## 2. The Parties\n## 3. The Claim\n## 4. Key Facts\n## 5. Legal Issues\n## 6. Evidence Summary\n## 7. Current Procedural Position\n## 8. Key Risks\n## 9. Next Steps\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}FINDINGS:\n\n${combined}`
-          : `Produce a structured briefing note.\n\n## Briefing Note — ${matterName}\n**Jurisdiction:** ${jur}\n**Date:** ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}\n\n## 1. Background\n## 2. The Parties\n## 3. The Claim\n## 4. Key Facts\n## 5. Legal Issues\n## 6. Evidence Summary\n## 7. Current Procedural Position\n## 8. Key Risks\n## 9. Next Steps\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${combined}`,
-        byDoc
+          ? `Using findings from ${numBatches} batches, produce a complete briefing note.\n\n## Briefing Note — ${matterName}\n**Jurisdiction:** ${jur}\n**Date:** ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}\n\n## 1. Summary of the Proceedings\nBrief overview of the nature and status of the proceedings.\n\n## 2. The Issues\nSet out each issue that arises in the proceedings — both legal and factual. Reference the pleadings or other documents where each issue is raised.\n\n## 3. Common Ground and Admissions\nSet out all facts, matters, or legal points that are admitted or agreed between the parties. These may appear in pleadings, witness statements, correspondence, or skeleton arguments. Distinguish between formal admissions and matters that appear to be common ground.\n\n## 4. The Case on Disputed Matters\nFor each disputed issue identified in section 2, set out:\n- The case for the ${actingFor || 'client'}: what evidence and arguments support the position\n- The opposing case: what evidence and arguments the other side relies on\n- Assessment: preliminary view on the strength of each side's position\n\n## 5. Key Evidence\nSummary of the most important evidence, with page and paragraph references where available.\n\n## 6. Procedural Position and Next Steps\nCurrent procedural stage, upcoming deadlines, and recommended next steps.\n\n## 7. Key Risks\nSignificant risks to be aware of.\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}FINDINGS:\n\n${combined}`
+          : `Produce a structured briefing note.\n\n## Briefing Note — ${matterName}\n**Jurisdiction:** ${jur}\n**Date:** ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}\n\n## 1. Summary of the Proceedings\nBrief overview of the nature and status of the proceedings.\n\n## 2. The Issues\nSet out each issue that arises in the proceedings — both legal and factual. Reference the pleadings or other documents where each issue is raised.\n\n## 3. Common Ground and Admissions\nSet out all facts, matters, or legal points that are admitted or agreed between the parties. Distinguish between formal admissions and matters that appear to be common ground.\n\n## 4. The Case on Disputed Matters\nFor each disputed issue, set out the case for the ${actingFor || 'client'}, the opposing case, and a preliminary assessment.\n\n## 5. Key Evidence\nSummary of the most important evidence, with page and paragraph references.\n\n## 6. Procedural Position and Next Steps\n\n## 7. Key Risks\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${combined}${pageIndex}`,
+        byDoc, sendEvent
       );
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
-    // ── DRAFT GENERATOR (v2.5: auto-precedent matching + learning) ──────────
+    // ── DRAFT GENERATOR ─────────────────────────────────────────────────────
     else if (tool === "draft") {
       const libraryContext = req.body?.libraryContext || null;
       const caseTypeId = req.body?.caseTypeId || null;
@@ -505,8 +569,8 @@ export default async function handler(req, res) {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
 
-      const headingInstruction = courtHeading && (courtHeading.court || courtHeading.party1)
-        ? `\n\nIMPORTANT: Begin the document with this exact court heading (do not alter the heading itself):\n\n${formatCourtHeading(courtHeading)}\n\nThen continue with the body of the document.`
+      const headingInstruction = heading && (heading.court || heading.party1)
+        ? `\n\nIMPORTANT: Begin the document with this exact court heading (do not alter the heading itself):\n\n${headingText}\n\nThen continue with the body of the document.`
         : "";
 
       const systemBase = `You are a senior litigation counsel in ${jur} drafting a legal document for "${matterName}". Apply ${jur} law, procedure, and drafting conventions.${actingFor ? ` You are acting for the ${actingFor}.` : ""}
@@ -524,22 +588,23 @@ ${matterContext}${libraryText}${learningText}${headingInstruction}`;
         (combined, numBatches) => numBatches
           ? `Using source material from ${numBatches} batches, produce:\n\n${instructions || "Draft a skeleton argument."}\n\nApply ${jur} court rules and conventions.\n\n⚠️ Professional Caution: AI-generated draft. Review carefully before use.\n\nSOURCE MATERIAL:\n\n${combined}`
           : `${instructions || "Draft a skeleton argument based on the matter documents."}\n\nApply ${jur} court rules and conventions.\n\n⚠️ Professional Caution: AI-generated draft. Review carefully before use.\n\nDOCUMENTS:\n\n${combined}`,
-        byDoc
+        byDoc, sendEvent
       );
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
     else {
-      if (useSSE) {
-        sendEvent('error', { error: "Unknown tool: " + tool });
-        return endStream();
-      }
+      if (useSSE) { sendEvent('error', { error: 'Unknown tool: ' + tool }); endStream(); return; }
       return res.status(400).json({ error: "Unknown tool: " + tool });
+    }
+
+    /* v3.2: Prepend court heading to result if heading exists */
+    if (headingText && tool !== "draft") {
+      result = headingText + "\n" + result;
     }
 
     await logUsage(matterId, user.id, tool, inputTokens, outputTokens, cost);
 
-    // v3.1: Send result via SSE or JSON
     if (useSSE) {
       sendEvent('result', { result, usage: { inputTokens, outputTokens, costUsd: cost } });
       endStream();
@@ -550,8 +615,7 @@ ${matterContext}${libraryText}${learningText}${headingInstruction}`;
   } catch (err) {
     console.error("Tools error:", err);
     if (useSSE) {
-      sendEvent('error', { error: err.message || 'Tool failed' });
-      endStream();
+      try { sendEvent('error', { error: err.message || "Tool failed" }); endStream(); } catch (e) { /* closed */ }
     } else {
       return res.status(500).json({ error: err.message || "Tool failed" });
     }

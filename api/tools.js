@@ -84,7 +84,7 @@ async function runTool(system, userPrompt, maxTokens = 8192) {
   return { text, inputTokens, outputTokens, cost };
 }
 
-// v3.0: Higher parallelism (4) and extraction passes use 4096 max_tokens
+// v3.0: Non-streaming fallback — kept for clients that do not send Accept: text/event-stream
 async function runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc) {
   const batches = batchDocs(byDoc);
   let totalInput = 0, totalOutput = 0, totalCost = 0;
@@ -112,6 +112,39 @@ async function runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc) {
   totalInput += r.inputTokens;
   totalOutput += r.outputTokens;
   totalCost += r.cost;
+  return { text: r.text, inputTokens: totalInput, outputTokens: totalOutput, cost: totalCost };
+}
+
+// v3.1: SSE streaming version — sends progress events to the frontend
+async function runBatchedStreaming(systemBase, extractPromptFn, synthPromptFn, byDoc, sendEvent) {
+  const batches = batchDocs(byDoc);
+  let totalInput = 0, totalOutput = 0, totalCost = 0;
+  sendEvent('batches', { total: batches.length });
+
+  if (batches.length === 1) {
+    sendEvent('progress', { phase: 'analysing', batch: 1, total: 1 });
+    const r = await runTool(systemBase, synthPromptFn(docsToText(batches[0]), null));
+    return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cost: r.cost };
+  }
+
+  const extracts = [];
+  const PARALLEL = 4;
+  for (let i = 0; i < batches.length; i += PARALLEL) {
+    const slice = batches.slice(i, i + PARALLEL);
+    sendEvent('progress', { phase: 'extracting', batch: i + 1, total: batches.length });
+    const results = await Promise.all(slice.map((batch, j) => {
+      return runTool(systemBase, extractPromptFn(docsToText(batch), i + j + 1, batches.length), 4096);
+    }));
+    for (const r of results) {
+      extracts.push(r.text);
+      totalInput += r.inputTokens; totalOutput += r.outputTokens; totalCost += r.cost;
+    }
+  }
+
+  sendEvent('progress', { phase: 'synthesising', batch: batches.length, total: batches.length });
+  const combinedExtracts = extracts.map((e, i) => `=== BATCH ${i+1} FINDINGS ===\n${e}`).join("\n\n");
+  const r = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length));
+  totalInput += r.inputTokens; totalOutput += r.outputTokens; totalCost += r.cost;
   return { text: r.text, inputTokens: totalInput, outputTokens: totalOutput, cost: totalCost };
 }
 
@@ -164,17 +197,48 @@ export default async function handler(req, res) {
     actingFor ? `Acting for: ${actingFor}` : "",
   ].filter(Boolean).join("\n");
 
+  // v3.1: SSE setup — check if client wants streaming
+  const useSSE = req.headers.accept === 'text/event-stream';
+  let sendEvent, endStream, pingInterval;
+  if (useSSE) {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    sendEvent = (event, data) => {
+      try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); }
+      catch (e) { /* connection closed */ }
+    };
+    pingInterval = setInterval(() => {
+      try { res.write(': keep-alive\n\n'); } catch (e) { /* connection closed */ }
+    }, 25000);
+    endStream = () => {
+      if (pingInterval) clearInterval(pingInterval);
+      try { res.end(); } catch (e) { /* already closed */ }
+    };
+  }
+
+  // v3.1: helper — picks streaming or non-streaming runBatched
+  const doBatched = (sys, extractFn, synthFn, docs) =>
+    useSSE ? runBatchedStreaming(sys, extractFn, synthFn, docs, sendEvent)
+           : runBatched(sys, extractFn, synthFn, docs);
+
   try {
     let result = "";
     let inputTokens = 0, outputTokens = 0, cost = 0;
 
     // ── PROPOSITION EVIDENCE FINDER ─────────────────────────────────────────
     if (tool === "proposition") {
-      if (!instructions) return res.status(400).json({ error: "Please state the proposition to test" });
+      if (!instructions) {
+        if (useSSE) { sendEvent('error', { error: 'Please state the proposition to test' }); endStream(); return; }
+        return res.status(400).json({ error: "Please state the proposition to test" });
+      }
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
       const systemBase = `You are a senior litigation counsel in ${jur} conducting an evidence assessment for the matter "${matterName}".\n${matterContext}`;
-      const r = await runBatched(
+      const r = await doBatched(
         systemBase,
         (batchText, batchNum, total) => `PROPOSITION: "${instructions}"\n\nBatch ${batchNum} of ${total}. Extract ALL relevant passages — supporting, contradicting, or neutral.\n\nFor each:\n### [Document] — [Brief description]\nGRADE: [1-5]\n[Relevant passage]\n**Analysis:** [Relevance to proposition]\n\nGrading: 5=strong direct, 4=good supportive, 3=moderate indirect, 2=weak tangential, 1=contrary\n\nDOCUMENTS:\n\n${batchText}`,
         (combined, numBatches) => numBatches
@@ -208,10 +272,16 @@ export default async function handler(req, res) {
       const otherBatches = batchDocs(otherDocs);
       let allFindings = [];
       let totalInput = 0, totalOutput = 0, totalCost = 0;
+
+      // v3.1: Send batch count for inconsistency
+      if (useSSE) sendEvent('batches', { total: otherBatches.length + 1 });
+
       // v3.0: Run comparison batches in parallel pairs
       const PARALLEL = 2;
       for (let i = 0; i < otherBatches.length; i += PARALLEL) {
         const slice = otherBatches.slice(i, i + PARALLEL);
+        // v3.1: Send progress for comparison batches
+        if (useSSE) sendEvent('progress', { phase: 'comparing', batch: i + 1, total: otherBatches.length });
         const results = await Promise.all(slice.map((batch, j) =>
           runTool(systemBase,
             `Find every inconsistency between ANCHOR DOCUMENTS and this batch.\n\n### [N]. [Description]\n**Anchor:** [Document and passage]\n**Contradiction:** [Document and passage]\n**Significance:** CRITICAL / SIGNIFICANT / MINOR\n**Tactical note:** [How to use or address]\n\nANCHOR:\n\n${anchorText}\n\nOTHER (batch ${i+j+1}/${otherBatches.length}):\n\n${docsToText(batch)}\n\n${instructions ? `Instructions: ${instructions}` : ""}`,
@@ -226,6 +296,8 @@ export default async function handler(req, res) {
       if (allFindings.length === 1) {
         result = allFindings[0] + "\n\n⚠️ Professional Caution: AI-generated analysis. Verify quotations before reliance.";
       } else {
+        // v3.1: Send synthesis progress
+        if (useSSE) sendEvent('progress', { phase: 'synthesising', batch: otherBatches.length, total: otherBatches.length });
         const synth = await runTool(systemBase,
           `Consolidate these inconsistency findings, remove duplicates, sort by significance (CRITICAL first).\n\nEnd with:\n## Summary\nOverall factual assessment.\n\n⚠️ Professional Caution: AI-generated. Verify quotations before reliance.\n\nFINDINGS:\n\n${allFindings.map((f,i)=>`=== BATCH ${i+1} ===\n${f}`).join("\n\n")}`
         );
@@ -240,7 +312,7 @@ export default async function handler(req, res) {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
       const systemBase = `You are a senior litigation counsel constructing a comprehensive chronology for "${matterName}" in ${jur}.\n${matterContext}`;
-      const r = await runBatched(systemBase,
+      const r = await doBatched(systemBase,
         (batchText, batchNum, total) => `Extract EVERY date and event from batch ${batchNum} of ${total}. Be exhaustive.\n\n**[DATE]** — [Event] *(Source: [document])*\n\nFlag conflicts: **[DATE] (DISPUTED)**\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${batchText}`,
         (combined, numBatches) => numBatches
           ? `Synthesise chronology from ${numBatches} batches into a single de-duplicated chronology sorted by date.\n\n## Chronology — ${matterName}\n\n**[DATE]** — [Event] *(Source: [document])*\n\nGroup by year. Flag disputed dates.\n\n## Key Dates Summary\nThe 10-15 most significant dates.\n\n⚠️ Professional Caution: AI-generated chronology. Verify all dates before reliance.\n\nEXTRACTS:\n\n${combined}`
@@ -255,7 +327,7 @@ export default async function handler(req, res) {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
       const systemBase = `You are a senior litigation counsel compiling a persons and entities index for "${matterName}" in ${jur}.\n${matterContext}`;
-      const r = await runBatched(systemBase,
+      const r = await doBatched(systemBase,
         (batchText, batchNum, total) => `Extract EVERY person and entity from batch ${batchNum} of ${total}.\n\n### [Name]\n**Also known as:** [aliases]\n**Organisational roles:** [director, shareholder, trustee etc.]\n**Procedural role:** [claimant, defendant, witness etc.]\n**Mentioned in:** [documents]\n**Key facts:** [what this batch reveals]\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${batchText}`,
         (combined, numBatches) => numBatches
           ? `Synthesise persons from ${numBatches} batches. Merge entries. Sort alphabetically.\n\n## Persons & Entities Index — ${matterName}\n\n### [Full Name]\n**Also known as:** [aliases]\n**Organisational roles:** [with details]\n**Procedural role:** [role]\n**Mentioned in:** [documents]\n**Key facts:** [comprehensive summary]\n\n⚠️ Professional Caution: AI-generated. Verify before reliance.\n\nEXTRACTS:\n\n${combined}`
@@ -270,7 +342,7 @@ export default async function handler(req, res) {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
       const systemBase = `You are a senior litigation counsel in ${jur} mapping issues for "${matterName}".\n${matterContext}`;
-      const r = await runBatched(systemBase,
+      const r = await doBatched(systemBase,
         (batchText, batchNum, total) => `Identify every legal and factual issue from batch ${batchNum} of ${total}.\n\n### Issue: [description]\n**Type:** Legal / Factual / Mixed\n**Evidence for Claimant:** [documents and passages]\n**Evidence for Defendant:** [documents and passages]\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}DOCUMENTS:\n\n${batchText}`,
         (combined, numBatches) => numBatches
           ? `Synthesise issues from ${numBatches} batches. Merge duplicates.\n\n## Issue Tracker — ${matterName}\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents and passages]\n**Evidence for Defendant:** [documents and passages]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n⚠️ Professional Caution: AI-generated. Verify before reliance.\n\nFINDINGS:\n\n${combined}`
@@ -282,6 +354,8 @@ export default async function handler(req, res) {
 
     // ── CITATION CHECKER ────────────────────────────────────────────────────
     else if (tool === "citations") {
+      // v3.1: Send progress for single-call tool
+      if (useSSE) sendEvent('progress', { phase: 'analysing', batch: 1, total: 1 });
       let skeletonChunks, caselawChunks;
       if (citationSource) {
         skeletonChunks = await getAllChunks(matterId);
@@ -309,7 +383,7 @@ export default async function handler(req, res) {
       const chunks = await getAllChunks(matterId);
       const byDoc = chunksToDocMap(chunks);
       const systemBase = `You are a senior litigation counsel in ${jur} producing a briefing note for "${matterName}".\n${matterContext}`;
-      const r = await runBatched(systemBase,
+      const r = await doBatched(systemBase,
         (batchText, batchNum, total) => `Extract key facts, legal issues, evidence and procedural information from batch ${batchNum} of ${total} for a briefing note.\n\nDOCUMENTS:\n\n${batchText}`,
         (combined, numBatches) => numBatches
           ? `Using findings from ${numBatches} batches, produce a complete briefing note.\n\n## Briefing Note — ${matterName}\n**Jurisdiction:** ${jur}\n**Date:** ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}\n\n## 1. Background\n## 2. The Parties\n## 3. The Claim\n## 4. Key Facts\n## 5. Legal Issues\n## 6. Evidence Summary\n## 7. Current Procedural Position\n## 8. Key Risks\n## 9. Next Steps\n\n${instructions ? `Focus: ${instructions}\n\n` : ""}FINDINGS:\n\n${combined}`
@@ -343,7 +417,6 @@ export default async function handler(req, res) {
       }
 
       if (allPrecedentIds.length > 0) {
-        const libParts = [];
         const ownTexts = [];
         const thirdTexts = [];
         for (const docId of allPrecedentIds) {
@@ -446,7 +519,7 @@ CRITICAL INSTRUCTIONS:
 
 ${matterContext}${libraryText}${learningText}${headingInstruction}`;
 
-      const r = await runBatched(systemBase,
+      const r = await doBatched(systemBase,
         (batchText, batchNum, total) => `Extract all facts, legal points, and arguments from batch ${batchNum} of ${total} relevant to: ${instructions || "Draft a skeleton argument"}\n\nDOCUMENTS:\n\n${batchText}`,
         (combined, numBatches) => numBatches
           ? `Using source material from ${numBatches} batches, produce:\n\n${instructions || "Draft a skeleton argument."}\n\nApply ${jur} court rules and conventions.\n\n⚠️ Professional Caution: AI-generated draft. Review carefully before use.\n\nSOURCE MATERIAL:\n\n${combined}`
@@ -457,14 +530,30 @@ ${matterContext}${libraryText}${learningText}${headingInstruction}`;
     }
 
     else {
+      if (useSSE) {
+        sendEvent('error', { error: "Unknown tool: " + tool });
+        return endStream();
+      }
       return res.status(400).json({ error: "Unknown tool: " + tool });
     }
 
     await logUsage(matterId, user.id, tool, inputTokens, outputTokens, cost);
-    return res.status(200).json({ result, usage: { inputTokens, outputTokens, costUsd: cost } });
+
+    // v3.1: Send result via SSE or JSON
+    if (useSSE) {
+      sendEvent('result', { result, usage: { inputTokens, outputTokens, costUsd: cost } });
+      endStream();
+    } else {
+      return res.status(200).json({ result, usage: { inputTokens, outputTokens, costUsd: cost } });
+    }
 
   } catch (err) {
     console.error("Tools error:", err);
-    return res.status(500).json({ error: err.message || "Tool failed" });
+    if (useSSE) {
+      sendEvent('error', { error: err.message || 'Tool failed' });
+      endStream();
+    } else {
+      return res.status(500).json({ error: err.message || "Tool failed" });
+    }
   }
 }

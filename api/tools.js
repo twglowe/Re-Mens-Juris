@@ -22,8 +22,8 @@ async function getUser(req) {
   }
 }
 
-/* v3.2: Now selects page_number for page references */
-async function getAllChunks(matterId, docTypes = null, limit = 2000) {
+/* v3.3: Reduced chunk limit to help stay within timeout */
+async function getAllChunks(matterId, docTypes = null, limit = 1500) {
   let query = supabase.from("chunks")
     .select("content, document_name, doc_type, chunk_index, page_number")
     .eq("matter_id", matterId)
@@ -47,12 +47,13 @@ function chunksToDocMap(chunks) {
   return byDoc;
 }
 
-function batchDocs(byDoc, maxChars = 60000) {
+/* v3.3: Larger batches (100k) = fewer API calls = less likely to timeout */
+function batchDocs(byDoc, maxChars = 100000) {
   const batches = [];
   let current = {};
   let currentSize = 0;
   for (const [name, data] of Object.entries(byDoc)) {
-    const truncated = data.text.length > 50000 ? data.text.slice(0, 50000) + '\n[...truncated for processing...]' : data.text;
+    const truncated = data.text.length > 80000 ? data.text.slice(0, 80000) + '\n[...truncated for processing...]' : data.text;
     const docData = { ...data, text: truncated };
     const docSize = truncated.length + name.length + 50;
     if (currentSize + docSize > maxChars && Object.keys(current).length > 0) {
@@ -112,8 +113,9 @@ async function runTool(system, userPrompt, maxTokens = 8192) {
   return { text, inputTokens, outputTokens, cost };
 }
 
-/* v3.0: Original batched runner (non-SSE fallback) */
+/* v3.3: Higher parallelism (6), smaller extraction output (2048) */
 async function runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc) {
+  const startTime = Date.now();
   const batches = batchDocs(byDoc);
   let totalInput = 0, totalOutput = 0, totalCost = 0;
   if (batches.length === 1) {
@@ -121,12 +123,18 @@ async function runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc) {
     return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cost: r.cost };
   }
   const extracts = [];
-  const PARALLEL = 4;
+  const PARALLEL = 6;
+  const TIME_LIMIT_MS = 250000; /* 250s — leave 50s for synthesis */
   for (let i = 0; i < batches.length; i += PARALLEL) {
+    if (Date.now() - startTime > TIME_LIMIT_MS) {
+      console.log(`Time guard: skipping batches ${i+1}–${batches.length} (${Math.round((Date.now()-startTime)/1000)}s elapsed)`);
+      extracts.push(`[Note: batches ${i+1}–${batches.length} of ${batches.length} were not processed due to time constraints. Re-run the tool with focus instructions to target specific areas.]`);
+      break;
+    }
     const slice = batches.slice(i, i + PARALLEL);
     const results = await Promise.all(slice.map((batch, j) => {
       const batchText = docsToText(batch);
-      return runTool(systemBase, extractPromptFn(batchText, i + j + 1, batches.length), 4096);
+      return runTool(systemBase, extractPromptFn(batchText, i + j + 1, batches.length), 2048);
     }));
     for (const r of results) {
       extracts.push(r.text);
@@ -139,8 +147,9 @@ async function runBatched(systemBase, extractPromptFn, synthPromptFn, byDoc) {
   return { text: r.text, inputTokens: totalInput, outputTokens: totalOutput, cost: totalCost };
 }
 
-/* v3.1: SSE-aware batched runner */
+/* v3.3: SSE-aware batched runner — same optimisations as runBatched */
 async function runBatchedStreaming(systemBase, extractPromptFn, synthPromptFn, byDoc, sendEvent) {
+  const startTime = Date.now();
   const batches = batchDocs(byDoc);
   let totalInput = 0, totalOutput = 0, totalCost = 0;
   sendEvent('batches', { total: batches.length });
@@ -150,13 +159,19 @@ async function runBatchedStreaming(systemBase, extractPromptFn, synthPromptFn, b
     return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cost: r.cost };
   }
   const extracts = [];
-  const PARALLEL = 4;
+  const PARALLEL = 6;
+  const TIME_LIMIT_MS = 250000;
   for (let i = 0; i < batches.length; i += PARALLEL) {
+    if (Date.now() - startTime > TIME_LIMIT_MS) {
+      console.log(`Time guard: skipping batches ${i+1}–${batches.length} (${Math.round((Date.now()-startTime)/1000)}s elapsed)`);
+      extracts.push(`[Note: batches ${i+1}–${batches.length} of ${batches.length} were not processed due to time constraints. Re-run the tool with focus instructions to target specific areas.]`);
+      break;
+    }
     sendEvent('progress', { phase: 'extracting', batch: i + 1, total: batches.length });
     const slice = batches.slice(i, i + PARALLEL);
     const results = await Promise.all(slice.map((batch, j) => {
       const batchText = docsToText(batch);
-      return runTool(systemBase, extractPromptFn(batchText, i + j + 1, batches.length), 4096);
+      return runTool(systemBase, extractPromptFn(batchText, i + j + 1, batches.length), 2048);
     }));
     for (const r of results) {
       extracts.push(r.text);

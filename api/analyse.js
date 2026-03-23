@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 300 };
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -12,8 +12,14 @@ const OUTPUT_COST_PER_M = 15.00;
 async function getUser(req) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  return error ? null : user;
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error) { console.error("Auth error:", error.message); return null; }
+    return user;
+  } catch (e) {
+    console.error("Auth exception:", e.message);
+    return null;
+  }
 }
 
 // Extract core search terms from a natural language question
@@ -82,7 +88,7 @@ export default async function handler(req, res) {
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-  const { matterId, matterName, matterNature, matterIssues, messages, jurisdiction, queryType, focusAreas } = req.body;
+  const { matterId, matterName, matterNature, matterIssues, messages, jurisdiction, queryType, focusAreas, actingFor } = req.body;
   if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: "Invalid request" });
 
   try {
@@ -108,6 +114,7 @@ export default async function handler(req, res) {
     const matterContext = [
       matterNature ? `Nature of the dispute: ${matterNature}` : "",
       matterIssues ? `Key issues in this matter: ${matterIssues}` : "",
+      actingFor ? `Acting for: ${actingFor}` : "",
     ].filter(Boolean).join("\n");
 
     const system = `You are a senior litigation counsel specialising in ${jurisdiction || "Bermuda"} offshore common law litigation. You have deep expertise in Bermuda, Cayman Islands and BVI law, court rules (RSC Bermuda, GCR Cayman, CPR BVI), statutes, company law, trust law, insolvency, and English common law precedent as applied offshore.
@@ -147,51 +154,7 @@ End with: ⚠️ Professional Caution: AI-generated analysis. Verify against cur
 
     return res.status(200).json({ result: resultText, usage: { inputTokens, outputTokens, costUsd } });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-}
-    const matterContext = [
-      matterNature ? `Nature of the dispute: ${matterNature}` : "",
-      matterIssues ? `Key issues in this matter: ${matterIssues}` : "",
-    ].filter(Boolean).join("\n");
-
-    const system = `You are a senior litigation counsel specialising in ${jurisdiction || "Bermuda"} offshore common law litigation. You have deep expertise in Bermuda, Cayman Islands and BVI law, court rules (RSC Bermuda, GCR Cayman, CPR BVI), statutes, company law, trust law, insolvency, and English common law precedent as applied offshore.
-
-Matter: "${matterName || "Current Matter"}"
-${matterContext ? `\n${matterContext}\n` : ""}
-${contextText ? `The following passages are retrieved from the matter documents as most relevant to this question. Refer to them specifically, quoting where helpful:\n\n${contextText}` : "No documents uploaded yet. Answer based on your legal knowledge."}
-
-In every response:
-1. Apply ${jurisdiction || "Bermuda"}-specific law — cite local statutes, court rules, and leading authority by name
-2. Refer to document passages specifically, identifying which document they come from
-3. Flag where ${jurisdiction || "Bermuda"} law diverges from English law or other offshore jurisdictions
-4. Be precise — identify unsettled points and flag litigation risk
-5. Address these focus areas: ${focusAreas?.join(", ") || "all relevant issues"}
-6. Use clear ## headings. Do not truncate your response.
-Analysis type: ${queryType || "General Legal Analysis"}
-End with: ⚠️ Professional Caution: AI-generated analysis. Verify against current primary sources before reliance.`;
-
-    const cleanMessages = messages.map(m => ({
-      role: m.role,
-      content: typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.filter(c => c.type === "text").map(c => c.text).join("\n") : String(m.content)
-    }));
-
-    const response = await anthropic.messages.create({
-      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-      max_tokens: 8192,
-      system,
-      messages: cleanMessages,
-    });
-
-    const resultText = response.content?.find(b => b.type === "text")?.text || "";
-    const inputTokens  = response.usage?.input_tokens  || 0;
-    const outputTokens = response.usage?.output_tokens || 0;
-    const costUsd = (inputTokens * INPUT_COST_PER_M / 1_000_000) + (outputTokens * OUTPUT_COST_PER_M / 1_000_000);
-
-    if (matterId) await logUsage(matterId, user.id, "qa", inputTokens, outputTokens, costUsd);
-
-    return res.status(200).json({ result: resultText, usage: { inputTokens, outputTokens, costUsd } });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error("Analyse error:", err);
+    return res.status(500).json({ error: err.message || "Analysis failed" });
   }
 }

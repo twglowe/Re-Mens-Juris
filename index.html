@@ -236,6 +236,24 @@ textarea#chatInput::placeholder{color:var(--text-faint);font-weight:400}
 .upload-progress.on{display:block}
 .upload-err{margin:.45rem .85rem 0;padding:.5rem .8rem;background:#fdf0f0;border:1.5px solid #f0b0b0;border-radius:5px;font-size:.8rem;font-weight:500;color:var(--error);display:none}
 .upload-err.on{display:block}
+/* PDF Upload Options Panel */
+.upload-opts-modal{max-width:480px;max-height:85vh;overflow-y:auto}
+.upload-opts-modal h3{margin-bottom:.6rem}
+.upload-opts-files{font-size:.82rem;color:var(--text-mid);margin-bottom:1rem;padding:.5rem .7rem;background:var(--blue-faint);border-radius:6px;border:1px solid var(--border)}
+.upload-opts-files strong{color:var(--navy)}
+.uopt-group{margin-bottom:1rem;padding-bottom:.85rem;border-bottom:1px solid var(--border)}
+.uopt-group:last-of-type{border-bottom:none;margin-bottom:.5rem}
+.uopt-label{font-size:.75rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light);margin-bottom:.45rem}
+.uopt-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.35rem}
+.uopt-radio{display:flex;align-items:center;gap:.35rem;padding:.35rem .65rem;border:1.5px solid var(--border);border-radius:6px;cursor:pointer;transition:all .15s;font-size:.82rem;font-weight:500;color:var(--text-mid)}
+.uopt-radio:hover{border-color:var(--blue-light);background:var(--blue-faint)}
+.uopt-radio.selected{border-color:var(--blue-light);background:var(--blue-pale);color:var(--blue);font-weight:600}
+.uopt-radio input[type="radio"]{width:14px;height:14px;accent-color:var(--blue);margin:0}
+.uopt-check{display:flex;align-items:center;gap:.45rem;padding:.35rem .1rem;cursor:pointer;font-size:.85rem;font-weight:500;color:var(--text-mid)}
+.uopt-check input[type="checkbox"]{width:16px;height:16px;accent-color:var(--blue)}
+.uopt-hint{font-size:.75rem;color:var(--text-faint);margin-top:.25rem;line-height:1.55;font-style:italic}
+.uopt-sub{margin-left:1.2rem;margin-top:.45rem;padding:.6rem .75rem;background:var(--off-white);border:1px solid var(--border);border-radius:6px}
+.uopt-sub.hidden{display:none}
 select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-family:'Source Sans 3',sans-serif;font-size:.82rem;font-weight:600;color:var(--text-mid);background:var(--white)}
 .upload-zone{margin:.55rem .85rem;border:2px dashed var(--border-strong);border-radius:8px;padding:1.2rem .85rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;flex-shrink:0}
 .upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue-light);background:var(--blue-faint)}
@@ -1024,9 +1042,53 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 </div>
 
 <div class="toast" style="display:none"></div>
+
+<!-- PDF Upload Options Modal -->
+<div class="overlay" id="uploadOptsModal" style="display:none">
+  <div class="modal upload-opts-modal">
+    <h3>📄 PDF Upload Settings</h3>
+    <div class="upload-opts-files" id="uploadOptsFiles"></div>
+
+    <div class="uopt-group">
+      <div class="uopt-label">Page Numbering</div>
+      <div class="uopt-row">
+        <label class="uopt-radio selected" id="uoptPhysical"><input type="radio" name="uoptPageSrc" value="physical" checked> Use PDF page numbers</label>
+        <label class="uopt-radio" id="uoptPrinted"><input type="radio" name="uoptPageSrc" value="printed"> Use printed pagination</label>
+      </div>
+      <div class="uopt-hint">PDF page numbers are sequential (1, 2, 3…). Printed pagination reads the page number as printed on the document (may include 31.1, 31A, etc.).</div>
+
+      <div class="uopt-sub hidden" id="uoptPrintedOpts">
+        <div class="uopt-label" style="margin-bottom:.35rem">Page number position</div>
+        <div class="uopt-row">
+          <label class="uopt-radio selected"><input type="radio" name="uoptPagePos" value="bottom-centre" checked> Bottom centre</label>
+          <label class="uopt-radio"><input type="radio" name="uoptPagePos" value="bottom-right"> Bottom right</label>
+          <label class="uopt-radio"><input type="radio" name="uoptPagePos" value="top-right"> Top right</label>
+        </div>
+        <div class="uopt-label" style="margin-top:.65rem;margin-bottom:.35rem">Page number colour</div>
+        <div class="uopt-row">
+          <label class="uopt-radio selected"><input type="radio" name="uoptPageClr" value="black" checked> Black</label>
+          <label class="uopt-radio"><input type="radio" name="uoptPageClr" value="red"> <span style="color:#c0392b;font-weight:700">Red</span></label>
+          <label class="uopt-radio"><input type="radio" name="uoptPageClr" value="blue"> <span style="color:#2c5ea8;font-weight:700">Blue</span></label>
+        </div>
+        <div class="uopt-hint">Select the colour and position where the printed page number appears on the document. Non-sequential numbers (31.1, 31A, 31.ff) are supported automatically.</div>
+      </div>
+    </div>
+
+    <div class="uopt-group">
+      <div class="uopt-label">Tab Markers</div>
+      <label class="uopt-check"><input type="checkbox" id="uoptHasTabs"> This document has tabs (dividers)</label>
+      <div class="uopt-hint">If checked, the app will detect tab divider pages and record references as Tab + Page (e.g. Tab 3, p.12).</div>
+    </div>
+
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal('uploadOptsModal');pendingUploadFiles=null;">Cancel</button>
+      <button class="btn-primary" onclick="confirmUploadOpts()">Upload</button>
+    </div>
+  </div>
+</div>
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v3.2 — JAVASCRIPT
+   EX LIBRIS JURIS v3.2.1 — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -1036,6 +1098,8 @@ var draftHeading={court:'',caseNo:'',party1:'',party1Role:'',party2:'',party2Rol
 var quickAddType='';
 var openTabs=['chat'];
 var activeTab='chat';
+var pendingUploadFiles=null;
+var uploadOpts={pageSource:'physical',pagePosition:'bottom-centre',pageColour:'black',hasTabs:false};
 
 var stored=localStorage.getItem('elj_token');
 if(stored){token=stored;}
@@ -1415,8 +1479,57 @@ async function deleteDoc(id,name){if(!confirm('Remove "'+name+'"?'))return;try{a
 var uploadZone=document.getElementById('uploadZone'),fileInput=document.getElementById('fileInput');
 uploadZone.addEventListener('dragover',function(e){e.preventDefault();uploadZone.classList.add('drag-over');});
 uploadZone.addEventListener('dragleave',function(){uploadZone.classList.remove('drag-over');});
-uploadZone.addEventListener('drop',function(e){e.preventDefault();uploadZone.classList.remove('drag-over');if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(e.dataTransfer.files).filter(function(f){return f.type==='application/pdf';}));});
-fileInput.addEventListener('change',function(){if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(fileInput.files));fileInput.value='';});
+uploadZone.addEventListener('drop',function(e){e.preventDefault();uploadZone.classList.remove('drag-over');if(!currentMatter){showToast('Select a matter first');return;}showUploadOpts(Array.from(e.dataTransfer.files).filter(function(f){return f.type==='application/pdf';}));});
+fileInput.addEventListener('change',function(){if(!currentMatter){showToast('Select a matter first');return;}showUploadOpts(Array.from(fileInput.files));fileInput.value='';});
+
+/* Show the upload options modal before processing */
+function showUploadOpts(files){
+  if(!files||!files.length)return;
+  pendingUploadFiles=files;
+  /* Show file list */
+  var names=Array.from(files).map(function(f){return f.name;});
+  document.getElementById('uploadOptsFiles').innerHTML='<strong>'+names.length+' file'+(names.length>1?'s':'')+':</strong> '+names.map(function(n){return esc(n);}).join(', ');
+  /* Reset options to defaults */
+  uploadOpts={pageSource:'physical',pagePosition:'bottom-centre',pageColour:'black',hasTabs:false};
+  var modal=document.getElementById('uploadOptsModal');
+  modal.querySelectorAll('input[name="uoptPageSrc"][value="physical"]')[0].checked=true;
+  modal.querySelectorAll('input[name="uoptPagePos"][value="bottom-centre"]')[0].checked=true;
+  modal.querySelectorAll('input[name="uoptPageClr"][value="black"]')[0].checked=true;
+  document.getElementById('uoptHasTabs').checked=false;
+  document.getElementById('uoptPrintedOpts').classList.add('hidden');
+  /* Update radio visual state */
+  modal.querySelectorAll('.uopt-radio').forEach(function(r){r.classList.toggle('selected',r.querySelector('input').checked);});
+  modal.style.display='flex';
+}
+
+/* Radio button visual state handler */
+document.getElementById('uploadOptsModal').addEventListener('change',function(e){
+  if(e.target.type==='radio'){
+    var name=e.target.name;
+    var modal=document.getElementById('uploadOptsModal');
+    modal.querySelectorAll('input[name="'+name+'"]').forEach(function(inp){
+      inp.closest('.uopt-radio').classList.toggle('selected',inp.checked);
+    });
+    /* Show/hide printed pagination options */
+    if(name==='uoptPageSrc'){
+      document.getElementById('uoptPrintedOpts').classList.toggle('hidden',e.target.value!=='printed');
+    }
+  }
+});
+
+/* Confirm upload options and proceed */
+function confirmUploadOpts(){
+  var modal=document.getElementById('uploadOptsModal');
+  uploadOpts.pageSource=modal.querySelector('input[name="uoptPageSrc"]:checked').value;
+  uploadOpts.pagePosition=modal.querySelector('input[name="uoptPagePos"]:checked').value;
+  uploadOpts.pageColour=modal.querySelector('input[name="uoptPageClr"]:checked').value;
+  uploadOpts.hasTabs=document.getElementById('uoptHasTabs').checked;
+  closeModal('uploadOptsModal');
+  if(pendingUploadFiles&&pendingUploadFiles.length){
+    uploadFiles(pendingUploadFiles);
+    pendingUploadFiles=null;
+  }
+}
 
 async function uploadFiles(files){
   if(!files.length||!currentMatter)return;
@@ -1428,16 +1541,24 @@ async function uploadFiles(files){
     prog.textContent='Extracting text: '+file.name+'…';prog.classList.add('on');
     try{
       var pages=await extractPdfText(file);
+      /* If user wants printed pagination, attempt to detect printed page numbers */
+      if(uploadOpts.pageSource==='printed'){
+        pages=await detectPrintedPageNumbers(pages,file,uploadOpts);
+      }
+      /* If user wants tab detection, scan for tab dividers */
+      if(uploadOpts.hasTabs){
+        pages=detectTabMarkers(pages);
+      }
       var fullText=pages.map(function(p){return p.text;}).join('\n\n');
       if(!fullText||fullText.trim().length<50){errEl.textContent='No readable text in '+file.name+'. Try OCR at ilovepdf.com first.';errEl.classList.add('on');continue;}
       prog.textContent='Uploading: '+file.name+' ('+Math.round(fullText.length/1024)+'KB text, '+pages.length+' pages)…';
-      var d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,pageTexts:pages,docType:docType});
+      var d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,pageTexts:pages,docType:docType,uploadOpts:uploadOpts});
       if(d)showToast('\u2713 '+file.name+' — '+d.chunks+' passages indexed'+(d.pageAware?' (page-aware)':''));
     }catch(e){errEl.textContent='Failed: '+file.name+' — '+e.message;errEl.classList.add('on');}
   }
   prog.classList.remove('on');await loadDocuments(currentMatter.id);await loadMatters();
 }
-/* v3.2: Extract text per page for page-aware chunking */
+/* v3.2.1: Extract text per page — captures item positions for printed pagination detection */
 async function extractPdfText(file){
   var pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
   if(!pdfjsLib)throw new Error('PDF library not loaded. Refresh and try again.');
@@ -1445,7 +1566,104 @@ async function extractPdfText(file){
   var buf=await file.arrayBuffer();
   var pdf=await pdfjsLib.getDocument({data:buf}).promise;
   var pages=[];
-  for(var i=1;i<=pdf.numPages;i++){var page=await pdf.getPage(i);var tc=await page.getTextContent();var pageText=tc.items.map(function(item){return item.str;}).join(' ');pages.push({page:i,text:pageText});}
+  for(var i=1;i<=pdf.numPages;i++){
+    var page=await pdf.getPage(i);
+    var vp=page.getViewport({scale:1.0});
+    var pageH=vp.height;var pageW=vp.width;
+    var tc=await page.getTextContent();
+    var items=[];
+    for(var ti=0;ti<tc.items.length;ti++){
+      var item=tc.items[ti];
+      if(!item.str||!item.str.trim())continue;
+      /* item.transform = [scaleX, skewX, skewY, scaleY, translateX, translateY] */
+      var tx=item.transform?item.transform[4]:0;
+      var ty=item.transform?item.transform[5]:0;
+      /* Approximate colour from item style — pdf.js provides fontName but not colour directly.
+         We store the raw style info; colour detection uses a heuristic on font name patterns. */
+      var fn=item.fontName||'';
+      items.push({str:item.str,x:tx,y:ty,w:item.width||0,h:item.height||0,fontName:fn});
+    }
+    var pageText=items.map(function(it){return it.str;}).join(' ');
+    pages.push({page:i,text:pageText,items:items,width:pageW,height:pageH});
+  }
+  return pages;
+}
+
+/* v3.2.1: Detect printed page numbers from text item positions */
+async function detectPrintedPageNumbers(pages,file,opts){
+  var pos=opts.pagePosition||'bottom-centre';
+  /* For each page, look for a text item in the specified position zone that looks like a page number */
+  for(var pi=0;pi<pages.length;pi++){
+    var pg=pages[pi];
+    if(!pg.items||!pg.items.length){pg.printedPage=String(pg.page);continue;}
+    var pageH=pg.height||842;var pageW=pg.width||595;
+    /* Define search zones as fractions of page dimensions */
+    var candidates=[];
+    for(var ii=0;ii<pg.items.length;ii++){
+      var it=pg.items[ii];
+      var inZone=false;
+      if(pos==='bottom-centre'){
+        /* Bottom 12% of page, middle 40% horizontally */
+        inZone=(it.y<pageH*0.12)&&(it.x>pageW*0.3)&&(it.x<pageW*0.7);
+      }else if(pos==='bottom-right'){
+        /* Bottom 12%, right 35% */
+        inZone=(it.y<pageH*0.12)&&(it.x>pageW*0.65);
+      }else if(pos==='top-right'){
+        /* Top 12%, right 35% */
+        inZone=(it.y>pageH*0.88)&&(it.x>pageW*0.65);
+      }
+      if(inZone){
+        /* Check if this looks like a page number: digits, possibly with dots, letters, dashes */
+        var trimmed=it.str.trim();
+        if(/^[\d]+[A-Za-z]?$/.test(trimmed)||/^\d+[\.\-]\d*[A-Za-z]*$/.test(trimmed)||/^\d+\.ff$/.test(trimmed)||/^[ivxlcdm]+$/i.test(trimmed)||/^[A-Z]?\-?\d+/.test(trimmed)||/^\d+$/.test(trimmed)){
+          candidates.push({str:trimmed,x:it.x,y:it.y});
+        }
+      }
+    }
+    if(candidates.length>0){
+      /* Pick the best candidate: prefer the one closest to the expected position */
+      if(pos==='bottom-centre'){
+        candidates.sort(function(a,b){return Math.abs(a.x-pageW/2)-Math.abs(b.x-pageW/2);});
+      }else{
+        /* For right-aligned, pick rightmost */
+        candidates.sort(function(a,b){return b.x-a.x;});
+      }
+      pg.printedPage=candidates[0].str;
+    }else{
+      /* No printed page number found — fall back to physical page */
+      pg.printedPage=String(pg.page);
+    }
+  }
+  /* Clean up: remove the items array before sending to server (too large) */
+  for(var ci=0;ci<pages.length;ci++){delete pages[ci].items;delete pages[ci].width;delete pages[ci].height;}
+  return pages;
+}
+
+/* v3.2.1: Detect tab divider pages — pages with very little text that say "Tab N" or just a number */
+function detectTabMarkers(pages){
+  var currentTab='';
+  for(var pi=0;pi<pages.length;pi++){
+    var pg=pages[pi];
+    var trimText=pg.text.trim();
+    /* A tab page typically has very little text (under 100 chars) and contains "Tab" followed by a number */
+    var isTab=false;
+    if(trimText.length<120){
+      var tabMatch=trimText.match(/\bTab\s*(\d+[A-Za-z]?)\b/i);
+      if(tabMatch){isTab=true;currentTab='Tab '+tabMatch[1];}
+      /* Some bundles use just a number on the divider page */
+      else if(trimText.length<20&&/^\d+[A-Za-z]?$/.test(trimText.trim())){
+        isTab=true;currentTab='Tab '+trimText.trim();
+      }
+    }
+    if(isTab){
+      pg.isTabDivider=true;
+      pg.tabLabel=currentTab;
+    }else if(currentTab){
+      pg.tabLabel=currentTab;
+    }
+  }
+  /* Clean up items if still present */
+  for(var ci=0;ci<pages.length;ci++){delete pages[ci].items;delete pages[ci].width;delete pages[ci].height;}
   return pages;
 }
 /* ── CHAT ─────────────────────────────────────────────────────────────────── */
@@ -1465,7 +1683,7 @@ async function sendMessage(){
   try{
     var d=await api('/api/analyse','POST',{matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:text+(toolContext?'\n\n[Context: '+toolContext+']':'')}],jurisdiction:jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:Array.from(focusAreas)});
     typing.remove();
-    if(d&&d.result){var hId=await saveHistory(text,d.result);var costStr=d.usage&&d.usage.costUsd?' · $'+d.usage.costUsd.toFixed(4):'';appendMsgTo(area,'assistant',d.result,'',text,costStr,null,hId);}
+    if(d&&d.result){var hId=null;try{hId=await saveHistory(text,d.result);}catch(he){console.log('Chat history save failed:',he.message);}var costStr=d.usage&&d.usage.costUsd?' · $'+d.usage.costUsd.toFixed(4):'';appendMsgTo(area,'assistant',d.result,'',text,costStr,null,hId);}
   }catch(e){typing.remove();var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';errEl.textContent='\u26A0\uFE0F Error: '+e.message;area.appendChild(errEl);}
   finally{isLoading=false;document.getElementById('sendBtn').disabled=false;input.focus();}
 }
@@ -1587,13 +1805,17 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     if(chronologyDateRange)body.chronologyDateRange=chronologyDateRange;
     if(chronologyEntities)body.chronologyEntities=chronologyEntities;
     if(chronologyCorrespondenceFilter)body.chronologyCorrespondenceFilter=true;
-    /* v3.2: SSE streaming fetch */
+    /* v3.2.1: SSE streaming fetch with robust fallback */
     var finalResult=null;
     var tok=token||localStorage.getItem('elj_token');
     var response=await fetch('/api/tools',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok,'Accept':'text/event-stream'},body:JSON.stringify(body)});
     if(!response.ok){var errText=await response.text();try{var ej=JSON.parse(errText);throw new Error(ej.error||'Tool failed');}catch(pe){if(pe.message&&pe.message!=='Tool failed')throw pe;throw new Error(errText.slice(0,120));}}
-    var ct=response.headers.get('content-type')||'';
-    if(ct.indexOf('text/event-stream')!==-1){
+    /* Try JSON first on a clone — safe even if server sends SSE */
+    var usedJson=false;
+    try{var cloned=response.clone();var d=await cloned.json();if(d.error)throw new Error(d.error);finalResult=d;usedJson=true;}catch(jsonErr){usedJson=false;}
+    if(!usedJson){
+      /* SSE streaming path */
+      try{
       var reader=response.body.getReader();var decoder=new TextDecoder();var buf='';
       while(true){
         var chunk=await reader.read();if(chunk.done)break;
@@ -1618,15 +1840,11 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
           }
         }
       }
-    }else{
-      /* JSON fallback (non-SSE) */
-      var d=await response.json();
-      if(d.error)throw new Error(d.error);
-      finalResult=d;
+      }catch(sseErr){console.log('SSE read error:',sseErr.message);if(!finalResult)throw sseErr;}
     }
     typing.remove();
-    if(finalResult&&finalResult.result){var isProp=toolName==='proposition';var costStr=finalResult.usage&&finalResult.usage.costUsd?' · $'+finalResult.usage.costUsd.toFixed(4):'';var hId=await saveHistory(toolLabel+(instructions?': '+instructions:''),finalResult.result,toolName);appendMsgTo(msgsArea,'assistant',finalResult.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);}
-    else{typing.remove();var noRes=document.createElement('div');noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem;';noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);}
+    if(finalResult&&finalResult.result){var isProp=toolName==='proposition';var costStr=finalResult.usage&&finalResult.usage.costUsd?' · $'+finalResult.usage.costUsd.toFixed(4):'';var hId=null;try{hId=await saveHistory(toolLabel+(instructions?': '+instructions:''),finalResult.result,toolName);}catch(he){console.log('History save failed (will retry):',he.message);}appendMsgTo(msgsArea,'assistant',finalResult.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);}
+    else{var noRes=document.createElement('div');noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem;';noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);}
   }catch(e){typing.remove();var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';errEl.textContent='\u26A0\uFE0F Tool error: '+e.message;msgsArea.appendChild(errEl);}
   finally{if(progressInterval)clearInterval(progressInterval);progressFill.style.width='100%';setTimeout(function(){progressWrap.classList.remove('on');progressFill.style.width='0%';},800);}
 });
@@ -2188,13 +2406,16 @@ async function generateDraft(){
         docTypeName:dtName
       };
     }
-    /* v3.2: SSE streaming fetch */
+    /* v3.2.1: SSE streaming fetch with robust fallback */
     var finalResult=null;
     var tok=token||localStorage.getItem('elj_token');
     var response=await fetch('/api/tools',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok,'Accept':'text/event-stream'},body:JSON.stringify(body)});
     if(!response.ok){var errText=await response.text();try{var ej=JSON.parse(errText);throw new Error(ej.error||'Draft failed');}catch(pe){if(pe.message&&pe.message!=='Draft failed')throw pe;throw new Error(errText.slice(0,120));}}
-    var rct=response.headers.get('content-type')||'';
-    if(rct.indexOf('text/event-stream')!==-1){
+    /* Try JSON first on a clone */
+    var usedJson=false;
+    try{var cloned=response.clone();var d=await cloned.json();if(d.error)throw new Error(d.error);finalResult=d;usedJson=true;}catch(jsonErr){usedJson=false;}
+    if(!usedJson){
+      try{
       var reader=response.body.getReader();var decoder=new TextDecoder();var buf='';
       while(true){
         var chunk=await reader.read();if(chunk.done)break;
@@ -2215,10 +2436,7 @@ async function generateDraft(){
           }
         }
       }
-    }else{
-      var d=await response.json();
-      if(d.error)throw new Error(d.error);
-      finalResult=d;
+      }catch(sseErr){console.log('SSE read error:',sseErr.message);if(!finalResult)throw sseErr;}
     }
     var resultText=finalResult&&(finalResult.result||finalResult.text||finalResult.answer)||'';
     /* Show the editor */

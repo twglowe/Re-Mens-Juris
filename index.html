@@ -1026,7 +1026,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <div class="toast" style="display:none"></div>
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v3.2 — JAVASCRIPT
+   EX LIBRIS JURIS v3.3 — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -1557,7 +1557,7 @@ function showToolResult(toolName){
   return msgs;
 }
 
-/* ── TOOL EXECUTION (v3.2: SSE streaming + chronology params + heading) ── */
+/* ── TOOL EXECUTION (v3.3: reverted to api() — SSE removed until server supports it) ── */
 document.getElementById('toolRunBtn').addEventListener('click',async function(){
   if(!pendingTool||!currentMatter)return;
   var instructions=document.getElementById('toolInstructions')?document.getElementById('toolInstructions').value.trim():'';
@@ -1587,47 +1587,9 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     if(chronologyDateRange)body.chronologyDateRange=chronologyDateRange;
     if(chronologyEntities)body.chronologyEntities=chronologyEntities;
     if(chronologyCorrespondenceFilter)body.chronologyCorrespondenceFilter=true;
-    /* v3.2: SSE streaming fetch */
-    var finalResult=null;
-    var tok=token||localStorage.getItem('elj_token');
-    var response=await fetch('/api/tools',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok,'Accept':'text/event-stream'},body:JSON.stringify(body)});
-    if(!response.ok){var errText=await response.text();try{var ej=JSON.parse(errText);throw new Error(ej.error||'Tool failed');}catch(pe){if(pe.message&&pe.message!=='Tool failed')throw pe;throw new Error(errText.slice(0,120));}}
-    var ct=response.headers.get('content-type')||'';
-    if(ct.indexOf('text/event-stream')!==-1){
-      var reader=response.body.getReader();var decoder=new TextDecoder();var buf='';var evtName='';
-      while(true){
-        var chunk=await reader.read();if(chunk.done)break;
-        buf+=decoder.decode(chunk.value,{stream:true});
-        var lines=buf.split('\n');buf=lines.pop();
-        for(var li=0;li<lines.length;li++){
-          var line=lines[li];
-          if(line.indexOf('event: ')===0){evtName=line.slice(7).trim();}
-          else if(line.indexOf('data: ')===0){
-            var raw=line.slice(6);
-            try{var evtData=JSON.parse(raw);
-              if(evtName==='progress'){
-                var phase=evtData.phase||'';var bn=evtData.batch||0;var bt=evtData.total||0;
-                var phaseLabel=phase==='extracting'?'Extracting':phase==='synthesising'?'Synthesising results':phase==='comparing'?'Comparing':phase==='analysing'?'Analysing':'Processing';
-                progressLabel.textContent=phaseLabel+'… batch '+bn+' of '+bt;
-                if(bt>0)progressFill.style.width=Math.round((bn/bt)*90)+'%';
-              }else if(evtName==='result'){finalResult=evtData;}
-              else if(evtName==='error'){throw new Error(evtData.error||'Tool failed');}
-              else if(evtName==='batches'){/* info only */}
-            }catch(pe2){if(pe2.message&&pe2.message!=='Tool failed')throw pe2;}
-            evtName='';
-          }
-        }
-      }
-    }else{
-      /* JSON fallback (non-SSE) */
-      var d=await response.json();
-      if(d.error)throw new Error(d.error);
-      finalResult=d;
-    }
+    var d=await api('/api/tools','POST',body);
     typing.remove();
-    console.log('[ELJ DEBUG] finalResult:', finalResult ? 'exists' : 'null', 'result length:', finalResult && finalResult.result ? finalResult.result.length : 0);
-    console.log('[ELJ DEBUG] msgsArea:', msgsArea ? msgsArea.id : 'NULL', 'in DOM:', msgsArea ? document.contains(msgsArea) : false);
-    if(finalResult&&finalResult.result){var isProp=toolName==='proposition';var costStr=finalResult.usage&&finalResult.usage.costUsd?' · $'+finalResult.usage.costUsd.toFixed(4):'';console.log('[ELJ DEBUG] calling appendMsgTo now');appendMsgTo(msgsArea,'assistant',finalResult.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,null);console.log('[ELJ DEBUG] appendMsgTo done, children count:', msgsArea.children.length);try{await saveHistory(toolLabel+(instructions?': '+instructions:''),finalResult.result,toolName);}catch(he){console.log('History save skipped:',he.message);}}
+    if(d&&d.result){var isProp=toolName==='proposition';var costStr=d.usage&&d.usage.costUsd?' · $'+d.usage.costUsd.toFixed(4):'';var hId=await saveHistory(toolLabel+(instructions?': '+instructions:''),d.result,toolName);appendMsgTo(msgsArea,'assistant',d.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);}
     else{typing.remove();var noRes=document.createElement('div');noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem;';noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);}
   }catch(e){typing.remove();var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';errEl.textContent='\u26A0\uFE0F Tool error: '+e.message;msgsArea.appendChild(errEl);}
   finally{if(progressInterval)clearInterval(progressInterval);progressFill.style.width='100%';setTimeout(function(){progressWrap.classList.remove('on');progressFill.style.width='0%';},800);}
@@ -2190,38 +2152,8 @@ async function generateDraft(){
         docTypeName:dtName
       };
     }
-    /* v3.2: SSE streaming fetch */
-    var finalResult=null;
-    var tok=token||localStorage.getItem('elj_token');
-    var response=await fetch('/api/tools',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok,'Accept':'text/event-stream'},body:JSON.stringify(body)});
-    if(!response.ok){var errText=await response.text();try{var ej=JSON.parse(errText);throw new Error(ej.error||'Draft failed');}catch(pe){if(pe.message&&pe.message!=='Draft failed')throw pe;throw new Error(errText.slice(0,120));}}
-    var rct=response.headers.get('content-type')||'';
-    if(rct.indexOf('text/event-stream')!==-1){
-      var reader=response.body.getReader();var decoder=new TextDecoder();var buf='';var evtName='';
-      while(true){
-        var chunk=await reader.read();if(chunk.done)break;
-        buf+=decoder.decode(chunk.value,{stream:true});
-        var lines=buf.split('\n');buf=lines.pop();
-        for(var li=0;li<lines.length;li++){
-          var line=lines[li];
-          if(line.indexOf('event: ')===0){evtName=line.slice(7).trim();}
-          else if(line.indexOf('data: ')===0){
-            var raw=line.slice(6);
-            try{var evtData=JSON.parse(raw);
-              if(evtName==='progress'){prog.textContent=(evtData.phase||'Processing')+'… batch '+(evtData.batch||0)+' of '+(evtData.total||0);}
-              else if(evtName==='result'){finalResult=evtData;}
-              else if(evtName==='error'){throw new Error(evtData.error||'Draft failed');}
-            }catch(pe2){if(pe2.message&&pe2.message!=='Draft failed')throw pe2;}
-            evtName='';
-          }
-        }
-      }
-    }else{
-      var d=await response.json();
-      if(d.error)throw new Error(d.error);
-      finalResult=d;
-    }
-    var resultText=finalResult&&(finalResult.result||finalResult.text||finalResult.answer)||'';
+    var d=await api('/api/tools','POST',body);
+    var resultText=d&&(d.result||d.text||d.answer)||'';
     /* Show the editor */
     document.getElementById('draftInstructionsBody').style.display='none';
     var outputWrap=document.getElementById('draftOutputWrap');

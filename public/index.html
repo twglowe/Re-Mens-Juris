@@ -1594,15 +1594,14 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     if(!response.ok){var errText=await response.text();try{var ej=JSON.parse(errText);throw new Error(ej.error||'Tool failed');}catch(pe){if(pe.message&&pe.message!=='Tool failed')throw pe;throw new Error(errText.slice(0,120));}}
     var ct=response.headers.get('content-type')||'';
     if(ct.indexOf('text/event-stream')!==-1){
-      var reader=response.body.getReader();var decoder=new TextDecoder();var buf='';
+      var reader=response.body.getReader();var decoder=new TextDecoder();var buf='';var evtName='';
       while(true){
         var chunk=await reader.read();if(chunk.done)break;
         buf+=decoder.decode(chunk.value,{stream:true});
         var lines=buf.split('\n');buf=lines.pop();
-        var evtName='';
         for(var li=0;li<lines.length;li++){
           var line=lines[li];
-          if(line.indexOf('event: ')===0)evtName=line.slice(7).trim();
+          if(line.indexOf('event: ')===0){evtName=line.slice(7).trim();}
           else if(line.indexOf('data: ')===0){
             var raw=line.slice(6);
             try{var evtData=JSON.parse(raw);
@@ -1613,6 +1612,7 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
                 if(bt>0)progressFill.style.width=Math.round((bn/bt)*90)+'%';
               }else if(evtName==='result'){finalResult=evtData;}
               else if(evtName==='error'){throw new Error(evtData.error||'Tool failed');}
+              else if(evtName==='batches'){/* info only */}
             }catch(pe2){if(pe2.message&&pe2.message!=='Tool failed')throw pe2;}
             evtName='';
           }
@@ -2195,15 +2195,14 @@ async function generateDraft(){
     if(!response.ok){var errText=await response.text();try{var ej=JSON.parse(errText);throw new Error(ej.error||'Draft failed');}catch(pe){if(pe.message&&pe.message!=='Draft failed')throw pe;throw new Error(errText.slice(0,120));}}
     var rct=response.headers.get('content-type')||'';
     if(rct.indexOf('text/event-stream')!==-1){
-      var reader=response.body.getReader();var decoder=new TextDecoder();var buf='';
+      var reader=response.body.getReader();var decoder=new TextDecoder();var buf='';var evtName='';
       while(true){
         var chunk=await reader.read();if(chunk.done)break;
         buf+=decoder.decode(chunk.value,{stream:true});
         var lines=buf.split('\n');buf=lines.pop();
-        var evtName='';
         for(var li=0;li<lines.length;li++){
           var line=lines[li];
-          if(line.indexOf('event: ')===0)evtName=line.slice(7).trim();
+          if(line.indexOf('event: ')===0){evtName=line.slice(7).trim();}
           else if(line.indexOf('data: ')===0){
             var raw=line.slice(6);
             try{var evtData=JSON.parse(raw);

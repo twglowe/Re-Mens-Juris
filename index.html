@@ -1026,7 +1026,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <div class="toast" style="display:none"></div>
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v3.3 — JAVASCRIPT
+   EX LIBRIS JURIS v3.4 — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -1537,12 +1537,48 @@ function openTool(t){
   if(!isNew)return;
   promptTool(t);
 }
+/* v3.4: Document filter — exclude documents by name or type from tool runs */
+function docFilterHtml(){
+  if(!documents||!documents.length)return '';
+  var types={};documents.forEach(function(d){types[d.doc_type]=true;});
+  var typeList=Object.keys(types).sort();
+  var html='<details class="doc-filter-details" style="margin-top:.85rem;border:1.5px solid var(--border);border-radius:6px;padding:.4rem .6rem;background:var(--blue-faint)">'
+    +'<summary style="font-size:.78rem;font-weight:600;color:var(--text-mid);cursor:pointer;letter-spacing:.04em;text-transform:uppercase">Document Filter <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-faint)">(click to exclude documents)</span></summary>'
+    +'<div style="margin-top:.5rem">'
+    +'<div style="font-size:.75rem;font-weight:600;color:var(--text-light);margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.04em">By Type</div>'
+    +'<div id="docFilterTypes" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.5rem">';
+  typeList.forEach(function(dt){
+    html+='<label style="font-size:.78rem;display:flex;align-items:center;gap:.3rem;padding:.15rem .4rem;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--white)"><input type="checkbox" checked data-doctype="'+esc(dt)+'" onchange="docFilterTypeToggle(this)" style="width:14px;height:14px;accent-color:var(--blue)">'+esc(dt)+'</label>';
+  });
+  html+='</div>'
+    +'<div style="font-size:.75rem;font-weight:600;color:var(--text-light);margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.04em">By Document</div>'
+    +'<div id="docFilterDocs" style="max-height:150px;overflow-y:auto">';
+  documents.forEach(function(d){
+    html+='<label class="anchor-item" style="font-size:.8rem"><input type="checkbox" checked value="'+esc(d.name)+'" data-dtype="'+esc(d.doc_type)+'"> '+esc(d.name)+' <span style="color:var(--text-faint);font-size:.72rem">['+esc(d.doc_type)+']</span></label>';
+  });
+  html+='</div></div></details>';
+  return html;
+}
+function docFilterTypeToggle(el){
+  var dt=el.getAttribute('data-doctype');var checked=el.checked;
+  document.querySelectorAll('#docFilterDocs input[data-dtype="'+dt+'"]').forEach(function(cb){cb.checked=checked;});
+}
+function getExcludedDocNames(){
+  var excluded=[];
+  document.querySelectorAll('#docFilterDocs input[type="checkbox"]').forEach(function(cb){if(!cb.checked)excluded.push(cb.value);});
+  return excluded;
+}
+function getExcludedDocTypes(){
+  var excluded=[];
+  document.querySelectorAll('#docFilterTypes input[type="checkbox"]').forEach(function(cb){if(!cb.checked)excluded.push(cb.getAttribute('data-doctype'));});
+  return excluded;
+}
 function promptTool(t){
   if(!currentMatter){showToast('Select a matter first');return;}
   pendingTool=t;
   var cfg=toolDefs[t];
   document.getElementById('toolModalTitle').textContent=cfg.title;
-  document.getElementById('toolModalBody').innerHTML=cfg.body();
+  document.getElementById('toolModalBody').innerHTML=cfg.body()+docFilterHtml();
   document.getElementById('toolModal').style.display='flex';
 }
 function getActiveMessagesArea(){
@@ -1557,19 +1593,21 @@ function showToolResult(toolName){
   return msgs;
 }
 
-/* ── TOOL EXECUTION (v3.3: reverted to api() — SSE removed until server supports it) ── */
+/* ── TOOL EXECUTION (v3.4: fire-and-poll background processing) ── */
 document.getElementById('toolRunBtn').addEventListener('click',async function(){
   if(!pendingTool||!currentMatter)return;
   var instructions=document.getElementById('toolInstructions')?document.getElementById('toolInstructions').value.trim():'';
   var anchorDocNames=[];
   if(pendingTool==='inconsistency'){document.querySelectorAll('#anchorList input:checked').forEach(function(cb){anchorDocNames.push(cb.value);});}
-  /* v3.2: Chronology extra params */
   var chronologyDateRange='';var chronologyEntities='';var chronologyCorrespondenceFilter=false;
   if(pendingTool==='chronology'){
     var drEl=document.getElementById('chronoDateRange');if(drEl)chronologyDateRange=drEl.value.trim();
     var enEl=document.getElementById('chronoEntities');if(enEl)chronologyEntities=enEl.value.trim();
     var cfEl=document.getElementById('chronoCorresFilter');if(cfEl)chronologyCorrespondenceFilter=cfEl.checked;
   }
+  /* v3.4: Collect document exclusions from filter */
+  var excludeDocNames=getExcludedDocNames();
+  var excludeDocTypes=getExcludedDocTypes();
   closeModal('toolModal');
   var toolName=pendingTool;
   var toolLabel=toolDefs[toolName]?toolDefs[toolName].title:toolName;
@@ -1578,21 +1616,74 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   var progressWrap=document.getElementById('progressWrap');
   var progressLabel=document.getElementById('progressLabel');
   var progressFill=document.getElementById('progressFill');
-  var needsFullScan=['chronology','persons','issues','briefing','inconsistency','proposition'].indexOf(toolName)!==-1;
-  var progressInterval=null;
-  if(needsFullScan){progressWrap.classList.add('on');progressLabel.textContent='Running '+toolLabel+'… (may take several minutes for large matters)';var pct=0;progressInterval=setInterval(function(){pct=Math.min(pct+1,90);progressFill.style.width=pct+'%';},2000);}
+  progressWrap.classList.add('on');
+  progressLabel.textContent='Submitting '+toolLabel+'\u2026';
+  progressFill.style.width='5%';
   var typing=document.createElement('div');typing.className='msg msg-assistant msg-tool';typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';msgsArea.appendChild(typing);msgsArea.scrollTop=msgsArea.scrollHeight;
   try{
-    var body={tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',jurisdiction:jurisdiction,anchorDocNames:anchorDocNames,instructions:instructions};
+    var body={tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',jurisdiction:jurisdiction,anchorDocNames:anchorDocNames,instructions:instructions,excludeDocNames:excludeDocNames,excludeDocTypes:excludeDocTypes};
     if(chronologyDateRange)body.chronologyDateRange=chronologyDateRange;
     if(chronologyEntities)body.chronologyEntities=chronologyEntities;
     if(chronologyCorrespondenceFilter)body.chronologyCorrespondenceFilter=true;
+    /* v3.4: Fire job — returns immediately with jobId */
     var d=await api('/api/tools','POST',body);
-    typing.remove();
-    if(d&&d.result){var isProp=toolName==='proposition';var costStr=d.usage&&d.usage.costUsd?' · $'+d.usage.costUsd.toFixed(4):'';var hId=await saveHistory(toolLabel+(instructions?': '+instructions:''),d.result,toolName);appendMsgTo(msgsArea,'assistant',d.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);}
-    else{typing.remove();var noRes=document.createElement('div');noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem;';noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);}
-  }catch(e){typing.remove();var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';errEl.textContent='\u26A0\uFE0F Tool error: '+e.message;msgsArea.appendChild(errEl);}
-  finally{if(progressInterval)clearInterval(progressInterval);progressFill.style.width='100%';setTimeout(function(){progressWrap.classList.remove('on');progressFill.style.width='0%';},800);}
+    if(!d||!d.jobId)throw new Error('No jobId returned');
+    progressLabel.textContent='Processing '+toolLabel+'\u2026 (you can close your laptop \u2014 processing continues in the background)';
+    progressFill.style.width='10%';
+    /* Poll for completion */
+    var jobId=d.jobId;var pollCount=0;
+    var pollInterval=setInterval(async function(){
+      try{
+        pollCount++;
+        var j=await api('/api/jobs?id='+jobId);
+        if(!j)return;
+        /* Update progress bar with batch info */
+        if(j.batchesTotal>0&&j.batchesDone>0){
+          var pct=Math.min(10+Math.round((j.batchesDone/j.batchesTotal)*80),90);
+          progressFill.style.width=pct+'%';
+          progressLabel.textContent='Processing '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
+        }
+        /* Job complete */
+        if(j.status==='complete'||j.status==='partial'){
+          clearInterval(pollInterval);typing.remove();
+          progressFill.style.width='100%';
+          setTimeout(function(){progressWrap.classList.remove('on');progressFill.style.width='0%';},800);
+          if(j.result){
+            var isProp=toolName==='proposition';
+            var costStr=j.usage&&j.usage.costUsd?' \u00B7 $'+j.usage.costUsd.toFixed(4):'';
+            /* Worker already saved to history — reload and display */
+            await loadHistory(currentMatter.id);
+            var latestH=matterHistory.find(function(h){return h.tool_name===toolName;});
+            var hId=latestH?latestH.id:null;
+            appendMsgTo(msgsArea,'assistant',j.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);
+          }else{
+            var noRes=document.createElement('div');noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem;';
+            noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);
+          }
+          return;
+        }
+        /* Job failed */
+        if(j.status==='failed'){
+          clearInterval(pollInterval);typing.remove();
+          progressWrap.classList.remove('on');progressFill.style.width='0%';
+          var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
+          errEl.textContent='\u26A0\uFE0F Tool error: '+(j.error||'Unknown error');msgsArea.appendChild(errEl);
+          return;
+        }
+        /* Safety: stop polling after 60 minutes (360 polls at 10s) */
+        if(pollCount>360){
+          clearInterval(pollInterval);typing.remove();
+          progressWrap.classList.remove('on');progressFill.style.width='0%';
+          var toEl=document.createElement('div');toEl.style.cssText='text-align:center;font-size:.78rem;color:var(--warning);padding:.45rem;';
+          toEl.textContent='Processing is taking longer than expected. Check History later for results.';msgsArea.appendChild(toEl);
+        }
+      }catch(pollErr){console.log('Poll error:',pollErr.message);}
+    },10000);
+  }catch(e){
+    typing.remove();progressWrap.classList.remove('on');progressFill.style.width='0%';
+    var errEl2=document.createElement('div');errEl2.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
+    errEl2.textContent='\u26A0\uFE0F Tool error: '+e.message;msgsArea.appendChild(errEl2);
+  }
 });
 /* ── LIBRARY ──────────────────────────────────────────────────────────────── */
 async function loadLibrary(){
@@ -2118,6 +2209,7 @@ function getSelectedDocTypeName(){
 }
 
 /* Generate Draft */
+/* v3.4: generateDraft uses fire-and-poll background processing */
 async function generateDraft(){
   var matterId=document.getElementById('draftMatterSelect').value;
   if(!matterId){showToast('Select a matter first');return;}
@@ -2126,43 +2218,53 @@ async function generateDraft(){
   var ctId=document.getElementById('draftCaseType').value;
   var dtId=document.getElementById('draftDocType').value;
   var stId=document.getElementById('draftStage').value;
-  /* Show progress */
   document.getElementById('draftGenerateBtn').disabled=true;
-  var prog=document.getElementById('draftProgressMsg');prog.style.display='';prog.textContent='Generating draft… this may take several minutes.';
+  var prog=document.getElementById('draftProgressMsg');prog.style.display='';prog.textContent='Submitting draft request\u2026';
   try{
     var body={matterId:matterId,tool:'draft',instructions:instructions,jurisdiction:jurisdiction,actingFor:'',courtHeading:draftHeading};
     if(ctId)body.caseTypeId=ctId;
     if(dtId)body.docTypeId=dtId;
     if(stId)body.subcatId=stId;
-    /* Find the matter for acting_for */
     var m=matters.find(function(x){return x.id===matterId;});
-    if(m)body.actingFor=m.acting_for||'';
-    if(m)body.matterName=m.name;
-    if(m)body.matterNature=m.nature||'';
-    if(m)body.matterIssues=m.issues||'';
-    /* v2.5: Build library context from selected precedents */
+    if(m){body.actingFor=m.acting_for||'';body.matterName=m.name;body.matterNature=m.nature||'';body.matterIssues=m.issues||'';}
     if(draftSelectedPrecedents.length>0){
       var ctName='';var ct=libraryData.caseTypes.find(function(c){return c.id===ctId;});if(ct)ctName=ct.name;
       var stName='';var st=libraryData.subcats.find(function(s){return s.id===stId;});if(st)stName=st.name;
       var dtName='';var dt=libraryData.docTypes.find(function(d){return d.id===dtId;});if(dt)dtName=dt.name;
-      body.libraryContext={
-        selectedPrecedentIds:draftSelectedPrecedents.map(function(p){return p.id;}),
-        caseTypeName:ctName,
-        subcategoryName:stName,
-        docTypeName:dtName
-      };
+      body.libraryContext={selectedPrecedentIds:draftSelectedPrecedents.map(function(p){return p.id;}),caseTypeName:ctName,subcategoryName:stName,docTypeName:dtName};
     }
     var d=await api('/api/tools','POST',body);
-    var resultText=d&&(d.result||d.text||d.answer)||'';
-    /* Show the editor */
-    document.getElementById('draftInstructionsBody').style.display='none';
-    var outputWrap=document.getElementById('draftOutputWrap');
-    outputWrap.classList.remove('hidden');
-    var editor=document.getElementById('draftEditor');
-    editor.innerHTML=renderMd(resultText);
-    editor.focus();
-  }catch(e){showToast('Draft error: '+e.message);}
-  finally{document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';}
+    if(!d||!d.jobId)throw new Error('No jobId returned');
+    prog.textContent='Generating draft\u2026 (processing in background, you can navigate away)';
+    var jobId=d.jobId;var pollCount=0;
+    var draftPoll=setInterval(async function(){
+      try{
+        pollCount++;
+        var j=await api('/api/jobs?id='+jobId);
+        if(!j)return;
+        if(j.batchesTotal>0&&j.batchesDone>0){prog.textContent='Generating draft\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;}
+        if(j.status==='complete'||j.status==='partial'){
+          clearInterval(draftPoll);
+          document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';
+          var resultText=j.result||'';
+          document.getElementById('draftInstructionsBody').style.display='none';
+          var outputWrap=document.getElementById('draftOutputWrap');outputWrap.classList.remove('hidden');
+          var editor=document.getElementById('draftEditor');editor.innerHTML=renderMd(resultText);editor.focus();
+          return;
+        }
+        if(j.status==='failed'){
+          clearInterval(draftPoll);
+          document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';
+          showToast('Draft error: '+(j.error||'Unknown error'));return;
+        }
+        if(pollCount>360){
+          clearInterval(draftPoll);
+          document.getElementById('draftGenerateBtn').disabled=false;
+          prog.textContent='Draft is taking longer than expected. Check History later.';
+        }
+      }catch(pollErr){console.log('Draft poll error:',pollErr.message);}
+    },10000);
+  }catch(e){document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';showToast('Draft error: '+e.message);}
 }
 
 /* Draft rich text commands */

@@ -6,7 +6,9 @@
   "functions": {
     "api/upload.js": { "maxDuration": 300 },
     "api/analyse.js": { "maxDuration": 120 },
-    "api/tools.js": { "maxDuration": 300 },
+    "api/tools.js": { "maxDuration": 30 },
+    "api/worker.js": { "maxDuration": 300 },
+    "api/jobs.js": { "maxDuration": 10 },
     "api/library.js": { "maxDuration": 120 },
     "api/matters.js": { "maxDuration": 30 },
     "api/documents.js": { "maxDuration": 30 },

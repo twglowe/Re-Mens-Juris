@@ -1,159 +1,101 @@
-import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, BorderStyle } from "docx";
+/* EX LIBRIS JURIS v3.4.1 — export.js
+   Generates a Word-compatible .doc file using HTML format.
+   This avoids the docx npm package which crashes on some Vercel deployments.
+   Word opens .doc HTML files natively with full formatting. */
 
 export const config = { maxDuration: 30 };
 
-function parseMarkdownToDocx(text, matterName, jurisdiction, h) {
-  const children = [];
+function esc(s) {
+  return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
-  // Legal heading
-  const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-  if (h && (h.court || h.plaintiff)) {
-    // Full formal legal heading
-    if (h.court) children.push(new Paragraph({ children: [new TextRun({ text: h.court.toUpperCase(), bold: true, size: 24, color: "0f2744" })], alignment: AlignmentType.CENTER, spacing: { after: 80 } }));
-    if (h.actionNo) children.push(new Paragraph({ children: [new TextRun({ text: "Cause No. " + h.actionNo, size: 22, color: "0f2744" })], alignment: AlignmentType.CENTER, spacing: { after: 80 } }));
-    children.push(new Paragraph({ children: [new TextRun({ text: "IN THE MATTER OF " + matterName.toUpperCase(), size: 22, color: "0f2744", bold: true })], alignment: AlignmentType.CENTER, spacing: { before: 120, after: 160 } }));
-    if (h.plaintiff || h.defendant) {
-      children.push(new Paragraph({ children: [new TextRun({ text: "BETWEEN:", bold: true, size: 22, color: "0f2744" })], spacing: { after: 80 } }));
-      if (h.plaintiff) {
-        children.push(new Paragraph({ children: [new TextRun({ text: h.plaintiff, size: 22, color: "0f2744" })], spacing: { after: 40 } }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Plaintiff / Petitioner / Applicant", size: 20, color: "5a7a94", italics: true })], indent: { left: 3600 }, spacing: { after: 80 } }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "— and —", size: 22, color: "0f2744" })], alignment: AlignmentType.CENTER, spacing: { before: 60, after: 60 } }));
-      }
-      if (h.defendant) {
-        children.push(new Paragraph({ children: [new TextRun({ text: h.defendant, size: 22, color: "0f2744" })], spacing: { after: 40 } }));
-        children.push(new Paragraph({ children: [new TextRun({ text: "Defendant / Respondent", size: 20, color: "5a7a94", italics: true })], indent: { left: 3600 }, spacing: { after: 160 } }));
-      }
-    }
-    if (h.docType) children.push(new Paragraph({ children: [new TextRun({ text: h.docType.toUpperCase(), bold: true, size: 26, color: "0f2744" })], alignment: AlignmentType.CENTER, spacing: { before: 160, after: 80 } }));
-    if (h.firm) children.push(new Paragraph({ children: [new TextRun({ text: "Filed by: " + h.firm, size: 20, color: "1d6fa4" })], alignment: AlignmentType.CENTER, spacing: { after: 40 } }));
-    if (h.counselFor) children.push(new Paragraph({ children: [new TextRun({ text: "Counsel for the " + h.counselFor, size: 20, color: "1d6fa4" })], alignment: AlignmentType.CENTER, spacing: { after: 40 } }));
-    children.push(new Paragraph({ children: [new TextRun({ text: "Jurisdiction: " + jurisdiction + "   |   Date: " + dateStr, size: 18, color: "5a7a94" })], alignment: AlignmentType.CENTER, spacing: { after: 400 }, border: { bottom: { color: "c5ddf0", size: 6, style: BorderStyle.SINGLE } } }));
-  } else {
-    // Simple heading fallback
-    children.push(new Paragraph({ children: [new TextRun({ text: "Ex Libris Juris — Legal Analysis", bold: true, size: 28, color: "0f2744" })], spacing: { after: 120 } }));
-    children.push(new Paragraph({ children: [new TextRun({ text: "Matter: " + matterName, size: 22, color: "1d6fa4" })], spacing: { after: 60 } }));
-    children.push(new Paragraph({ children: [new TextRun({ text: "Jurisdiction: " + jurisdiction + "   |   Date: " + dateStr, size: 18, color: "5a7a94" })], spacing: { after: 400 }, border: { bottom: { color: "c5ddf0", size: 6, style: BorderStyle.SINGLE } } }));
-  }
+function markdownToHtml(text) {
+  var lines = (text || "").split("\n");
+  var html = "";
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var trimmed = line.trim();
 
-  const lines = text.split("\n");
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i].trim();
-
-    if (line.startsWith("## ") || line.startsWith("# ")) {
-      children.push(new Paragraph({
-        text: line.replace(/^#+\s/, ""),
-        heading: HeadingLevel.HEADING_2,
-        spacing: { before: 300, after: 120 },
-      }));
-    } else if (line.startsWith("### ")) {
-      children.push(new Paragraph({
-        text: line.slice(4),
-        heading: HeadingLevel.HEADING_3,
-        spacing: { before: 200, after: 80 },
-      }));
-    } else if (line.startsWith("#### ")) {
-      children.push(new Paragraph({
-        text: line.slice(5),
-        heading: HeadingLevel.HEADING_4,
-        spacing: { before: 160, after: 60 },
-      }));
-    } else if (line.startsWith("- ") || line.startsWith("• ")) {
-      children.push(new Paragraph({
-        children: [new TextRun({ text: line.slice(2), size: 22 })],
-        bullet: { level: 0 },
-        spacing: { after: 60 },
-      }));
-    } else if (/^\d+\. /.test(line)) {
-      children.push(new Paragraph({
-        children: [new TextRun({ text: line.replace(/^\d+\. /, ""), size: 22 })],
-        numbering: { reference: "default-numbering", level: 0 },
-        spacing: { after: 60 },
-      }));
-    } else if (line.startsWith("> ")) {
-      children.push(new Paragraph({
-        children: [new TextRun({ text: line.slice(2), italics: true, color: "2d5070", size: 22 })],
-        indent: { left: 720 },
-        border: { left: { color: "1d6fa4", size: 12, style: BorderStyle.SINGLE } },
-        spacing: { before: 80, after: 80 },
-      }));
-    } else if (line.includes("⚠️")) {
-      children.push(new Paragraph({
-        children: [new TextRun({ text: line, size: 20, color: "7a6020", italics: true })],
-        spacing: { before: 200, after: 80 },
-        shading: { fill: "fff8e1" },
-      }));
-    } else if (line) {
-      // Parse inline bold/italic
-      const runs = [];
-      const parts = line.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
-      for (const part of parts) {
-        if (part.startsWith("**") && part.endsWith("**")) {
-          runs.push(new TextRun({ text: part.slice(2, -2), bold: true, size: 22, color: "0f2744" }));
-        } else if (part.startsWith("*") && part.endsWith("*")) {
-          runs.push(new TextRun({ text: part.slice(1, -1), italics: true, size: 22, color: "1d6fa4" }));
-        } else if (part) {
-          runs.push(new TextRun({ text: part, size: 22 }));
-        }
-      }
-      children.push(new Paragraph({ children: runs, spacing: { after: 120 } }));
+    if (trimmed.startsWith("#### ")) {
+      html += "<h4>" + inlineFmt(esc(trimmed.slice(5))) + "</h4>\n";
+    } else if (trimmed.startsWith("### ")) {
+      html += "<h3>" + inlineFmt(esc(trimmed.slice(4))) + "</h3>\n";
+    } else if (trimmed.startsWith("## ")) {
+      html += "<h2>" + inlineFmt(esc(trimmed.slice(3))) + "</h2>\n";
+    } else if (trimmed.startsWith("# ")) {
+      html += "<h1>" + inlineFmt(esc(trimmed.slice(2))) + "</h1>\n";
+    } else if (trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
+      html += "<ul><li>" + inlineFmt(esc(trimmed.slice(2))) + "</li></ul>\n";
+    } else if (/^\d+\.\s/.test(trimmed)) {
+      html += "<ol><li>" + inlineFmt(esc(trimmed.replace(/^\d+\.\s/, ""))) + "</li></ol>\n";
+    } else if (trimmed.startsWith("> ")) {
+      html += '<blockquote style="border-left:3px solid #1d6fa4;padding-left:12px;color:#2d5070;font-style:italic">' + inlineFmt(esc(trimmed.slice(2))) + "</blockquote>\n";
+    } else if (trimmed.includes("\u26A0\uFE0F")) {
+      html += '<p style="background:#fff8e1;padding:8px 12px;color:#7a6020;font-style:italic;font-size:10pt">' + inlineFmt(esc(trimmed)) + "</p>\n";
+    } else if (trimmed === "") {
+      html += "<p>&nbsp;</p>\n";
     } else {
-      children.push(new Paragraph({ text: "", spacing: { after: 60 } }));
+      html += "<p>" + inlineFmt(esc(trimmed)) + "</p>\n";
     }
-    i++;
   }
+  return html;
+}
 
-  return children;
+function inlineFmt(text) {
+  /* Bold: **text** */
+  text = text.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  /* Italic: *text* */
+  text = text.replace(/\*([^*]+)\*/g, "<i>$1</i>");
+  return text;
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { content, matterName, jurisdiction, title, court, actionNo, plaintiff, defendant, firm, counselFor, docType } = req.body;
+  var body = req.body || {};
+  var content = body.content;
+  var matterName = body.matterName || "Matter";
+  var jurisdiction = body.jurisdiction || "Bermuda";
+  var title = body.title || matterName;
+
   if (!content) return res.status(400).json({ error: "No content provided" });
 
   try {
-    const headingOpts = (court || plaintiff || defendant) ? { court, actionNo, plaintiff, defendant, firm: firm, counselFor, docType } : null;
-    const children = parseMarkdownToDocx(content, matterName || "Matter", jurisdiction || "Bermuda", headingOpts);
+    var dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
-    const doc = new Document({
-      numbering: {
-        config: [{
-          reference: "default-numbering",
-          levels: [{ level: 0, format: "decimal", text: "%1.", alignment: AlignmentType.START }]
-        }]
-      },
-      styles: {
-        default: {
-          document: { run: { font: "Georgia", size: 22, color: "0f2744" } },
-        },
-        paragraphStyles: [
-          {
-            id: "Heading2", name: "Heading 2", basedOn: "Normal",
-            run: { bold: true, size: 26, color: "0f2744", font: "Georgia" },
-          },
-          {
-            id: "Heading3", name: "Heading 3", basedOn: "Normal",
-            run: { bold: true, size: 24, color: "1a3a5c", font: "Georgia" },
-          },
-          {
-            id: "Heading4", name: "Heading 4", basedOn: "Normal",
-            run: { bold: true, size: 20, color: "5a7a94", font: "Georgia" },
-          },
-        ],
-      },
-      sections: [{
-        properties: {
-          page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } }
-        },
-        children,
-      }],
-    });
+    var htmlDoc = '<!DOCTYPE html>\n'
+      + '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">\n'
+      + "<head>\n"
+      + '<meta charset="utf-8">\n'
+      + "<title>" + esc(title) + "</title>\n"
+      + "<style>\n"
+      + "  @page { size: A4; margin: 2.5cm 2.5cm 2.5cm 2.5cm; }\n"
+      + "  body { font-family: Georgia, 'Times New Roman', serif; font-size: 11pt; color: #0f2744; line-height: 1.5; }\n"
+      + "  h1 { font-size: 16pt; color: #0f2744; margin-top: 24pt; margin-bottom: 8pt; }\n"
+      + "  h2 { font-size: 14pt; color: #0f2744; margin-top: 20pt; margin-bottom: 6pt; border-bottom: 1px solid #c5ddf0; padding-bottom: 4pt; }\n"
+      + "  h3 { font-size: 12pt; color: #1a3a5c; margin-top: 16pt; margin-bottom: 4pt; }\n"
+      + "  h4 { font-size: 11pt; color: #5a7a94; margin-top: 12pt; margin-bottom: 4pt; }\n"
+      + "  p { margin-top: 0; margin-bottom: 6pt; }\n"
+      + "  ul, ol { margin-top: 0; margin-bottom: 6pt; }\n"
+      + "  .header { text-align: center; margin-bottom: 24pt; padding-bottom: 12pt; border-bottom: 2px solid #c5ddf0; }\n"
+      + "  .header h1 { border-bottom: none; }\n"
+      + "  .meta { font-size: 9pt; color: #5a7a94; text-align: center; margin-bottom: 24pt; }\n"
+      + "</style>\n"
+      + "</head>\n"
+      + "<body>\n"
+      + '<div class="header">\n'
+      + "  <h1>Ex Libris Juris \u2014 Legal Analysis</h1>\n"
+      + "  <p><b>" + esc(matterName) + "</b></p>\n"
+      + "</div>\n"
+      + '<p class="meta">Jurisdiction: ' + esc(jurisdiction) + " &nbsp;|&nbsp; Date: " + esc(dateStr) + "</p>\n"
+      + markdownToHtml(content)
+      + "\n</body>\n</html>";
 
-    const buffer = await Packer.toBuffer(doc);
-    const safeName = (title || matterName || "analysis").replace(/[^a-z0-9]/gi, "-").toLowerCase();
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.setHeader("Content-Disposition", `attachment; filename="${safeName}.docx"`);
+    var buffer = Buffer.from(htmlDoc, "utf-8");
+    var safeName = (title || matterName || "analysis").replace(/[^a-z0-9]/gi, "-").toLowerCase();
+
+    res.setHeader("Content-Type", "application/msword");
+    res.setHeader("Content-Disposition", 'attachment; filename="' + safeName + '.doc"');
     res.setHeader("Content-Length", buffer.length);
     return res.status(200).send(buffer);
   } catch (err) {

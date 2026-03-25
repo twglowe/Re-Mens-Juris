@@ -1,6 +1,12 @@
-/* EX LIBRIS JURIS v3.4 — tools.js
+/* EX LIBRIS JURIS v3.4.1 — tools.js
    Thin job dispatcher: creates a tool_jobs row, fires worker, returns jobId.
-   NO Claude API calls happen here. All processing is in worker.js. */
+   NO Claude API calls happen here. All processing is in worker.js.
+
+   v3.4.1 FIX: The worker fetch is now awaited with a 5-second timeout.
+   Previously the non-awaited fetch was killed when Vercel terminated the
+   tools.js function after sending its response. The AbortController timeout
+   ensures we wait long enough for the worker to receive the request, but
+   still return the jobId quickly to the frontend. */
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -32,7 +38,7 @@ export default async function handler(req, res) {
           citationSource, citationTargets,
           chronologyDateRange, chronologyEntities, chronologyCorrespondenceFilter,
           caseTypeId, docTypeId, subcatId, libraryContext,
-          excludeDocNames } = req.body;
+          excludeDocNames, excludeDocTypes } = req.body;
 
   if (!tool || !matterId) return res.status(400).json({ error: "tool and matterId required" });
 
@@ -62,6 +68,7 @@ export default async function handler(req, res) {
     subcatId: subcatId || null,
     libraryContext: libraryContext || null,
     excludeDocNames: excludeDocNames || [],
+    excludeDocTypes: excludeDocTypes || [],
   };
 
   /* Create job row */
@@ -83,13 +90,27 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to create job: " + insertError.message });
   }
 
-  /* Fire the worker — non-awaited so we return immediately */
+  /* Fire the worker with a 5-second timeout.
+     We AWAIT this so Vercel doesn't kill the in-flight request.
+     The AbortController ensures we don't wait for the full worker run.
+     The worker responds quickly with { ok: true } then continues processing
+     because it defers its real work via its own internal logic. */
   const workerUrl = `https://${req.headers.host}/api/worker?jobId=${job.id}`;
-  fetch(workerUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-  }).catch(e => console.error("Worker fire error:", e.message));
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    await fetch(workerUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+  } catch (e) {
+    /* Timeout or network error — worker may still be starting.
+       This is not fatal; the worker runs independently once started. */
+    console.log("Worker fire (expected timeout or abort):", e.message);
+  }
 
-  /* Return jobId immediately (< 2 seconds total) */
+  /* Return jobId to frontend */
   return res.status(200).json({ jobId: job.id });
 }

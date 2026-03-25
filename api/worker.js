@@ -658,6 +658,66 @@ export default async function handler(req, res) {
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
+    /* ── ISSUE BRIEFING (detailed analysis of selected issues) ─────────── */
+    else if (tool === "issueBriefing") {
+      var selectedIssues = p.selectedIssues || [];
+      var issuesText = p.issuesText || "";
+      if (selectedIssues.length === 0 && !instructions) {
+        await failJob(jobId, "No issues selected for briefing");
+        return res.status(200).json({ ok: false, error: "No issues selected" });
+      }
+
+      var chunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
+      var byDoc = chunksToDocMap(chunks);
+      var pageIndex = buildPageIndex(byDoc);
+
+      var issuesList = selectedIssues.length > 0
+        ? selectedIssues.map(function(iss, idx) { return (idx + 1) + ". " + iss; }).join("\n")
+        : instructions;
+
+      var systemBase = "You are a senior litigation counsel in " + jur + " producing a detailed issue briefing for \"" + matterName + "\"." + (actingFor ? " You are acting for the " + actingFor + "." : "") + "\n" + matterContext
+        + "\n\nYou have been asked to produce a detailed briefing on specific issues from the matter. For each issue you MUST:\n"
+        + "1. Provide a detailed commentary on the issue — what it involves, why it matters, and how it arises in the proceedings.\n"
+        + "2. Cite specific document references in the format: [Document Name, p.X \u00b6Y] for every factual assertion.\n"
+        + "3. Set out the STRENGTHS of the " + (actingFor || "client") + "'s position on this issue, with document references.\n"
+        + "4. Set out the WEAKNESSES of the " + (actingFor || "client") + "'s position on this issue, with document references.\n"
+        + "5. Set out the STRENGTHS of the opposing party's position, with document references.\n"
+        + "6. Set out the WEAKNESSES of the opposing party's position, with document references.\n"
+        + "7. Provide a preliminary assessment of the likely outcome on this issue.\n"
+        + "\nIMPORTANT: Every factual claim must be supported by a reference to a specific document, page, and paragraph where available. Use the format [Document Name, p.X \u00b6Y]. Do not make assertions without references.";
+
+      if (issuesText) {
+        systemBase += "\n\nPREVIOUS ISSUE TRACKER OUTPUT (for context — the user has selected specific issues from this list):\n" + issuesText.slice(0, 15000);
+      }
+
+      var r = await runBatchedChained(jobId, job, systemBase,
+        function(batchText, batchNum, total) {
+          return "Extract ALL evidence relevant to the following issues from batch " + batchNum + " of " + total + ". For each piece of evidence, note:\n- Which issue it relates to\n- Whether it supports or undermines each party's position\n- The exact document reference [Document Name, p.X \u00b6Y]\n\nISSUES TO ANALYSE:\n" + issuesList + "\n\nDOCUMENTS:\n\n" + batchText + pageIndex;
+        },
+        function(combined, numBatches) {
+          var header = "## Detailed Issue Briefing \u2014 " + matterName + "\n**Jurisdiction:** " + jur + "\n**Date:** " + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) + (actingFor ? "\n**Acting for:** " + actingFor : "") + "\n\n";
+          var format = "For EACH of the following issues, produce a detailed briefing with these sections:\n\n"
+            + "### Issue [N]: [Issue description]\n\n"
+            + "#### Commentary\n[Detailed discussion of the issue — what it involves, why it matters, how it arises. Cite document references throughout.]\n\n"
+            + "#### " + (actingFor || "Client") + "'s Position\n**Strengths:**\n[Each strength with document references in the format [Document Name, p.X \u00b6Y]]\n\n"
+            + "**Weaknesses:**\n[Each weakness with document references]\n\n"
+            + "#### Opposing Party's Position\n**Strengths:**\n[Each strength with document references]\n\n"
+            + "**Weaknesses:**\n[Each weakness with document references]\n\n"
+            + "#### Assessment\n[Preliminary view on the likely outcome, with reasoning]\n\n---\n\n"
+            + "After all issues:\n\n## Overall Assessment\n[Summary view across all issues]\n\n"
+            + "\u26A0\uFE0F Professional Caution: AI-generated analysis. Verify all references and assertions before reliance.\n\n";
+
+          if (numBatches) {
+            return header + format + "ISSUES TO ANALYSE:\n" + issuesList + "\n\nEVIDENCE FROM " + numBatches + " BATCHES:\n\n" + combined;
+          }
+          return header + format + "ISSUES TO ANALYSE:\n" + issuesList + "\n\nDOCUMENTS:\n\n" + combined + pageIndex;
+        },
+        byDoc, hostUrl
+      );
+      if (r === null) return res.status(200).json({ ok: true, status: "chained" });
+      result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
+    }
+
     else {
       await failJob(jobId, "Unknown tool: " + tool);
       return res.status(200).json({ ok: false, error: "Unknown tool" });
@@ -696,6 +756,7 @@ var toolLabels = {
   chronology: "Chronology",
   persons: "Dramatis Personae",
   issues: "Issue Tracker",
+  issueBriefing: "Issue Briefing",
   citations: "Citation Checker",
   briefing: "Briefing Note",
   draft: "Draft",

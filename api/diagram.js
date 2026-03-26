@@ -4,9 +4,11 @@
    entity/relationship JSON, returns it for frontend rendering.
 
    POST /api/diagram
-   Body: { personsText: "...", matterName: "...", jurisdiction: "..." }
-   Returns: { entities: [...], relationships: [...] }
-*/
+   Body: { personsText, matterName, matterId, jurisdiction }
+   Returns: { entities: [...], relationships: [...], usage: {...} }
+
+   v3.4.2: Merged version — expanded relationship types for offshore
+   structures, relationship validation, higher max_tokens. */
 
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -48,11 +50,61 @@ export default async function handler(req, res) {
     personsText = personsText.slice(0, 60000) + "\n[...truncated...]";
   }
 
+  var systemPrompt = "You are a legal analyst extracting entity relationship data from a Dramatis Personae document for the matter \"" + matterName + "\" in " + jurisdiction + ".\n\n"
+    + "You MUST respond with ONLY a valid JSON object — no markdown, no backticks, no preamble, no explanation.\n\n"
+    + "Extract every person and entity mentioned and identify all relationships between them.\n\n"
+    + "JSON format:\n"
+    + "{\n"
+    + "  \"entities\": [\n"
+    + "    { \"id\": \"e1\", \"name\": \"Full Name\", \"type\": \"person|company|trust|fund|government|partnership|other\", \"description\": \"Brief role description\" }\n"
+    + "  ],\n"
+    + "  \"relationships\": [\n"
+    + "    { \"source\": \"e1\", \"target\": \"e2\", \"type\": \"TYPE\", \"label\": \"Short description\" }\n"
+    + "  ]\n"
+    + "}\n\n"
+    + "Relationship types (use the most specific that fits):\n"
+    + "- director — director of a company\n"
+    + "- shareholder — direct shareholder (include percentage if known, e.g. \"51% shareholder\")\n"
+    + "- indirect_shareholder — indirect or ultimate shareholder through intermediate entities\n"
+    + "- ultimate_beneficial_owner — ultimate beneficial owner of an entity\n"
+    + "- limited_partner — limited partner in a partnership or fund\n"
+    + "- general_partner — general partner in a partnership or fund\n"
+    + "- beneficiary — beneficiary of a trust\n"
+    + "- trustee — trustee of a trust\n"
+    + "- protector — protector of a trust\n"
+    + "- enforcer — enforcer of a trust or purpose trust\n"
+    + "- settlor — settlor or founder of a trust\n"
+    + "- nominee — nominee holder (shares, property, etc.)\n"
+    + "- registered_agent — registered agent or registered office provider\n"
+    + "- manager — manager of a company or fund\n"
+    + "- officer — officer (secretary, treasurer, etc.)\n"
+    + "- creditor — creditor\n"
+    + "- debtor — debtor\n"
+    + "- guarantor — guarantor\n"
+    + "- subsidiary — parent/subsidiary corporate relationship\n"
+    + "- employer — employment relationship\n"
+    + "- advisor — advisor, consultant, or professional service provider\n"
+    + "- agent — agent or representative\n"
+    + "- partner — business partner (not limited/general partner)\n"
+    + "- spouse — spouse or domestic partner\n"
+    + "- parent_child — parent/child or family relationship\n"
+    + "- other — any other connection (provide a clear label)\n\n"
+    + "Rules:\n"
+    + "- Every entity MUST have a unique id (e1, e2, e3, ...)\n"
+    + "- The label should be concise (2-5 words), e.g. \"Director of\", \"51% shareholder\", \"Trustee of\", \"UBO via Fund A\"\n"
+    + "- Include ALL entities and ALL relationships you can identify\n"
+    + "- source and target must reference valid entity ids\n"
+    + "- For directional relationships, source is the person/entity that holds the role (e.g. the director, the shareholder, the creditor)\n"
+    + "- If two entities share a common director or officer, create a relationship from that person to each entity\n"
+    + "- If A owns B which owns C, show BOTH the direct relationship (A→B) AND the indirect relationship (A→C as indirect_shareholder)\n"
+    + "- Do NOT include attorneys, counsel, solicitors, barristers, judges, masters, or registrars\n"
+    + "- Respond with ONLY the JSON object";
+
   try {
     var response = await anthropic.messages.create({
       model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-      max_tokens: 4096,
-      system: "You are a legal analyst extracting entity relationships from a dramatis personae document for the matter \"" + matterName + "\" in " + jurisdiction + ".\n\nReturn ONLY valid JSON with no preamble, no markdown backticks, no explanation. The JSON must have this exact structure:\n{\n  \"entities\": [\n    {\n      \"id\": \"e1\",\n      \"name\": \"Full Name or Entity Name\",\n      \"type\": \"person\" | \"company\" | \"trust\" | \"fund\" | \"government\" | \"other\",\n      \"description\": \"Brief role description\"\n    }\n  ],\n  \"relationships\": [\n    {\n      \"source\": \"e1\",\n      \"target\": \"e2\",\n      \"type\": \"director\" | \"shareholder\" | \"beneficiary\" | \"trustee\" | \"manager\" | \"officer\" | \"creditor\" | \"debtor\" | \"spouse\" | \"parent_child\" | \"employer\" | \"subsidiary\" | \"advisor\" | \"agent\" | \"partner\" | \"guarantor\" | \"other\",\n      \"label\": \"Short description of the relationship\"\n    }\n  ]\n}\n\nRules:\n1. Include ALL persons and entities from the dramatis personae.\n2. Identify ALL relationships between them — directorship, shareholding, beneficial ownership, trusteeship, management, creditor/debtor, family, employment, subsidiary/parent, agency, and any other connections.\n3. If a relationship type does not fit the listed types, use \"other\" and provide a clear label.\n4. Each entity must have a unique id (e1, e2, e3, etc.).\n5. Use the source/target ids to define relationships.\n6. Do NOT include attorneys, counsel, solicitors, barristers, judges, masters, or registrars.\n7. Return ONLY the JSON object. No other text.",
+      max_tokens: 8192,
+      system: systemPrompt,
       messages: [{ role: "user", content: "Extract all entities and their relationships from this Dramatis Personae:\n\n" + personsText }],
     });
 
@@ -67,7 +119,7 @@ export default async function handler(req, res) {
     var outputTokens = (response.usage && response.usage.output_tokens) || 0;
     var cost = (inputTokens * INPUT_COST_PER_M / 1000000) + (outputTokens * OUTPUT_COST_PER_M / 1000000);
 
-    /* Parse the JSON response */
+    /* Parse the JSON response — robust extraction */
     var cleaned = text.replace(/```json|```/g, "").trim();
     var startIdx = cleaned.indexOf("{");
     var endIdx = cleaned.lastIndexOf("}");
@@ -79,7 +131,7 @@ export default async function handler(req, res) {
     try {
       data = JSON.parse(jsonStr);
     } catch (parseErr) {
-      console.error("JSON parse error:", parseErr.message, "Raw:", jsonStr.slice(0, 200));
+      console.error("JSON parse error:", parseErr.message, "Raw:", jsonStr.slice(0, 300));
       return res.status(500).json({ error: "Failed to parse entity data" });
     }
 
@@ -88,6 +140,15 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Invalid entity data structure" });
     }
     if (!data.relationships) data.relationships = [];
+
+    /* Build set of valid entity ids and filter invalid relationships */
+    var validIds = {};
+    for (var ei = 0; ei < data.entities.length; ei++) {
+      validIds[data.entities[ei].id] = true;
+    }
+    data.relationships = data.relationships.filter(function(rel) {
+      return validIds[rel.source] && validIds[rel.target];
+    });
 
     /* Log usage */
     if (matterId) {

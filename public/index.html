@@ -145,16 +145,24 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .bundle-table td{padding:.5rem .75rem;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.55}
 .bundle-table tr:last-child td{border-bottom:none}
 .bundle-table tr:hover td{background:var(--blue-faint)}
-/* Diagram modal */
-.diagram-modal{max-width:90vw;width:900px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;padding:0}
-.diagram-modal h3{padding:1.25rem 1.75rem .75rem;margin:0}
-.diagram-container{flex:1;overflow:auto;padding:0 1rem 1rem;min-height:400px;position:relative;background:var(--off-white)}
+/* Diagram workspace */
+.diagram-workspace{display:flex;flex-direction:column;height:100%;overflow:hidden}
+.diagram-toolbar{padding:.5rem .85rem;background:var(--blue-faint);border-bottom:1.5px solid var(--border);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;flex-shrink:0}
+.diagram-toolbar-title{font-family:'Libre Baskerville',serif;font-size:.95rem;font-weight:700;color:var(--navy);margin-right:auto}
+.diagram-toolbar-group{display:flex;gap:.3rem;align-items:center;flex-wrap:wrap}
+.diagram-toolbar-label{font-size:.7rem;font-weight:700;color:var(--text-light);letter-spacing:.05em;text-transform:uppercase;flex-shrink:0}
+.diagram-filter-cb{display:flex;align-items:center;gap:.2rem;padding:.15rem .45rem;border:1.5px solid var(--border);border-radius:4px;background:var(--white);font-size:.72rem;font-weight:600;color:var(--text-mid);cursor:pointer;white-space:nowrap;transition:all .15s;user-select:none}
+.diagram-filter-cb:hover{background:var(--blue-pale);border-color:var(--blue-light)}
+.diagram-filter-cb.on{background:var(--blue-pale);border-color:var(--blue-light);color:var(--blue);font-weight:700}
+.diagram-filter-cb input{width:13px;height:13px;accent-color:var(--blue);cursor:pointer}
+.diagram-dl-btn{padding:.25rem .6rem;border:1.5px solid var(--border);border-radius:5px;background:var(--white);color:var(--text-mid);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .15s}
+.diagram-dl-btn:hover{background:var(--blue-pale);border-color:var(--blue-light);color:var(--blue)}
+.diagram-container{flex:1;overflow:auto;padding:0;min-height:200px;position:relative;background:var(--off-white)}
 .diagram-container svg{display:block;margin:0 auto}
-.diagram-legend{padding:.75rem 1.25rem;background:var(--blue-faint);border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;flex-shrink:0}
-.diagram-legend-title{font-size:.72rem;font-weight:700;color:var(--text-mid);text-transform:uppercase;letter-spacing:.06em;margin-right:.25rem}
-.diagram-legend-item{display:flex;align-items:center;gap:.3rem;font-size:.75rem;font-weight:500;color:var(--text-mid)}
-.diagram-legend-line{width:20px;height:3px;border-radius:2px}
-.diagram-modal .modal-btns{padding:.75rem 1.25rem;border-top:1px solid var(--border);margin:0;flex-shrink:0}
+.diagram-legend{padding:.55rem 1rem;background:var(--blue-faint);border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;flex-shrink:0}
+.diagram-legend-title{font-size:.7rem;font-weight:700;color:var(--text-mid);text-transform:uppercase;letter-spacing:.06em;margin-right:.2rem}
+.diagram-legend-item{display:flex;align-items:center;gap:.25rem;font-size:.72rem;font-weight:500;color:var(--text-mid)}
+.diagram-legend-line{width:18px;height:3px;border-radius:2px}
 .diagram-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;gap:1rem;color:var(--text-faint)}
 .diagram-loading .typing-bubble{display:flex;gap:4px}
 .diagram-loading .typing-bubble span{width:8px;height:8px;background:var(--blue-light);border-radius:50%;animation:typingDot .9s ease-in-out infinite}
@@ -163,6 +171,16 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .diagram-zoom-controls{position:absolute;top:.5rem;right:.5rem;display:flex;gap:.25rem;z-index:10}
 .diagram-zoom-btn{padding:.25rem .5rem;border:1.5px solid var(--border);border-radius:4px;background:var(--white);color:var(--text-mid);font-size:.85rem;font-weight:700;cursor:pointer;line-height:1}
 .diagram-zoom-btn:hover{background:var(--blue-pale);border-color:var(--blue-light);color:var(--blue)}
+/* Diagram focus entity selector */
+.diagram-focus-panel{padding:1.25rem 1.5rem;display:flex;flex-direction:column;align-items:center;gap:1rem;flex:1;justify-content:center}
+.diagram-focus-title{font-family:'Libre Baskerville',serif;font-size:1.05rem;font-weight:700;color:var(--navy)}
+.diagram-focus-sub{font-size:.88rem;color:var(--text-faint);text-align:center;line-height:1.6;max-width:420px}
+.diagram-focus-tags{display:flex;flex-wrap:wrap;gap:.35rem;justify-content:center;margin:.25rem 0}
+.diagram-focus-tag{display:flex;align-items:center;gap:.3rem;padding:.25rem .6rem;background:var(--blue-pale);border:1.5px solid var(--blue-light);border-radius:20px;font-size:.82rem;font-weight:600;color:var(--blue)}
+.diagram-focus-tag button{background:none;border:none;color:var(--blue);cursor:pointer;font-size:.95rem;padding:0 .1rem;font-weight:700}
+.diagram-focus-tag button:hover{color:var(--error)}
+.diagram-focus-select{padding:.4rem .6rem;border:1.5px solid var(--border);border-radius:6px;font-size:.88rem;font-family:'Source Sans 3',sans-serif;min-width:220px;max-width:320px;background:var(--white);color:var(--text-dark)}
+.diagram-focus-select:focus{border-color:var(--blue-light);outline:none}
 .main-nav{display:flex;gap:2px;margin-left:1.5rem;align-items:center}
 .main-nav-btn{padding:.45rem 1rem;border:none;background:transparent;font-family:'Source Sans 3',sans-serif;font-size:.88rem;font-weight:700;color:rgba(255,255,255,.55);cursor:pointer;border-radius:5px;transition:all .18s;letter-spacing:.03em}
 .main-nav-btn:hover{color:rgba(255,255,255,.85);background:rgba(255,255,255,.08)}
@@ -956,23 +974,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
   </div>
 </div>
 
-<div class="overlay" id="diagramModal" style="display:none">
-  <div class="modal diagram-modal">
-    <h3 id="diagramModalTitle">Entity Relationship Diagram</h3>
-    <div class="diagram-container" id="diagramContainer">
-      <div class="diagram-loading" id="diagramLoading">
-        <div class="typing-bubble"><span></span><span></span><span></span></div>
-        <div style="font-size:.88rem;font-weight:500">Analysing entity relationships…</div>
-      </div>
-    </div>
-    <div class="diagram-legend" id="diagramLegend" style="display:none"></div>
-    <div class="modal-btns">
-      <button class="btn-secondary" onclick="closeModal('diagramModal')">Close</button>
-      <button class="btn-primary" id="diagramDownloadPptx" style="display:none">⬇ PowerPoint</button>
-      <button class="btn-primary" id="diagramDownloadSvg" style="display:none">⬇ SVG</button>
-    </div>
-  </div>
-</div>
+<!-- Diagram workspace is created dynamically in JS via getOrCreateDiagramTab() -->
 
 <div class="overlay" id="issueBriefingModal" style="display:none">
   <div class="modal tool-modal" style="max-width:560px">
@@ -1545,7 +1547,8 @@ var toolDefs={
   issues:{title:'⚖ Issue Tracker',body:function(){return '<p class="tool-desc">Maps every legal and factual issue and assesses the supporting evidence for each party.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the limitation defence"></textarea>';}},
   citations:{title:'📚 Citation Checker',body:function(){return '<p class="tool-desc">Checks citations in skeleton arguments and pleadings against uploaded judgments.</p><p style="font-size:.84rem;color:var(--text-faint)">Upload the relevant case law before running this tool.</p>';}},
   briefing:{title:'📋 Briefing Note',body:function(){return '<p class="tool-desc">Produces a structured briefing note: sets out the issues, explains common ground and admissions, then analyses how the case can be established on disputed matters.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Written for a colleague unfamiliar with the matter"></textarea>';}},
-  issueBriefing:{title:'📝 Issue Briefing',body:function(){return '<p class="tool-desc">Produces a detailed briefing on selected issues: commentary, document references, and strengths and weaknesses for each party.</p><p style="font-size:.84rem;color:var(--text-faint)">Issues are pre-selected from the Issue Tracker output.</p>';}}
+  issueBriefing:{title:'📝 Issue Briefing',body:function(){return '<p class="tool-desc">Produces a detailed briefing on selected issues: commentary, document references, and strengths and weaknesses for each party.</p><p style="font-size:.84rem;color:var(--text-faint)">Issues are pre-selected from the Issue Tracker output.</p>';}},
+  diagram:{title:'📈 Relationship Diagram',body:function(){return '<p class="tool-desc">Entity relationship diagram generated from the Dramatis Personae analysis.</p>';}}
 };
 
 /* ── TAB MANAGEMENT ──────────────────────────────────────────────────────── */
@@ -1556,7 +1559,8 @@ function switchTab(tabId){
   document.querySelectorAll('.tool-workspace').forEach(function(ws){ws.classList.toggle('active',ws.dataset.tool===tabId);});
   var cfg=toolDefs[tabId];
   var inp=document.getElementById('chatInput');
-  if(cfg)inp.placeholder='Ask a follow-up question about the '+cfg.title.replace(/^[^\w]*/,'')+'…';
+  if(tabId==='diagram')inp.placeholder='Diagram view — use the toolbar to filter relationships…';
+  else if(cfg)inp.placeholder='Ask a follow-up question about the '+cfg.title.replace(/^[^\w]*/,'')+'…';
   else inp.placeholder='Ask a question about this matter…';
 }
 
@@ -2661,36 +2665,16 @@ function renderToolHistoryBar(toolName,historyId){
   return bar;
 }
 
-/* ── ENTITY RELATIONSHIP DIAGRAM (v3.4.2 — draggable, offshore types) ──── */
+/* ── ENTITY RELATIONSHIP DIAGRAM (v3.5 — workspace tab, focal entities, filters) ── */
 var diagramData=null;
 var diagramZoom=1;
 var diagramPositions={};
 var diagramBoxW=160;
 var diagramBoxH=54;
-
-async function generateDiagram(personsText){
-  diagramData=null;diagramZoom=1;diagramPositions={};
-  document.getElementById('diagramModalTitle').textContent='Entity Relationship Diagram — '+(currentMatter?currentMatter.name:'');
-  document.getElementById('diagramContainer').innerHTML='<div class="diagram-loading" id="diagramLoading"><div class="typing-bubble"><span></span><span></span><span></span></div><div style="font-size:.88rem;font-weight:500">Analysing entity relationships\u2026</div></div>';
-  document.getElementById('diagramLegend').style.display='none';
-  document.getElementById('diagramDownloadPptx').style.display='none';
-  document.getElementById('diagramDownloadSvg').style.display='none';
-  document.getElementById('diagramModal').style.display='flex';
-  try{
-    var d=await api('/api/diagram','POST',{personsText:personsText,matterName:currentMatter?currentMatter.name:'',matterId:currentMatter?currentMatter.id:null,jurisdiction:jurisdiction});
-    if(!d||!d.entities||d.entities.length===0){
-      document.getElementById('diagramContainer').innerHTML='<div style="padding:2rem;text-align:center;color:var(--text-faint)">No entities found to diagram.</div>';
-      return;
-    }
-    diagramData=d;
-    renderDiagramSVG(d);
-    document.getElementById('diagramDownloadPptx').style.display='';
-    document.getElementById('diagramDownloadSvg').style.display='';
-    if(d.usage&&d.usage.costUsd){showToast('Diagram generated — $'+d.usage.costUsd.toFixed(4));}
-  }catch(e){
-    document.getElementById('diagramContainer').innerHTML='<div style="padding:2rem;text-align:center;color:var(--error)">\u26A0\uFE0F Error: '+esc(e.message)+'</div>';
-  }
-}
+var diagramPersonsText='';
+var diagramFocusEntities=[];
+var diagramActiveFilters=[];
+var diagramDrawLines=null; /* globally accessible drawLines reference */
 
 /* Colour scheme for relationship types — expanded for offshore structures */
 var relColours={
@@ -2705,6 +2689,169 @@ var relColours={
 var entityColours={person:'#1d6fa4',company:'#27ae60',trust:'#8e44ad',fund:'#e67e22',partnership:'#b7950b',government:'#c0392b',other:'#636e72'};
 
 var NS='http://www.w3.org/2000/svg';
+
+/* Relationship filter categories */
+var diagramFilterCategories=[
+  {label:'Shareholdings',types:['shareholder','indirect_shareholder','ultimate_beneficial_owner']},
+  {label:'Investments',types:['limited_partner','general_partner','partner']},
+  {label:'Creditor',types:['creditor']},
+  {label:'Debtor',types:['debtor']},
+  {label:'Trustees',types:['trustee','protector','enforcer','settlor']},
+  {label:'Beneficiary',types:['beneficiary']},
+  {label:'Family',types:['spouse','parent_child']},
+  {label:'Corporate',types:['director','manager','officer','subsidiary','employer']},
+  {label:'Other',types:['nominee','registered_agent','advisor','agent','guarantor','other']}
+];
+
+/* Parse entity names from Dramatis Personae markdown text */
+function parseDramatisPersonaeNames(text){
+  var names=[];
+  var lines=text.split('\n');
+  for(var i=0;i<lines.length;i++){
+    var m=lines[i].match(/^###\s+(.+)/);
+    if(m){
+      var name=m[1].replace(/\*+/g,'').trim();
+      if(name&&name.length>1&&name.length<120)names.push(name);
+    }
+  }
+  return names;
+}
+
+/* Create or switch to diagram tab with custom workspace */
+function getOrCreateDiagramTab(){
+  if(openTabs.indexOf('diagram')!==-1){switchTab('diagram');return false;}
+  var tabBar=document.getElementById('tabBar');
+  tabBar.style.display='flex';
+  var tab=document.createElement('div');
+  tab.className='tab';tab.dataset.tab='diagram';
+  tab.innerHTML='📈 Diagram<button class="tab-close" title="Close tab">×</button>';
+  tab.querySelector('.tab-close').addEventListener('click',function(e){e.stopPropagation();closeTab('diagram');});
+  tab.addEventListener('click',function(){switchTab('diagram');});
+  tabBar.appendChild(tab);
+  /* Create custom workspace — NOT the standard tool-ready template */
+  var ws=document.createElement('div');
+  ws.className='tool-workspace tab-workspace diagram-workspace';ws.dataset.tool='diagram';
+  ws.innerHTML='<div class="diagram-toolbar" id="diagramToolbar" style="display:none"></div>'
+    +'<div class="diagram-container" id="diagramContainer"></div>'
+    +'<div class="diagram-legend" id="diagramLegend" style="display:none"></div>';
+  document.getElementById('toolWorkspaces').appendChild(ws);
+  openTabs.push('diagram');
+  switchTab('diagram');
+  return true;
+}
+
+/* Show the focal entity selection panel */
+function showDiagramFocusPanel(personsText){
+  diagramPersonsText=personsText;
+  diagramFocusEntities=[];
+  getOrCreateDiagramTab();
+  var container=document.getElementById('diagramContainer');
+  var entityNames=parseDramatisPersonaeNames(personsText);
+  var optionsHtml='<option value="">— Select entity to add —</option>';
+  for(var i=0;i<entityNames.length;i++){
+    optionsHtml+='<option value="'+esc(entityNames[i])+'">'+esc(entityNames[i])+'</option>';
+  }
+  container.innerHTML='<div class="diagram-focus-panel">'
+    +'<div class="diagram-focus-title">Entity Relationship Diagram</div>'
+    +'<div class="diagram-focus-sub">Optionally select up to three focal entities to centre the diagram on. Only entities connected to the focal entities will be shown. Leave on default to show all.</div>'
+    +'<div class="diagram-focus-tags" id="diagramFocusTags"></div>'
+    +(entityNames.length?'<select class="diagram-focus-select" id="diagramFocusSelect" onchange="addDiagramFocusEntity(this)">'+optionsHtml+'</select>':'<div style="font-size:.82rem;color:var(--text-faint)">No entities found in Dramatis Personae</div>')
+    +'<div style="display:flex;gap:.5rem;margin-top:.5rem">'
+    +'<button class="btn-run-tool" onclick="runDiagramGeneration()">Generate Diagram</button>'
+    +'<button class="btn-secondary" style="padding:.5rem 1rem;font-size:.88rem" onclick="runDiagramGeneration()" id="diagramDefaultBtn">Default (show all)</button>'
+    +'</div>'
+    +'</div>';
+  /* Hide toolbar during selection */
+  document.getElementById('diagramToolbar').style.display='none';
+  document.getElementById('diagramLegend').style.display='none';
+}
+
+function addDiagramFocusEntity(select){
+  var name=select.value;
+  if(!name)return;
+  if(diagramFocusEntities.indexOf(name)!==-1){select.value='';return;}
+  if(diagramFocusEntities.length>=3){showToast('Maximum 3 focal entities');select.value='';return;}
+  diagramFocusEntities.push(name);
+  select.value='';
+  renderDiagramFocusTags();
+}
+
+function removeDiagramFocusEntity(idx){
+  diagramFocusEntities.splice(idx,1);
+  renderDiagramFocusTags();
+}
+
+function renderDiagramFocusTags(){
+  var container=document.getElementById('diagramFocusTags');
+  if(!container)return;
+  if(!diagramFocusEntities.length){container.innerHTML='<div style="font-size:.82rem;color:var(--text-faint);font-style:italic">Default — all entities</div>';return;}
+  container.innerHTML=diagramFocusEntities.map(function(name,i){
+    return '<span class="diagram-focus-tag">'+esc(name)+'<button onclick="removeDiagramFocusEntity('+i+')" title="Remove">\u00D7</button></span>';
+  }).join('');
+}
+
+/* Run the diagram generation */
+async function runDiagramGeneration(){
+  diagramData=null;diagramZoom=1;diagramPositions={};diagramActiveFilters=[];diagramDrawLines=null;
+  var container=document.getElementById('diagramContainer');
+  container.innerHTML='<div class="diagram-loading"><div class="typing-bubble"><span></span><span></span><span></span></div><div style="font-size:.88rem;font-weight:500">Analysing entity relationships\u2026</div></div>';
+  document.getElementById('diagramLegend').style.display='none';
+  document.getElementById('diagramToolbar').style.display='none';
+  try{
+    var body={personsText:diagramPersonsText,matterName:currentMatter?currentMatter.name:'',matterId:currentMatter?currentMatter.id:null,jurisdiction:jurisdiction};
+    if(diagramFocusEntities.length>0)body.focusEntities=diagramFocusEntities;
+    var d=await api('/api/diagram','POST',body);
+    if(!d||!d.entities||d.entities.length===0){
+      container.innerHTML='<div style="padding:2rem;text-align:center;color:var(--text-faint)">No entities found to diagram.</div>';
+      return;
+    }
+    diagramData=d;
+    renderDiagramSVG(d);
+    buildDiagramToolbar();
+    if(d.usage&&d.usage.costUsd){showToast('Diagram generated \u2014 $'+d.usage.costUsd.toFixed(4));}
+  }catch(e){
+    container.innerHTML='<div style="padding:2rem;text-align:center;color:var(--error)">\u26A0\uFE0F Error: '+esc(e.message)+'</div>';
+  }
+}
+
+/* Build the toolbar with filters and download buttons */
+function buildDiagramToolbar(){
+  var toolbar=document.getElementById('diagramToolbar');
+  toolbar.style.display='flex';
+  var html='<span class="diagram-toolbar-title">'+(currentMatter?esc(currentMatter.name)+' \u2014 ':'')+' Entity Diagram'+(diagramFocusEntities.length?' (focus: '+diagramFocusEntities.map(function(n){return esc(n);}).join(', ')+')':'')+'</span>';
+  html+='<span class="diagram-toolbar-label">Filter:</span>';
+  for(var fi=0;fi<diagramFilterCategories.length;fi++){
+    var cat=diagramFilterCategories[fi];
+    html+='<label class="diagram-filter-cb" data-filter-idx="'+fi+'"><input type="checkbox" onchange="toggleDiagramFilter('+fi+',this.checked)">'+cat.label+'</label>';
+  }
+  html+='<span style="width:1px;height:20px;background:var(--border);margin:0 .25rem"></span>';
+  html+='<button class="diagram-dl-btn" onclick="downloadDiagramPptx()">\u2B07 PowerPoint</button>';
+  html+='<button class="diagram-dl-btn" onclick="downloadDiagramSvg()">\u2B07 SVG</button>';
+  html+='<button class="diagram-dl-btn" onclick="showDiagramFocusPanel(diagramPersonsText)" title="Re-generate with different focus">\u21BB Regenerate</button>';
+  toolbar.innerHTML=html;
+}
+
+/* Toggle a filter category */
+function toggleDiagramFilter(catIdx,checked){
+  var cat=diagramFilterCategories[catIdx];
+  if(checked){
+    /* Add these types to active filters */
+    for(var i=0;i<cat.types.length;i++){
+      if(diagramActiveFilters.indexOf(cat.types[i])===-1)diagramActiveFilters.push(cat.types[i]);
+    }
+  }else{
+    /* Remove these types from active filters */
+    diagramActiveFilters=diagramActiveFilters.filter(function(t){return cat.types.indexOf(t)===-1;});
+  }
+  /* Update checkbox visual state */
+  document.querySelectorAll('.diagram-filter-cb').forEach(function(el){
+    var idx=parseInt(el.getAttribute('data-filter-idx'));
+    var cb=el.querySelector('input');
+    el.classList.toggle('on',cb.checked);
+  });
+  /* Redraw lines with filter */
+  if(diagramDrawLines)diagramDrawLines();
+}
 
 function renderDiagramSVG(data){
   var entities=data.entities;
@@ -2756,11 +2903,14 @@ function renderDiagramSVG(data){
   linesGroup.setAttribute('id','diagramLines');
   svg.appendChild(linesGroup);
 
-  /* Draw initial lines */
+  /* Draw lines — respects active filters */
   function drawLines(){
     while(linesGroup.firstChild)linesGroup.removeChild(linesGroup.firstChild);
+    var hasFilters=diagramActiveFilters.length>0;
     for(var ri2=0;ri2<rels.length;ri2++){
       var rel=rels[ri2];
+      /* Filter: if any filters are active, only show matching types */
+      if(hasFilters&&diagramActiveFilters.indexOf(rel.type)===-1)continue;
       var sp=diagramPositions[rel.source];var tp=diagramPositions[rel.target];
       if(!sp||!tp)continue;
       var sCx=sp.x+boxW/2;var sCy=sp.y+boxH/2;
@@ -2793,6 +2943,8 @@ function renderDiagramSVG(data){
       linesGroup.appendChild(txt);
     }
   }
+  /* Store globally so filters can call it */
+  diagramDrawLines=drawLines;
   drawLines();
 
   /* Entity groups — draggable */
@@ -2847,7 +2999,7 @@ function renderDiagramSVG(data){
 
       /* Tooltip */
       var title=document.createElementNS(NS,'title');
-      title.textContent=ent.name+(ent.description?' — '+ent.description:'');
+      title.textContent=ent.name+(ent.description?' \u2014 '+ent.description:'');
       g.appendChild(title);
 
       /* Drag handling — mouse and touch (iPad) */
@@ -2944,17 +3096,25 @@ function zoomDiagram(factor){
   svg.style.transformOrigin='top left';
 }
 
+/* Legacy generateDiagram — called from persons button, now opens focus panel */
+function generateDiagram(personsText){
+  showDiagramFocusPanel(personsText);
+}
+
 /* PPTX download — reads from diagramPositions (respects drag edits) */
-document.getElementById('diagramDownloadPptx').onclick=function(){
+function downloadDiagramPptx(){
   if(!diagramData)return;
   try{
     var pptx=new PptxGenJS();
     pptx.layout='LAYOUT_WIDE';
     pptx.author='Ex Libris Juris';
-    pptx.title='Entity Relationship Diagram'+(currentMatter?' — '+currentMatter.name:'');
+    pptx.title='Entity Relationship Diagram'+(currentMatter?' \u2014 '+currentMatter.name:'');
 
     var entities=diagramData.entities;
     var rels=diagramData.relationships;
+    /* Apply active filters to exported relationships */
+    var hasFilters=diagramActiveFilters.length>0;
+    if(hasFilters){rels=rels.filter(function(r){return diagramActiveFilters.indexOf(r.type)!==-1;});}
     var n=entities.length;
     var boxW=diagramBoxW;var boxH=diagramBoxH;
 
@@ -3068,10 +3228,10 @@ document.getElementById('diagramDownloadPptx').onclick=function(){
     var fileName='diagram-'+(currentMatter?currentMatter.name.replace(/[^a-z0-9]/gi,'-').toLowerCase():'matter')+'.pptx';
     pptx.writeFile({fileName:fileName}).then(function(){showToast('Downloaded as PowerPoint');}).catch(function(e){showToast('PPTX error: '+e.message);});
   }catch(e2){showToast('PPTX generation error: '+e2.message);}
-};
+}
 
 /* SVG download — generates clean SVG from current positions */
-document.getElementById('diagramDownloadSvg').onclick=function(){
+function downloadDiagramSvg(){
   var container=document.getElementById('diagramContainer');
   var svg=container.querySelector('svg');
   if(!svg)return;
@@ -3085,7 +3245,7 @@ document.getElementById('diagramDownloadSvg').onclick=function(){
   a.download='diagram-'+(currentMatter?currentMatter.name.replace(/[^a-z0-9]/gi,'-').toLowerCase():'matter')+'.svg';
   a.click();URL.revokeObjectURL(url);
   showToast('Downloaded as SVG');
-};
+}
 
 /* ── ISSUE BRIEFING ─────────────────────────────────────────────────────── */
 var issueBriefingSourceText='';

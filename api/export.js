@@ -1,12 +1,6 @@
-/* EX LIBRIS JURIS v3.4.1 — export.js
-   Generates proper .docx files using raw ZIP/XML.
-   No docx npm package needed — builds the ZIP archive directly.
-   A .docx is just a ZIP file containing XML files. */
-
-import { tmpdir } from "os";
-import { join } from "path";
-import { readFile, writeFile, mkdir, rm } from "fs/promises";
-import { execSync } from "child_process";
+/* EX LIBRIS JURIS v3.6 — export.js
+   Generates .docx files using pure JS ZIP creation.
+   No npm packages, no shell commands — works on Vercel serverless. */
 
 export const config = { maxDuration: 30 };
 
@@ -133,6 +127,92 @@ function buildDocxFiles(bodyXml) {
   };
 }
 
+/* ── Pure JS ZIP builder (no external tools) ─────────────────────────────── */
+import { deflateRawSync } from "zlib";
+
+function crc32(buf) {
+  var table = new Uint32Array(256);
+  for (var n = 0; n < 256; n++) {
+    var c = n;
+    for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    table[n] = c;
+  }
+  var crc = 0xFFFFFFFF;
+  for (var i = 0; i < buf.length; i++) crc = table[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function buildZip(files) {
+  /* files: { "path/name.xml": Buffer } */
+  var localHeaders = [];
+  var centralHeaders = [];
+  var offset = 0;
+
+  var entries = Object.entries(files);
+  for (var i = 0; i < entries.length; i++) {
+    var name = entries[i][0];
+    var data = entries[i][1];
+    var nameBuf = Buffer.from(name, "utf-8");
+    var crc = crc32(data);
+    var compressed = deflateRawSync(data, { level: 6 });
+
+    /* Local file header (30 bytes + name + compressed data) */
+    var local = Buffer.alloc(30 + nameBuf.length + compressed.length);
+    local.writeUInt32LE(0x04034B50, 0);       /* signature */
+    local.writeUInt16LE(20, 4);               /* version needed */
+    local.writeUInt16LE(0, 6);                /* flags */
+    local.writeUInt16LE(8, 8);                /* compression: deflate */
+    local.writeUInt16LE(0, 10);               /* mod time */
+    local.writeUInt16LE(0, 12);               /* mod date */
+    local.writeUInt32LE(crc, 14);             /* crc32 */
+    local.writeUInt32LE(compressed.length, 18); /* compressed size */
+    local.writeUInt32LE(data.length, 22);     /* uncompressed size */
+    local.writeUInt16LE(nameBuf.length, 26);  /* name length */
+    local.writeUInt16LE(0, 28);               /* extra length */
+    nameBuf.copy(local, 30);
+    compressed.copy(local, 30 + nameBuf.length);
+    localHeaders.push(local);
+
+    /* Central directory header (46 bytes + name) */
+    var central = Buffer.alloc(46 + nameBuf.length);
+    central.writeUInt32LE(0x02014B50, 0);     /* signature */
+    central.writeUInt16LE(20, 4);             /* version made by */
+    central.writeUInt16LE(20, 6);             /* version needed */
+    central.writeUInt16LE(0, 8);              /* flags */
+    central.writeUInt16LE(8, 10);             /* compression */
+    central.writeUInt16LE(0, 12);             /* mod time */
+    central.writeUInt16LE(0, 14);             /* mod date */
+    central.writeUInt32LE(crc, 16);           /* crc32 */
+    central.writeUInt32LE(compressed.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt16LE(0, 30);             /* extra length */
+    central.writeUInt16LE(0, 32);             /* comment length */
+    central.writeUInt16LE(0, 34);             /* disk start */
+    central.writeUInt16LE(0, 36);             /* internal attrs */
+    central.writeUInt32LE(0, 38);             /* external attrs */
+    central.writeUInt32LE(offset, 42);        /* local header offset */
+    nameBuf.copy(central, 46);
+    centralHeaders.push(central);
+
+    offset += local.length;
+  }
+
+  /* End of central directory */
+  var centralSize = centralHeaders.reduce(function(a, b) { return a + b.length; }, 0);
+  var eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054B50, 0);          /* signature */
+  eocd.writeUInt16LE(0, 4);                   /* disk number */
+  eocd.writeUInt16LE(0, 6);                   /* central dir disk */
+  eocd.writeUInt16LE(entries.length, 8);      /* entries on disk */
+  eocd.writeUInt16LE(entries.length, 10);     /* total entries */
+  eocd.writeUInt32LE(centralSize, 12);        /* central dir size */
+  eocd.writeUInt32LE(offset, 16);             /* central dir offset */
+  eocd.writeUInt16LE(0, 20);                  /* comment length */
+
+  return Buffer.concat([...localHeaders, ...centralHeaders, eocd]);
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -144,35 +224,26 @@ export default async function handler(req, res) {
 
   if (!content) return res.status(400).json({ error: "No content provided" });
 
-  var tmpDir = null;
   try {
     var bodyXml = markdownToDocxXml(content, matterName, jurisdiction);
-    var files = buildDocxFiles(bodyXml);
+    var xmlFiles = buildDocxFiles(bodyXml);
 
-    tmpDir = join(tmpdir(), "elj-export-" + Date.now());
-    await mkdir(tmpDir, { recursive: true });
-    await mkdir(join(tmpDir, "_rels"), { recursive: true });
-    await mkdir(join(tmpDir, "word", "_rels"), { recursive: true });
-
-    for (var [filePath, xml] of Object.entries(files)) {
-      await writeFile(join(tmpDir, filePath), xml, "utf-8");
+    /* Convert string files to Buffers */
+    var bufferFiles = {};
+    for (var [path, xml] of Object.entries(xmlFiles)) {
+      bufferFiles[path] = Buffer.from(xml, "utf-8");
     }
 
-    var outPath = join(tmpdir(), "elj-export-" + Date.now() + ".docx");
-    execSync("cd " + JSON.stringify(tmpDir) + " && zip -r " + JSON.stringify(outPath) + " .", { stdio: "pipe" });
-
-    var buffer = await readFile(outPath);
-    await rm(tmpDir, { recursive: true, force: true }).catch(function() {});
-    await rm(outPath, { force: true }).catch(function() {});
+    /* Build ZIP in memory */
+    var zipBuffer = buildZip(bufferFiles);
 
     var safeName = (title || matterName || "analysis").replace(/[^a-z0-9]/gi, "-").toLowerCase();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.setHeader("Content-Disposition", 'attachment; filename="' + safeName + '.docx"');
-    res.setHeader("Content-Length", buffer.length);
-    return res.status(200).send(buffer);
+    res.setHeader("Content-Length", zipBuffer.length);
+    return res.status(200).send(zipBuffer);
   } catch (err) {
     console.error("Export error:", err);
-    if (tmpDir) await rm(tmpDir, { recursive: true, force: true }).catch(function() {});
     return res.status(500).json({ error: err.message });
   }
 }

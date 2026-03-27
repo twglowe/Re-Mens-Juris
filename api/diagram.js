@@ -1,14 +1,14 @@
-/* EX LIBRIS JURIS v3.4.2 — diagram.js
+/* EX LIBRIS JURIS v3.5 — diagram.js
    Entity Relationship Diagram endpoint.
    Takes Dramatis Personae text, calls Claude to extract structured
    entity/relationship JSON, returns it for frontend rendering.
 
    POST /api/diagram
-   Body: { personsText, matterName, matterId, jurisdiction }
+   Body: { personsText, matterName, matterId, jurisdiction, focusEntities }
    Returns: { entities: [...], relationships: [...], usage: {...} }
 
-   v3.4.2: Merged version — expanded relationship types for offshore
-   structures, relationship validation, higher max_tokens. */
+   v3.5: Added focusEntities parameter — when provided, instructs Claude
+   to return only entities connected to the focal entities. */
 
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -40,6 +40,7 @@ export default async function handler(req, res) {
   var matterName = body.matterName || "Matter";
   var matterId = body.matterId || null;
   var jurisdiction = body.jurisdiction || "Bermuda";
+  var focusEntities = body.focusEntities || [];
 
   if (!personsText || personsText.length < 50) {
     return res.status(400).json({ error: "Dramatis Personae text is too short to analyse" });
@@ -99,6 +100,15 @@ export default async function handler(req, res) {
     + "- If A owns B which owns C, show BOTH the direct relationship (A→B) AND the indirect relationship (A→C as indirect_shareholder)\n"
     + "- Do NOT include attorneys, counsel, solicitors, barristers, judges, masters, or registrars\n"
     + "- Respond with ONLY the JSON object";
+
+  /* If focus entities are specified, add focus instruction */
+  if (focusEntities.length > 0) {
+    systemPrompt += "\n\nIMPORTANT — FOCUS MODE: Focus on these entities: " + focusEntities.join(", ") + ". "
+      + "Include only entities that are directly or indirectly connected to any of these focal entities through any chain of relationships. "
+      + "Always include the focal entities themselves. "
+      + "Include all relationships between the returned entities. "
+      + "Still follow all other rules above.";
+  }
 
   try {
     var response = await anthropic.messages.create({

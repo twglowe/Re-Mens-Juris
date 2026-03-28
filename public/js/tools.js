@@ -12,7 +12,17 @@ var toolDefs={
     +'<textarea id="toolInstructions" placeholder="e.g. Focus on the share transfer events"></textarea>';}},
   persons:{title:'👥 Dramatis Personae',body:function(){return '<p class="tool-desc">Identifies every person and entity across all documents with descriptions and references. Excludes attorneys and judges. References are ordered: first in pleadings/petitions, then in affidavits.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the directors and shareholders"></textarea>';}},
   issues:{title:'⚖ Issue Tracker',body:function(){return '<p class="tool-desc">Maps every legal and factual issue and assesses the supporting evidence for each party.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the limitation defence"></textarea>';}},
-  citations:{title:'📚 Citation Checker',body:function(){return '<p class="tool-desc">Checks citations in skeleton arguments and pleadings against uploaded judgments.</p><p style="font-size:.84rem;color:var(--text-faint)">Upload the relevant case law before running this tool.</p>';}},
+  citations:{title:'📚 Citation Checker',body:function(){return '<p class="tool-desc">Checks citations in skeleton arguments and pleadings against uploaded judgments.</p>'
+    +'<div class="focus-label">Source Document <span style="font-weight:400;text-transform:none;letter-spacing:0">(containing citations to check — leave blank for all skeleton arguments &amp; pleadings)</span></div>'
+    +'<select id="citationSourceSelect" class="f-input" style="margin-bottom:.6rem;padding:.5rem .7rem;font-size:.88rem"><option value="">— Auto-detect (skeleton arguments &amp; pleadings) —</option>'
+    +documents.map(function(d){return '<option value="'+esc(d.name)+'">'+esc(d.name)+' ['+esc(d.doc_type)+']</option>';}).join('')
+    +'</select>'
+    +'<div class="focus-label">Target Case Law <span style="font-weight:400;text-transform:none;letter-spacing:0">(to check citations against — leave blank for all case law)</span></div>'
+    +'<div class="anchor-list" id="citationTargetList" style="max-height:120px">'
+    +documents.filter(function(d){return d.doc_type==='Case Law';}).map(function(d){return '<label class="anchor-item"><input type="checkbox" checked value="'+esc(d.name)+'"> '+esc(d.name)+'</label>';}).join('')
+    +(documents.filter(function(d){return d.doc_type==='Case Law';}).length===0?'<div style="font-size:.84rem;color:var(--text-faint);padding:.3rem">No case law documents uploaded.</div>':'')
+    +'</div>'
+    +'<p style="font-size:.84rem;color:var(--text-faint)">Upload the relevant case law before running this tool.</p>';}},
   briefing:{title:'📋 Briefing Note',body:function(){return '<p class="tool-desc">Produces a structured briefing note: sets out the issues, explains common ground and admissions, then analyses how the case can be established on disputed matters.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Written for a colleague unfamiliar with the matter"></textarea>';}},
   issueBriefing:{title:'📝 Issue Briefing',body:function(){return '<p class="tool-desc">Produces a detailed briefing on selected issues: commentary, document references, and strengths and weaknesses for each party.</p><p style="font-size:.84rem;color:var(--text-faint)">Issues are pre-selected from the Issue Tracker output.</p>';}},
   diagram:{title:'📈 Relationship Diagram',body:function(){return '<p class="tool-desc">Entity relationship diagram generated from the Dramatis Personae analysis.</p>';}}
@@ -152,6 +162,14 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     if(chronologyDateRange)body.chronologyDateRange=chronologyDateRange;
     if(chronologyEntities)body.chronologyEntities=chronologyEntities;
     if(chronologyCorrespondenceFilter)body.chronologyCorrespondenceFilter=true;
+    /* v3.6: Citation source and target parameters */
+    if(toolName==='citations'){
+      var citSrc=document.getElementById('citationSourceSelect');
+      if(citSrc&&citSrc.value)body.citationSource=citSrc.value;
+      var citTargets=[];
+      document.querySelectorAll('#citationTargetList input:checked').forEach(function(cb){citTargets.push(cb.value);});
+      if(citTargets.length>0)body.citationTargets=citTargets;
+    }
     /* v3.4: Fire job — returns immediately with jobId */
     var d=await api('/api/tools','POST',body);
     if(!d||!d.jobId)throw new Error('No jobId returned');

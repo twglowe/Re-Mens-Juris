@@ -784,21 +784,5 @@ function downloadDiagramSvg(){
   showToast('Downloaded as SVG');
 }
 
-/* ── Stage 5: Override loadHistItem to handle diagram history ─────────── */
-/* Must use var assignment (not function declaration) to avoid hoisting,
-   which would overwrite the original before we can capture it. */
-var _originalLoadHistItem=loadHistItem;
-loadHistItem=function(i){
-  var h=matterHistory[i];if(!h)return;
-  /* Intercept diagram tool_name — use custom loader */
-  if(h.tool_name==='diagram'){
-    loadDiagramFromHistory(h);
-    if(typeof histOpen!=='undefined'&&histOpen)toggleHistory();
-    return;
-  }
-  /* Fall through to original for all other tools */
-  _originalLoadHistItem(i);
-};
-
 /* ── INIT (called here because this is the last script file to load) ─── */
 init();

@@ -1,4 +1,4 @@
-/* ── ENTITY RELATIONSHIP DIAGRAM (v3.5 — workspace tab, focal entities, filters) ── */
+/* ── ENTITY RELATIONSHIP DIAGRAM (v3.6 — Stages 3b-5: pre-gen filters, follow-up chat, history) ── */
 var diagramData=null;
 var diagramZoom=1;
 var diagramPositions={};
@@ -8,6 +8,8 @@ var diagramPersonsText='';
 var diagramFocusEntities=[];
 var diagramActiveFilters=[];
 var diagramDrawLines=null; /* globally accessible drawLines reference */
+var diagramPreGenFilters=[]; /* filter types selected BEFORE generation */
+var diagramFollowUpHistory=[]; /* array of {question, explanation} for Stage 5 */
 
 /* Colour scheme for relationship types — expanded for offshore structures */
 var relColours={
@@ -66,17 +68,19 @@ function getOrCreateDiagramTab(){
   ws.className='tool-workspace tab-workspace diagram-workspace';ws.dataset.tool='diagram';
   ws.innerHTML='<div class="diagram-toolbar" id="diagramToolbar" style="display:none"></div>'
     +'<div class="diagram-container" id="diagramContainer"></div>'
-    +'<div class="diagram-legend" id="diagramLegend" style="display:none"></div>';
+    +'<div class="diagram-legend" id="diagramLegend" style="display:none"></div>'
+    +'<div class="diagram-chat-area" id="diagramChatArea" style="display:none"></div>';
   document.getElementById('toolWorkspaces').appendChild(ws);
   openTabs.push('diagram');
   switchTab('diagram');
   return true;
 }
 
-/* Show the focal entity selection panel */
+/* Show the focal entity selection panel — Stage 3b: now includes relationship filter checkboxes */
 function showDiagramFocusPanel(personsText){
   diagramPersonsText=personsText;
   diagramFocusEntities=[];
+  diagramPreGenFilters=[];
   getOrCreateDiagramTab();
   var container=document.getElementById('diagramContainer');
   var entityNames=parseDramatisPersonaeNames(personsText);
@@ -84,19 +88,35 @@ function showDiagramFocusPanel(personsText){
   for(var i=0;i<entityNames.length;i++){
     optionsHtml+='<option value="'+esc(entityNames[i])+'">'+esc(entityNames[i])+'</option>';
   }
+  /* Build relationship filter checkboxes — all checked by default */
+  var filterHtml='<div class="diagram-focus-filters"><div class="diagram-focus-sub" style="margin-top:.8rem;margin-bottom:.4rem;font-weight:600">Relationship Filters <span style="font-weight:400;color:var(--text-faint)">(uncheck to exclude from diagram)</span></div><div class="diagram-pregen-filters" id="diagramPreGenFilters">';
+  for(var fi=0;fi<diagramFilterCategories.length;fi++){
+    var cat=diagramFilterCategories[fi];
+    filterHtml+='<label class="diagram-filter-cb on" data-pregen-idx="'+fi+'"><input type="checkbox" checked onchange="togglePreGenFilter('+fi+',this)">'+cat.label+'</label>';
+  }
+  filterHtml+='</div></div>';
+
   container.innerHTML='<div class="diagram-focus-panel">'
     +'<div class="diagram-focus-title">Entity Relationship Diagram</div>'
     +'<div class="diagram-focus-sub">Optionally select up to three focal entities to centre the diagram on. Only entities connected to the focal entities will be shown. Leave on default to show all.</div>'
     +'<div class="diagram-focus-tags" id="diagramFocusTags"></div>'
     +(entityNames.length?'<select class="diagram-focus-select" id="diagramFocusSelect" onchange="addDiagramFocusEntity(this)">'+optionsHtml+'</select>':'<div style="font-size:.82rem;color:var(--text-faint)">No entities found in Dramatis Personae</div>')
-    +'<div style="display:flex;gap:.5rem;margin-top:.5rem">'
+    +filterHtml
+    +'<div style="display:flex;gap:.5rem;margin-top:.75rem">'
     +'<button class="btn-run-tool" onclick="runDiagramGeneration()">Generate Diagram</button>'
     +'<button class="btn-secondary" style="padding:.5rem 1rem;font-size:.88rem" onclick="runDiagramGeneration()" id="diagramDefaultBtn">Default (show all)</button>'
     +'</div>'
     +'</div>';
-  /* Hide toolbar during selection */
+  /* Hide toolbar and chat during selection */
   document.getElementById('diagramToolbar').style.display='none';
   document.getElementById('diagramLegend').style.display='none';
+  document.getElementById('diagramChatArea').style.display='none';
+}
+
+/* Stage 3b: Toggle pre-generation filter checkbox */
+function togglePreGenFilter(catIdx,checkbox){
+  var label=checkbox.closest('.diagram-filter-cb');
+  if(label)label.classList.toggle('on',checkbox.checked);
 }
 
 function addDiagramFocusEntity(select){
@@ -126,13 +146,35 @@ function renderDiagramFocusTags(){
 /* Run the diagram generation */
 async function runDiagramGeneration(){
   diagramData=null;diagramZoom=1;diagramPositions={};diagramActiveFilters=[];diagramDrawLines=null;
+  diagramFollowUpHistory=[];
+
+  /* Stage 3b: Collect pre-generation filter types */
+  diagramPreGenFilters=[];
+  var preGenChecks=document.querySelectorAll('#diagramPreGenFilters input[type="checkbox"]');
+  var allChecked=true;
+  preGenChecks.forEach(function(cb){if(!cb.checked)allChecked=false;});
+  if(!allChecked){
+    /* Collect the types from checked categories only */
+    preGenChecks.forEach(function(cb,idx){
+      if(cb.checked){
+        var cat=diagramFilterCategories[idx];
+        for(var t=0;t<cat.types.length;t++){
+          if(diagramPreGenFilters.indexOf(cat.types[t])===-1)diagramPreGenFilters.push(cat.types[t]);
+        }
+      }
+    });
+  }
+  /* If all checked or none unchecked, send empty array (meaning "all types") */
+
   var container=document.getElementById('diagramContainer');
   container.innerHTML='<div class="diagram-loading"><div class="typing-bubble"><span></span><span></span><span></span></div><div style="font-size:.88rem;font-weight:500">Analysing entity relationships\u2026</div></div>';
   document.getElementById('diagramLegend').style.display='none';
   document.getElementById('diagramToolbar').style.display='none';
+  document.getElementById('diagramChatArea').style.display='none';
   try{
     var body={personsText:diagramPersonsText,matterName:currentMatter?currentMatter.name:'',matterId:currentMatter?currentMatter.id:null,jurisdiction:jurisdiction};
     if(diagramFocusEntities.length>0)body.focusEntities=diagramFocusEntities;
+    if(diagramPreGenFilters.length>0)body.filterTypes=diagramPreGenFilters;
     var d=await api('/api/diagram','POST',body);
     if(!d||!d.entities||d.entities.length===0){
       container.innerHTML='<div style="padding:2rem;text-align:center;color:var(--text-faint)">No entities found to diagram.</div>';
@@ -141,6 +183,9 @@ async function runDiagramGeneration(){
     diagramData=d;
     renderDiagramSVG(d);
     buildDiagramToolbar();
+    buildDiagramChatArea();
+    /* Stage 5: Save to history */
+    saveDiagramToHistory();
     if(d.usage&&d.usage.costUsd){showToast('Diagram generated \u2014 $'+d.usage.costUsd.toFixed(4));}
   }catch(e){
     container.innerHTML='<div style="padding:2rem;text-align:center;color:var(--error)">\u26A0\uFE0F Error: '+esc(e.message)+'</div>';
@@ -155,7 +200,9 @@ function buildDiagramToolbar(){
   html+='<span class="diagram-toolbar-label">Filter:</span>';
   for(var fi=0;fi<diagramFilterCategories.length;fi++){
     var cat=diagramFilterCategories[fi];
-    html+='<label class="diagram-filter-cb" data-filter-idx="'+fi+'"><input type="checkbox" onchange="toggleDiagramFilter('+fi+',this.checked)">'+cat.label+'</label>';
+    /* Stage 3b: Initialise post-render checkboxes to match pre-generation selection */
+    var isActive=diagramPreGenFilters.length===0||diagramPreGenFilters.some(function(t){return cat.types.indexOf(t)!==-1;});
+    html+='<label class="diagram-filter-cb'+(isActive?'':' on')+'" data-filter-idx="'+fi+'"><input type="checkbox"'+(isActive?'':' checked')+' onchange="toggleDiagramFilter('+fi+',this.checked)">'+cat.label+'</label>';
   }
   html+='<span style="width:1px;height:20px;background:var(--border);margin:0 .25rem"></span>';
   html+='<button class="diagram-dl-btn" onclick="downloadDiagramPptx()">\u2B07 PowerPoint</button>';
@@ -196,14 +243,36 @@ function renderDiagramSVG(data){
   var cx=rx+padX+boxW/2;var cy=ry+padY+boxH/2;
   var svgW=(rx+padX+boxW/2)*2;var svgH=(ry+padY+boxH/2)*2;
 
-  /* Calculate initial positions around ellipse */
-  diagramPositions={};
+  /* Calculate initial positions around ellipse — but preserve existing positions for entities that already have one */
+  var newPositions={};
   for(var i=0;i<n;i++){
-    var angle=(2*Math.PI*i/n)-(Math.PI/2);
-    var ex=cx+rx*Math.cos(angle)-boxW/2;
-    var ey=cy+ry*Math.sin(angle)-boxH/2;
-    diagramPositions[entities[i].id]={x:ex,y:ey};
+    var existingPos=diagramPositions[entities[i].id];
+    if(!existingPos){
+      /* Try matching by name */
+      var foundByName=null;
+      for(var k in diagramPositions){
+        var matchEnt=null;
+        /* Look through previous data for name match */
+        if(diagramData&&diagramData.entities){
+          for(var me=0;me<diagramData.entities.length;me++){
+            if(diagramData.entities[me].id===k){matchEnt=diagramData.entities[me];break;}
+          }
+        }
+        if(matchEnt&&matchEnt.name===entities[i].name){foundByName=diagramPositions[k];break;}
+      }
+      if(foundByName){
+        newPositions[entities[i].id]={x:foundByName.x,y:foundByName.y};
+      }else{
+        var angle=(2*Math.PI*i/n)-(Math.PI/2);
+        var ex=cx+rx*Math.cos(angle)-boxW/2;
+        var ey=cy+ry*Math.sin(angle)-boxH/2;
+        newPositions[entities[i].id]={x:ex,y:ey};
+      }
+    }else{
+      newPositions[entities[i].id]={x:existingPos.x,y:existingPos.y};
+    }
   }
+  diagramPositions=newPositions;
 
   /* Create SVG via DOM */
   var svg=document.createElementNS(NS,'svg');
@@ -434,6 +503,141 @@ function generateDiagram(personsText){
   showDiagramFocusPanel(personsText);
 }
 
+/* ── Stage 4: Follow-up chat area ──────────────────────────────────────── */
+function buildDiagramChatArea(){
+  var area=document.getElementById('diagramChatArea');
+  area.style.display='block';
+  area.innerHTML='<div class="diagram-chat-history" id="diagramChatHistory"></div>'
+    +'<div class="diagram-chat-input-row">'
+    +'<input type="text" id="diagramChatInput" class="f-input" placeholder="Ask about the diagram or give instructions (e.g. Show only entities connected to Company X)" style="flex:1;padding:.55rem .7rem;font-size:.88rem" onkeydown="if(event.key===\'Enter\')sendDiagramChat()">'
+    +'<button class="btn-run-tool" style="padding:.55rem 1rem;white-space:nowrap" onclick="sendDiagramChat()">Send</button>'
+    +'</div>';
+}
+
+async function sendDiagramChat(){
+  var input=document.getElementById('diagramChatInput');
+  if(!input)return;
+  var question=input.value.trim();
+  if(!question)return;
+  if(!diagramData){showToast('Generate a diagram first');return;}
+  input.value='';
+
+  var historyEl=document.getElementById('diagramChatHistory');
+  /* Show user message */
+  var userMsg=document.createElement('div');
+  userMsg.className='diagram-chat-msg diagram-chat-user';
+  userMsg.textContent=question;
+  historyEl.appendChild(userMsg);
+
+  /* Show typing indicator */
+  var typing=document.createElement('div');
+  typing.className='diagram-chat-msg diagram-chat-assistant';
+  typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
+  historyEl.appendChild(typing);
+  historyEl.scrollTop=historyEl.scrollHeight;
+
+  try{
+    var body={
+      question:question,
+      currentEntities:diagramData.entities,
+      currentRelationships:diagramData.relationships,
+      matterName:currentMatter?currentMatter.name:'',
+      jurisdiction:jurisdiction,
+      personsText:diagramPersonsText.slice(0,30000)
+    };
+    var d=await api('/api/diagram-chat','POST',body);
+    typing.remove();
+
+    if(!d||!d.entities){
+      var errMsg=document.createElement('div');
+      errMsg.className='diagram-chat-msg diagram-chat-assistant';
+      errMsg.textContent=d&&d.explanation?d.explanation:'No response received.';
+      historyEl.appendChild(errMsg);
+      historyEl.scrollTop=historyEl.scrollHeight;
+      return;
+    }
+
+    /* Show explanation */
+    var assistantMsg=document.createElement('div');
+    assistantMsg.className='diagram-chat-msg diagram-chat-assistant';
+    assistantMsg.innerHTML=renderMd(d.explanation||'Diagram updated.');
+    historyEl.appendChild(assistantMsg);
+    historyEl.scrollTop=historyEl.scrollHeight;
+
+    /* Stage 4: Update diagram — preserve positions for existing entities */
+    diagramData={entities:d.entities,relationships:d.relationships};
+    diagramActiveFilters=[];
+    renderDiagramSVG(diagramData);
+    buildDiagramToolbar();
+
+    /* Track follow-up for history */
+    diagramFollowUpHistory.push({question:question,explanation:d.explanation||''});
+
+    /* Stage 5: Update history with new state */
+    saveDiagramToHistory();
+
+    if(d.usage&&d.usage.costUsd){showToast('Diagram updated \u2014 $'+d.usage.costUsd.toFixed(4));}
+  }catch(e){
+    typing.remove();
+    var errMsg2=document.createElement('div');
+    errMsg2.className='diagram-chat-msg diagram-chat-assistant';
+    errMsg2.style.color='var(--error)';
+    errMsg2.textContent='\u26A0\uFE0F Error: '+e.message;
+    historyEl.appendChild(errMsg2);
+    historyEl.scrollTop=historyEl.scrollHeight;
+  }
+}
+
+/* ── Stage 5: History integration ──────────────────────────────────────── */
+async function saveDiagramToHistory(){
+  if(!currentMatter||!diagramData)return;
+  try{
+    var histData=JSON.stringify({
+      entities:diagramData.entities,
+      relationships:diagramData.relationships,
+      focusEntities:diagramFocusEntities,
+      preGenFilters:diagramPreGenFilters,
+      followUpHistory:diagramFollowUpHistory
+    });
+    var questionLabel='Entity Relationship Diagram'+(diagramFocusEntities.length?' (focus: '+diagramFocusEntities.join(', ')+')':'');
+    await saveHistory(questionLabel,histData,'diagram');
+  }catch(e){console.log('Diagram history save error:',e.message);}
+}
+
+/* Stage 5: Load diagram from history item */
+function loadDiagramFromHistory(histItem){
+  try{
+    var saved=JSON.parse(histItem.answer);
+    if(!saved||!saved.entities)return;
+    getOrCreateDiagramTab();
+    diagramData={entities:saved.entities,relationships:saved.relationships};
+    diagramFocusEntities=saved.focusEntities||[];
+    diagramPreGenFilters=saved.preGenFilters||[];
+    diagramFollowUpHistory=saved.followUpHistory||[];
+    diagramPositions={};
+    diagramActiveFilters=[];
+    diagramZoom=1;
+    renderDiagramSVG(diagramData);
+    buildDiagramToolbar();
+    buildDiagramChatArea();
+    /* Restore follow-up history display */
+    if(diagramFollowUpHistory.length>0){
+      var historyEl=document.getElementById('diagramChatHistory');
+      for(var i=0;i<diagramFollowUpHistory.length;i++){
+        var item=diagramFollowUpHistory[i];
+        var uMsg=document.createElement('div');
+        uMsg.className='diagram-chat-msg diagram-chat-user';
+        uMsg.textContent=item.question;
+        historyEl.appendChild(uMsg);
+        var aMsg=document.createElement('div');
+        aMsg.className='diagram-chat-msg diagram-chat-assistant';
+        aMsg.innerHTML=renderMd(item.explanation);
+        historyEl.appendChild(aMsg);
+      }
+    }
+  }catch(e){console.log('Diagram history load error:',e.message);}
+}
+
 /* PPTX download — reads from diagramPositions (respects drag edits) */
 function downloadDiagramPptx(){
   if(!diagramData)return;
@@ -578,6 +782,20 @@ function downloadDiagramSvg(){
   a.download='diagram-'+(currentMatter?currentMatter.name.replace(/[^a-z0-9]/gi,'-').toLowerCase():'matter')+'.svg';
   a.click();URL.revokeObjectURL(url);
   showToast('Downloaded as SVG');
+}
+
+/* ── Stage 5: Override loadHistItem to handle diagram history ─────────── */
+var _originalLoadHistItem=typeof loadHistItem==='function'?loadHistItem:null;
+function loadHistItem(i){
+  var h=matterHistory[i];if(!h)return;
+  /* Intercept diagram tool_name — use custom loader */
+  if(h.tool_name==='diagram'){
+    loadDiagramFromHistory(h);
+    if(typeof histOpen!=='undefined'&&histOpen)toggleHistory();
+    return;
+  }
+  /* Fall through to original for all other tools */
+  if(_originalLoadHistItem)_originalLoadHistItem(i);
 }
 
 /* ── INIT (called here because this is the last script file to load) ─── */

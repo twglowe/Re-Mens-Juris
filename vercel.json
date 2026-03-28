@@ -10,6 +10,8 @@
     "api/worker.js": { "maxDuration": 300 },
     "api/jobs.js": { "maxDuration": 10 },
     "api/library.js": { "maxDuration": 120 },
+    "api/diagram.js": { "maxDuration": 120 },
+    "api/diagram-chat.js": { "maxDuration": 120 },
     "api/matters.js": { "maxDuration": 30 },
     "api/documents.js": { "maxDuration": 30 },
     "api/auth.js": { "maxDuration": 30 },

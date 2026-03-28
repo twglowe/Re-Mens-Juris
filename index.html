@@ -465,6 +465,14 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 
 /* ═══════════ v2.3 — Bigger chat input ═══════════ */
 textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
+/* ═══════════ v3.6 — Diagram chat + pre-gen filters ═══════════ */
+.diagram-chat-area{padding:.5rem .8rem;border-top:1.5px solid var(--border);max-height:220px;display:flex;flex-direction:column;gap:.4rem}
+.diagram-chat-history{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:.4rem;max-height:160px}
+.diagram-chat-input-row{display:flex;gap:.4rem;align-items:center}
+.diagram-chat-msg{padding:.4rem .7rem;border-radius:6px;font-size:.85rem;line-height:1.5;max-width:85%}
+.diagram-chat-user{background:var(--blue-faint);align-self:flex-end;color:var(--navy)}
+.diagram-chat-assistant{background:var(--white);border:1px solid var(--border);align-self:flex-start}
+.diagram-pregen-filters{display:flex;flex-wrap:wrap;gap:.35rem}
 </style></head>
 <body>
 <!-- ═══════════ LOGIN ═══════════ -->

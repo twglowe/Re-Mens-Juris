@@ -1,14 +1,15 @@
-/* EX LIBRIS JURIS v3.5 — diagram.js
+/* EX LIBRIS JURIS v3.6 — diagram.js
    Entity Relationship Diagram endpoint.
    Takes Dramatis Personae text, calls Claude to extract structured
    entity/relationship JSON, returns it for frontend rendering.
 
    POST /api/diagram
-   Body: { personsText, matterName, matterId, jurisdiction, focusEntities }
+   Body: { personsText, matterName, matterId, jurisdiction, focusEntities, filterTypes }
    Returns: { entities: [...], relationships: [...], usage: {...} }
 
-   v3.5: Added focusEntities parameter — when provided, instructs Claude
-   to return only entities connected to the focal entities. */
+   v3.5: Added focusEntities parameter
+   v3.6: Added filterTypes parameter — when provided, instructs Claude
+   to only extract relationships of the specified types. */
 
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -41,6 +42,7 @@ export default async function handler(req, res) {
   var matterId = body.matterId || null;
   var jurisdiction = body.jurisdiction || "Bermuda";
   var focusEntities = body.focusEntities || [];
+  var filterTypes = body.filterTypes || [];
 
   if (!personsText || personsText.length < 50) {
     return res.status(400).json({ error: "Dramatis Personae text is too short to analyse" });
@@ -108,6 +110,13 @@ export default async function handler(req, res) {
       + "Always include the focal entities themselves. "
       + "Include all relationships between the returned entities. "
       + "Still follow all other rules above.";
+  }
+
+  /* Stage 3b: If filterTypes are specified, restrict relationship extraction */
+  if (filterTypes.length > 0) {
+    systemPrompt += "\n\nIMPORTANT — RELATIONSHIP FILTER: Only extract relationships of these types: " + filterTypes.join(", ") + ". "
+      + "Do not include any other relationship types. "
+      + "Still include all entities, even if they have no relationships of the specified types.";
   }
 
   try {

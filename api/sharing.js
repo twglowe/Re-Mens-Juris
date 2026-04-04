@@ -37,38 +37,41 @@ export default async function handler(req, res) {
 
     // SHARE a matter
     if (req.method === "POST") {
-      const { matter_id, email, permission } = req.body;
-      if (!matter_id || !email) return res.status(400).json({ error: "matter_id and email required" });
+      const { matter_id, user_id, permission } = req.body;
+      if (!matter_id || !user_id) return res.status(400).json({ error: "matter_id and user_id required" });
 
       // Verify requester owns this matter
       const { data: matter } = await supabase.from("matters").select("owner_id, name").eq("id", matter_id).single();
       if (!matter || matter.owner_id !== user.id) return res.status(403).json({ error: "Only the owner can share this matter" });
 
-      // Find user by email
-      const { data: { users }, error: findError } = await supabase.auth.admin.listUsers();
-      if (findError) throw findError;
-      const target = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (!target) return res.status(404).json({ error: "No user found with that email address" });
-      if (target.id === user.id) return res.status(400).json({ error: "Cannot share with yourself" });
+      // Cannot share with yourself
+      if (user_id === user.id) return res.status(400).json({ error: "Cannot share with yourself" });
+
+      // Verify target user exists
+      const { data: { user: targetUser }, error: findError } = await supabase.auth.admin.getUserById(user_id);
+      if (findError || !targetUser) return res.status(404).json({ error: "User not found" });
 
       // Upsert share
       const { error } = await supabase.from("matter_shares").upsert({
-        matter_id, user_id: target.id, permission: permission || "read"
+        matter_id, user_id, permission: permission || "read"
       }, { onConflict: "matter_id,user_id" });
       if (error) throw error;
 
-      return res.status(200).json({ success: true, sharedWith: target.email });
+      return res.status(200).json({ success: true, sharedWith: targetUser.email });
     }
 
     // REMOVE a share
     if (req.method === "DELETE") {
-      const { share_id, matter_id } = req.query;
+      const { matter_id, user_id } = req.body;
+      if (!matter_id || !user_id) return res.status(400).json({ error: "matter_id and user_id required" });
 
       // Verify ownership
       const { data: matter } = await supabase.from("matters").select("owner_id").eq("id", matter_id).single();
       if (!matter || matter.owner_id !== user.id) return res.status(403).json({ error: "Only the owner can remove sharing" });
 
-      const { error } = await supabase.from("matter_shares").delete().eq("id", share_id);
+      const { error } = await supabase.from("matter_shares").delete()
+        .eq("matter_id", matter_id)
+        .eq("user_id", user_id);
       if (error) throw error;
       return res.status(200).json({ success: true });
     }

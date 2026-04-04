@@ -473,6 +473,20 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 .diagram-chat-user{background:var(--blue-faint);align-self:flex-end;color:var(--navy)}
 .diagram-chat-assistant{background:var(--white);border:1px solid var(--border);align-self:flex-start}
 .diagram-pregen-filters{display:flex;flex-wrap:wrap;gap:.35rem}
+/* ═══════════ v3.7 — Tool follow-up layout ═══════════ */
+.followup-header{padding:.8rem 1rem;border-bottom:1.5px solid var(--border);background:var(--blue-faint);flex-shrink:0}
+.followup-question-label{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);margin-bottom:.25rem}
+.followup-question-text{font-size:1rem;font-weight:600;color:var(--navy);line-height:1.4}
+.followup-docs-label{font-size:.78rem;color:var(--blue);margin-top:.3rem;font-style:italic}
+.followup-answer{padding:1rem 1.2rem;font-size:.92rem;line-height:1.7;color:var(--text);flex:1;overflow-y:auto}
+.followup-answer h2,.followup-answer h3,.followup-answer h4{color:var(--navy);margin:1rem 0 .4rem}
+.followup-answer p{margin-bottom:.6rem}
+.followup-answer ul,.followup-answer ol{margin:.4rem 0 .6rem 1.4rem}
+.followup-answer blockquote{border-left:3px solid var(--blue-light);padding:.3rem .8rem;margin:.5rem 0;color:var(--text-mid);background:var(--blue-faint);border-radius:0 5px 5px 0}
+.followup-meta{padding:.5rem 1rem;border-top:1.5px solid var(--border);display:flex;align-items:center;gap:.5rem;font-size:.78rem;color:var(--text-faint);flex-shrink:0}
+.followup-doc-selector{padding:.6rem 1rem;border-top:1.5px solid var(--border);flex-shrink:0}
+.followup-doc-summary{font-size:.78rem;font-weight:600;color:var(--text-mid);cursor:pointer;letter-spacing:.03em;text-transform:uppercase}
+.followup-doc-list{max-height:160px;overflow-y:auto;margin-top:.4rem;padding:.3rem 0}
 </style></head>
 <body>
 <!-- ═══════════ LOGIN ═══════════ -->

@@ -45,32 +45,41 @@ Terms:`
   }
 }
 
-async function searchChunks(matterId, query, limit = 30) {
+/* v3.7: searchChunks now accepts optional focusDocNames array.
+   When provided, chunks are filtered to only those documents. */
+async function searchChunks(matterId, query, limit, focusDocNames) {
+  limit = limit || 30;
   // First try with AI-extracted terms
   const terms = await extractSearchTerms(query);
   const keywords = terms.join(" | ");
 
   if (keywords) {
-    const { data, error } = await supabase.from("chunks").select("content, document_name, doc_type")
+    var q = supabase.from("chunks").select("content, document_name, doc_type")
       .eq("matter_id", matterId)
       .textSearch("content", keywords, { type: "plain", config: "english" })
       .limit(limit);
+    if (focusDocNames && focusDocNames.length > 0) q = q.in("document_name", focusDocNames);
+    const { data, error } = await q;
     if (!error && data?.length) return data;
   }
 
   // Fall back to simple keyword extraction if AI terms yield nothing
   const simpleKeywords = query.split(/\s+/).filter(w => w.length > 3).slice(0, 10).join(" | ");
   if (simpleKeywords) {
-    const { data, error } = await supabase.from("chunks").select("content, document_name, doc_type")
+    var q2 = supabase.from("chunks").select("content, document_name, doc_type")
       .eq("matter_id", matterId)
       .textSearch("content", simpleKeywords, { type: "plain", config: "english" })
       .limit(limit);
+    if (focusDocNames && focusDocNames.length > 0) q2 = q2.in("document_name", focusDocNames);
+    const { data, error } = await q2;
     if (!error && data?.length) return data;
   }
 
-  // Final fallback — return most recent chunks
-  const { data } = await supabase.from("chunks").select("content, document_name, doc_type")
+  // Final fallback — return most recent chunks (still filtered by focusDocNames if set)
+  var q3 = supabase.from("chunks").select("content, document_name, doc_type")
     .eq("matter_id", matterId).limit(limit);
+  if (focusDocNames && focusDocNames.length > 0) q3 = q3.in("document_name", focusDocNames);
+  const { data } = await q3;
   return data || [];
 }
 
@@ -88,7 +97,8 @@ export default async function handler(req, res) {
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-  const { matterId, matterName, matterNature, matterIssues, messages, jurisdiction, queryType, focusAreas, actingFor } = req.body;
+  /* v3.7: Accept focusDocNames from request body */
+  const { matterId, matterName, matterNature, matterIssues, messages, jurisdiction, queryType, focusAreas, actingFor, focusDocNames } = req.body;
   if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: "Invalid request" });
 
   try {
@@ -97,7 +107,8 @@ export default async function handler(req, res) {
 
     let contextText = "";
     if (matterId) {
-      const chunks = await searchChunks(matterId, userQuery);
+      /* v3.7: Pass focusDocNames to searchChunks for document-focused follow-ups */
+      const chunks = await searchChunks(matterId, userQuery, 30, focusDocNames);
       if (chunks.length > 0) {
         const byDoc = {};
         for (const c of chunks) {
@@ -111,6 +122,12 @@ export default async function handler(req, res) {
       }
     }
 
+    /* v3.7: If focusDocNames were specified, tell Claude which documents were targeted */
+    var focusDocNote = "";
+    if (focusDocNames && focusDocNames.length > 0) {
+      focusDocNote = "\nThe user has specifically asked you to focus your answer on the following documents: " + focusDocNames.join(", ") + ". Draw your answer primarily from passages in these documents, citing them by name.\n";
+    }
+
     const matterContext = [
       matterNature ? `Nature of the dispute: ${matterNature}` : "",
       matterIssues ? `Key issues in this matter: ${matterIssues}` : "",
@@ -120,7 +137,7 @@ export default async function handler(req, res) {
     const system = `You are a senior litigation counsel specialising in ${jurisdiction || "Bermuda"} offshore common law litigation. You have deep expertise in Bermuda, Cayman Islands and BVI law, court rules (RSC Bermuda, GCR Cayman, CPR BVI), statutes, company law, trust law, insolvency, and English common law precedent as applied offshore.
 
 Matter: "${matterName || "Current Matter"}"
-${matterContext ? `\n${matterContext}\n` : ""}
+${matterContext ? `\n${matterContext}\n` : ""}${focusDocNote}
 ${contextText ? `The following passages are retrieved from the matter documents as most relevant to this question. Refer to them specifically, quoting where helpful:\n\n${contextText}` : "No documents uploaded yet. Answer based on your legal knowledge."}
 
 In every response:

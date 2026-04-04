@@ -363,6 +363,12 @@ async function deleteHistItem(id){
 }
 function loadHistItem(i){
   var h=matterHistory[i];if(!h)return;
+  /* Stage 5: diagram has its own loader */
+  if(h.tool_name==='diagram'){
+    loadDiagramFromHistory(h);
+    if(histOpen)toggleHistory();
+    return;
+  }
   if(h.tool_name){getOrCreateToolTab(h.tool_name);var area=showToolResult(h.tool_name);area.innerHTML='';appendMsgTo(area,'assistant',h.answer,'tool',h.question,'',h.tool_name,h.id);}
   else{switchTab('chat');clearMessages();appendMsg('user',h.question);appendMsg('assistant',h.answer,'','','',null,h.id);}
   if(histOpen)toggleHistory();
@@ -428,19 +434,111 @@ async function sendMessage(){
   var text=input.value.trim();if(!text)return;
   isLoading=true;input.value='';input.style.height='auto';
   document.getElementById('sendBtn').disabled=true;
+
+  /* Tool follow-up: open dedicated follow-up view */
+  var isToolFollowUp=activeTab!=='chat'&&activeTab!=='diagram'&&toolDefs[activeTab];
+  if(isToolFollowUp){
+    await sendToolFollowUp(text,activeTab);
+    isLoading=false;document.getElementById('sendBtn').disabled=false;input.focus();
+    return;
+  }
+
   var area=getActiveMessagesArea();
   appendMsgTo(area,'user',text);
-  var toolContext=activeTab!=='chat'&&toolDefs[activeTab]?'The user is viewing the '+toolDefs[activeTab].title+' output for this matter. Answer their question in that context.':'';
+  var toolContext='';
   var typing=document.createElement('div');
   typing.className='msg msg-assistant';
   typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
   area.appendChild(typing);area.scrollTop=area.scrollHeight;
   try{
-    var d=await api('/api/analyse','POST',{matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:text+(toolContext?'\n\n[Context: '+toolContext+']':'')}],jurisdiction:jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:Array.from(focusAreas)});
+    var d=await api('/api/analyse','POST',{matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:text}],jurisdiction:jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:Array.from(focusAreas)});
     typing.remove();
     if(d&&d.result){var hId=await saveHistory(text,d.result);var costStr=d.usage&&d.usage.costUsd?' · $'+d.usage.costUsd.toFixed(4):'';appendMsgTo(area,'assistant',d.result,'',text,costStr,null,hId);}
   }catch(e){typing.remove();var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';errEl.textContent='\u26A0\uFE0F Error: '+e.message;area.appendChild(errEl);}
   finally{isLoading=false;document.getElementById('sendBtn').disabled=false;input.focus();}
+}
+
+/* ── Tool Follow-Up with Document Focus ────────────────────────────────── */
+async function sendToolFollowUp(question,toolName){
+  var cfg=toolDefs[toolName];
+  var toolLabel=cfg?cfg.title:toolName;
+  /* Get selected focus documents from the follow-up doc selector (if present) */
+  var focusDocNames=[];
+  document.querySelectorAll('#followUpDocList input:checked').forEach(function(cb){focusDocNames.push(cb.value);});
+  /* Get the current tool result text for context */
+  var msgsArea=document.getElementById('msgs-'+toolName);
+  var currentResult='';
+  if(msgsArea){
+    var bubbles=msgsArea.querySelectorAll('.msg-bubble');
+    if(bubbles.length>0)currentResult=bubbles[bubbles.length-1].innerText.slice(0,8000);
+  }
+  var toolContext='The user is viewing the '+toolLabel+' output for this matter. Answer their follow-up question in that context.';
+  /* Replace the tool workspace with follow-up layout: question at top, answer below */
+  var ws=msgsArea;
+  if(!ws)return;
+  ws.innerHTML='';ws.style.display='flex';
+  /* Follow-up header */
+  var header=document.createElement('div');
+  header.className='followup-header';
+  header.innerHTML='<div class="followup-question-label">Follow-up on '+esc(toolLabel.replace(/^[^\w]*/,''))+'</div>'
+    +'<div class="followup-question-text">'+esc(question)+'</div>';
+  if(focusDocNames.length>0){
+    header.innerHTML+='<div class="followup-docs-label">Focused on: '+focusDocNames.map(function(n){return esc(n);}).join(', ')+'</div>';
+  }
+  ws.appendChild(header);
+  /* Typing indicator */
+  var typing=document.createElement('div');
+  typing.className='msg msg-assistant';
+  typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
+  ws.appendChild(typing);ws.scrollTop=ws.scrollHeight;
+  try{
+    var body={matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:question+'\n\n[Context: '+toolContext+']\n\n[Previous tool output summary (first 8000 chars):\n'+currentResult+']'}],jurisdiction:jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:Array.from(focusAreas)};
+    if(focusDocNames.length>0)body.focusDocNames=focusDocNames;
+    var d=await api('/api/analyse','POST',body);
+    typing.remove();
+    if(d&&d.result){
+      var costStr=d.usage&&d.usage.costUsd?' · $'+d.usage.costUsd.toFixed(4):'';
+      var hId=await saveHistory(toolLabel+' follow-up: '+question.slice(0,80),d.result,toolName);
+      /* Render answer in full workspace */
+      var answerWrap=document.createElement('div');
+      answerWrap.className='followup-answer';
+      answerWrap.innerHTML=renderMdWithSourceLinks(d.result);
+      ws.appendChild(answerWrap);
+      /* Meta bar */
+      var meta=document.createElement('div');meta.className='followup-meta';
+      meta.innerHTML='<span>Ex Libris Juris · '+(jurisdiction==='British Virgin Islands'?'BVI':jurisdiction)+(costStr||'')+'</span>';
+      var dlBtn=document.createElement('button');dlBtn.className='btn-dl';dlBtn.textContent='\u2B07 Word';
+      dlBtn.onclick=function(){downloadWord(d.result,toolLabel+' follow-up: '+question.slice(0,40));};
+      meta.appendChild(dlBtn);
+      ws.appendChild(meta);
+      /* Doc selector + new follow-up input for chaining */
+      buildFollowUpDocSelector(ws,toolName);
+    }
+  }catch(e){
+    typing.remove();
+    var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
+    errEl.textContent='\u26A0\uFE0F Error: '+e.message;ws.appendChild(errEl);
+    buildFollowUpDocSelector(ws,toolName);
+  }
+}
+
+/* Build the document focus selector below a follow-up answer */
+function buildFollowUpDocSelector(container,toolName){
+  var html='<div class="followup-doc-selector">'
+    +'<details open><summary class="followup-doc-summary">Focus next question on specific documents <span style="font-weight:400;color:var(--text-faint)">(optional — leave unchecked for all documents)</span></summary>'
+    +'<div class="followup-doc-list" id="followUpDocList">';
+  if(documents.length){
+    for(var i=0;i<documents.length;i++){
+      var d=documents[i];
+      html+='<label class="anchor-item"><input type="checkbox" value="'+esc(d.name)+'"> '+esc(d.name)+' <span style="color:var(--text-faint);font-size:.72rem">['+esc(d.doc_type)+']</span></label>';
+    }
+  }else{
+    html+='<div style="font-size:.82rem;color:var(--text-faint);font-style:italic">No documents uploaded for this matter.</div>';
+  }
+  html+='</div></details></div>';
+  var wrap=document.createElement('div');
+  wrap.innerHTML=html;
+  container.appendChild(wrap.firstChild);
 }
 document.getElementById('sendBtn').addEventListener('click',sendMessage);
 document.getElementById('chatInput').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}});

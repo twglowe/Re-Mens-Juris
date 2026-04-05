@@ -298,6 +298,56 @@ async function quickAddSave(){
     }
     closeModal('quickAddModal');
     await loadLibrary();
+    /* Re-populate the upload modal dropdowns if it's still open */
+    if(document.getElementById('precUploadModal').style.display==='flex'){
+      precUpCaseTypeChanged();
+    }
     showToast('Added: '+name);
   }catch(e){showToast('Error: '+e.message);}
+}
+
+/* Delete from the precUpload modal dropdowns */
+function precModalDelete(type){
+  if(type==='casetype'){
+    var sel=document.getElementById('precUpCaseType');
+    if(!sel||!sel.value){showToast('Select a case type from the dropdown first');return;}
+    var name=sel.options[sel.selectedIndex].text;
+    if(!confirm('Delete case type "'+name+'" and all its stages, doc types, and precedents?'))return;
+    api('/api/library','DELETE',{action:'delete_case_type',id:sel.value}).then(function(){loadLibrary().then(function(){precUpCaseTypeChanged();});showToast('Deleted: '+name);}).catch(function(e){showToast('Error: '+e.message);});
+  }else if(type==='subcat'){
+    var sel2=document.getElementById('precUpStage');
+    if(!sel2||!sel2.value){showToast('Select a stage from the dropdown first');return;}
+    var name2=sel2.options[sel2.selectedIndex].text;
+    if(!confirm('Delete stage "'+name2+'"?'))return;
+    api('/api/library','DELETE',{action:'delete_subcat',id:sel2.value}).then(function(){loadLibrary().then(function(){precUpCaseTypeChanged();});showToast('Deleted: '+name2);}).catch(function(e){showToast('Error: '+e.message);});
+  }else if(type==='doctype'){
+    var sel3=document.getElementById('precUpDocType');
+    if(!sel3||!sel3.value){showToast('Select a doc type from the dropdown first');return;}
+    var name3=sel3.options[sel3.selectedIndex].text;
+    if(!confirm('Delete doc type "'+name3+'"?'))return;
+    api('/api/library','DELETE',{action:'delete_doc_type',id:sel3.value}).then(function(){loadLibrary().then(function(){precUpCaseTypeChanged();});showToast('Deleted: '+name3);}).catch(function(e){showToast('Error: '+e.message);});
+  }
+}
+
+/* Delete from Draft tab select dropdowns */
+function draftDeleteFromSelect(type){
+  if(type==='casetype'){
+    var sel=document.getElementById('draftCaseType');
+    if(!sel||!sel.value){showToast('Select a case type first');return;}
+    var name=sel.options[sel.selectedIndex].text;
+    if(!confirm('Delete case type "'+name+'" and all its stages, doc types, and precedents?'))return;
+    api('/api/library','DELETE',{action:'delete_case_type',id:sel.value}).then(function(){loadLibrary();showToast('Deleted: '+name);}).catch(function(e){showToast('Error: '+e.message);});
+  }else if(type==='subcat'){
+    var sel2=document.getElementById('draftStage');
+    if(!sel2||!sel2.value){showToast('Select a stage first');return;}
+    var name2=sel2.options[sel2.selectedIndex].text;
+    if(!confirm('Delete stage "'+name2+'"?'))return;
+    api('/api/library','DELETE',{action:'delete_subcat',id:sel2.value}).then(function(){loadLibrary();showToast('Deleted: '+name2);}).catch(function(e){showToast('Error: '+e.message);});
+  }else if(type==='doctype'){
+    var sel3=document.getElementById('draftDocType');
+    if(!sel3||!sel3.value){showToast('Select a doc type first');return;}
+    var name3=sel3.options[sel3.selectedIndex].text;
+    if(!confirm('Delete doc type "'+name3+'"?'))return;
+    api('/api/library','DELETE',{action:'delete_doc_type',id:sel3.value}).then(function(){loadLibrary();showToast('Deleted: '+name3);}).catch(function(e){showToast('Error: '+e.message);});
+  }
 }

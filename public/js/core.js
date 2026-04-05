@@ -140,7 +140,7 @@ async function loadMatters(){
 function renderMatters(){
   var list=document.getElementById('mattersList');
   if(!matters.length){list.innerHTML='<div class="empty-state">No matters yet.<br>Create one to begin.</div>';return;}
-  list.innerHTML=matters.map(function(m){return '<div class="matter-item'+(currentMatter&&currentMatter.id===m.id?' active':'')+'" onclick="selectMatter(\''+m.id+'\')">'
+  list.innerHTML=matters.map(function(m){return '<div class="matter-item'+(currentMatter&&currentMatter.id===m.id?' active':'')+'" tabindex="0" role="button" onclick="selectMatter(\''+m.id+'\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();selectMatter(\''+m.id+'\');}">'
     +'<div class="matter-name">'+esc(m.name)+'</div>'
     +'<div class="matter-meta">'
     +'<span class="badge badge-jur">'+esc(m.jurisdiction==='British Virgin Islands'?'BVI':m.jurisdiction)+'</span>'
@@ -148,9 +148,9 @@ function renderMatters(){
     +'<span>'+(m.document_count||0)+' doc'+((m.document_count||0)!==1?'s':'')+'</span>'
     +'</div>'
     +'<div class="matter-actions">'
-    +'<button class="btn-icon" onclick="event.stopPropagation();editMatter(\''+m.id+'\')" title="Edit">✏️</button>'
-    +'<button class="btn-icon" onclick="event.stopPropagation();shareMatter(\''+m.id+'\')" title="Share">🔗</button>'
-    +'<button class="btn-icon" onclick="event.stopPropagation();deleteMatter(\''+m.id+'\',\''+esc(m.name)+'\')" title="Delete">🗑️</button>'
+    +'<button class="btn-icon" onclick="event.stopPropagation();editMatter(\''+m.id+'\')" title="Edit" aria-label="Edit matter">✏️</button>'
+    +'<button class="btn-icon" onclick="event.stopPropagation();shareMatter(\''+m.id+'\')" title="Share" aria-label="Share matter">🔗</button>'
+    +'<button class="btn-icon" onclick="event.stopPropagation();deleteMatter(\''+m.id+'\',\''+esc(m.name)+'\')" title="Delete" aria-label="Delete matter">🗑️</button>'
     +'</div></div>';}).join('');
 }
 
@@ -284,7 +284,7 @@ document.getElementById('newMatterBtn').addEventListener('click',function(){
   document.getElementById('newMatterName').value='';
   document.getElementById('newMatterNature').value='';
   document.getElementById('newMatterIssues').value='';
-  document.getElementById('newMatterModal').style.display='flex';
+  openModal('newMatterModal');
   setTimeout(function(){document.getElementById('newMatterName').focus();},100);
 });
 document.getElementById('createMatterBtn').addEventListener('click',async function(){
@@ -306,7 +306,7 @@ function editMatter(id){
   document.getElementById('editMatterIssues').value=m.issues||'';
   var sel=document.getElementById('editMatterActingFor');
   if(sel&&m.acting_for){sel.value=m.acting_for;}
-  document.getElementById('editMatterModal').style.display='flex';
+  openModal('editMatterModal');
 }
 document.getElementById('saveMatterBtn').addEventListener('click',async function(){
   if(!editingMatterId)return;
@@ -333,7 +333,7 @@ async function shareMatter(id){
     var shares=res[0].shares||[];var users=res[1].users||[];
     document.getElementById('shareList').innerHTML=shares.length?shares.map(function(s){return '<div class="share-item"><span>'+esc(s.email)+' ('+s.permission+')</span><button onclick="removeShare(\''+id+'\',\''+s.user_id+'\')" style="background:none;border:none;color:var(--error);cursor:pointer;font-weight:700">Remove</button></div>';}).join(''):'<div style="font-size:.85rem;color:var(--text-faint);margin-bottom:.5rem">Not shared with anyone yet.</div>';
     document.getElementById('shareUserSelect').innerHTML=users.map(function(u){return '<option value="'+u.id+'">'+esc(u.email)+'</option>';}).join('')||'<option>No other users</option>';
-    document.getElementById('shareModal').style.display='flex';
+    openModal('shareModal');
   }catch(e){showToast('Error: '+e.message);}
 }
 document.getElementById('addShareBtn').addEventListener('click',async function(){
@@ -669,8 +669,54 @@ function renderMd(text){
 /* ── UTILITIES ───────────────────────────────────────────────────────────── */
 function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function inl(t){return esc(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>').replace(/_(.+?)_/g,'<em>$1</em>');}
-function closeModal(id){document.getElementById(id).style.display='none';}
-document.querySelectorAll('.overlay').forEach(function(o){o.addEventListener('click',function(e){if(e.target===o)o.style.display='none';});});
+function closeModal(id){
+  var modal=document.getElementById(id);
+  modal.style.display='none';
+  /* Restore focus to the element that opened the modal */
+  if(window._modalOpener){window._modalOpener.focus();window._modalOpener=null;}
+}
+function openModal(id){
+  window._modalOpener=document.activeElement;
+  var modal=document.getElementById(id);
+  modal.style.display='flex';
+  /* Focus the first input or button inside the modal */
+  var target=modal.querySelector('input:not([type=hidden]):not([style*="display:none"]),select,textarea,button.btn-primary');
+  if(target)setTimeout(function(){target.focus();},60);
+}
+document.querySelectorAll('.overlay').forEach(function(o){o.addEventListener('click',function(e){if(e.target===o)closeModal(o.id);});});
+/* Escape key closes topmost open modal */
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    var overlays=document.querySelectorAll('.overlay');
+    /* Close the highest z-index open modal first */
+    var topModal=null;var topZ=0;
+    overlays.forEach(function(o){
+      if(o.style.display!=='none'&&o.style.display!==''){
+        var z=parseInt(getComputedStyle(o).zIndex)||200;
+        if(z>=topZ){topZ=z;topModal=o;}
+      }
+    });
+    if(topModal){e.preventDefault();closeModal(topModal.id);}
+  }
+});
+/* Focus trap: keep Tab/Shift+Tab inside open modals */
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Tab')return;
+  var overlays=document.querySelectorAll('.overlay');
+  var openModal=null;var topZ=0;
+  overlays.forEach(function(o){
+    if(o.style.display!=='none'&&o.style.display!==''){
+      var z=parseInt(getComputedStyle(o).zIndex)||200;
+      if(z>=topZ){topZ=z;openModal=o;}
+    }
+  });
+  if(!openModal)return;
+  var focusable=openModal.querySelectorAll('input:not([type=hidden]):not([style*="display:none"]),select,textarea,button,[tabindex]:not([tabindex="-1"])');
+  if(!focusable.length)return;
+  var first=focusable[0];var last=focusable[focusable.length-1];
+  if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+  else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+});
 function showToast(msg){var old=document.querySelector('.toast');if(old)old.remove();var t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove();},3200);}
 function clearMessages(){document.getElementById('messagesArea').innerHTML='';}
 function sysMsg(text){var area=document.getElementById('messagesArea');var el=document.createElement('div');el.style.cssText='text-align:center;font-size:.78rem;font-weight:500;color:var(--text-faint);padding:.45rem;font-style:italic;';el.innerHTML=renderMd(text);area.appendChild(el);area.scrollTop=area.scrollHeight;}

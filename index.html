@@ -13,7 +13,7 @@
   --navy:#0f2744;--navy-mid:#1a3a5c;--blue:#1d6fa4;--blue-light:#2689c8;
   --blue-pale:#e8f4fd;--blue-faint:#f4f9fd;--white:#fff;--off-white:#f2f7fc;
   --border:#c5ddf0;--border-strong:#90c0e0;
-  --text-dark:#0a1e36;--text-mid:#1e3d5c;--text-light:#4a6a84;--text-faint:#7a9ab4;
+  --text-dark:#0a1e36;--text-mid:#1e3d5c;--text-light:#4a6a84;--text-faint:#5a7d99;
   --error:#c0392b;--success:#27ae60;--warning:#e67e22;
   --green-pale:#f0faf0;--green-border:#b0d8b0;
 }
@@ -487,10 +487,15 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 .followup-doc-selector{padding:.6rem 1rem;border-top:1.5px solid var(--border);flex-shrink:0}
 .followup-doc-summary{font-size:.78rem;font-weight:600;color:var(--text-mid);cursor:pointer;letter-spacing:.03em;text-transform:uppercase}
 .followup-doc-list{max-height:160px;overflow-y:auto;margin-top:.4rem;padding:.3rem 0}
+
+/* Accessibility: skip-to-content */
+.skip-link{position:absolute;top:-40px;left:0;padding:.5rem 1rem;background:var(--navy);color:#fff;z-index:9999;font-size:.9rem;font-weight:600;transition:top .15s}
+.skip-link:focus{top:0}
 </style></head>
 <body>
+<a href="#mainContent" class="skip-link">Skip to main content</a>
 <!-- ═══════════ LOGIN ═══════════ -->
-<div class="login-screen" id="loginScreen">
+<div class="login-screen" id="loginScreen" role="region" aria-label="Sign in">
   <div class="login-box">
     <div class="login-logo"><span style="font-size:2.8rem;vertical-align:middle;margin-right:.2rem">⚖</span> Ex Libris Juris</div>
     <div class="login-sub">Offshore Legal Analysis · Bermuda · Cayman · BVI</div>
@@ -508,11 +513,11 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 </div>
 
 <!-- ═══════════ APP SHELL ═══════════ -->
-<div class="app" id="appShell">
-  <header>
+<div class="app" id="appShell" role="application" aria-label="Ex Libris Juris">
+  <header role="banner">
     <div class="hdr">
       <div class="logo"><span style="font-size:1.9rem;vertical-align:middle;margin-right:.25rem">⚖</span> Ex Libris Juris <em>Offshore Legal Analysis</em></div>
-      <div class="main-nav">
+      <div class="main-nav" role="navigation" aria-label="Main navigation">
         <button class="main-nav-btn active" data-nav="matters" onclick="switchMainNav('matters')">📁 Matters</button>
         <button class="main-nav-btn" data-nav="library" onclick="switchMainNav('library')">📚 Library</button>
         <button class="main-nav-btn" data-nav="draft" onclick="switchMainNav('draft')">✍️ Draft</button>
@@ -531,9 +536,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
     </div>
   </header>
 
-  <div class="main-layout">
+  <div class="main-layout" id="mainContent">
     <!-- ═══════════ LEFT PANEL ═══════════ -->
-    <div class="left-panel" id="leftPanel">
+    <div class="left-panel" id="leftPanel" role="complementary" aria-label="Side panel">
 
       <!-- MATTERS left panel -->
       <div id="mattersLeftPanel">
@@ -878,7 +883,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
     </div>
 
     <!-- ═══════════ RIGHT PANEL ═══════════ -->
-    <div class="right-panel" id="rightPanel" style="display:none">
+    <div class="right-panel" id="rightPanel" role="complementary" aria-label="Documents" style="display:none">
       <div class="panel-head"><span class="panel-head-title">Documents</span></div>
       <select class="doc-type" id="docTypeSelect">
         <option>Pleading</option><option>Skeleton Argument</option><option>Witness Statement</option>
@@ -920,7 +925,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 </div>
 
 <!-- ═══════════ MODALS ═══════════ -->
-<div class="overlay" id="newMatterModal" style="display:none">
+<div class="overlay" id="newMatterModal" role="dialog" aria-modal="true" aria-label="New Matter" style="display:none">
   <div class="modal">
     <h3>New Matter</h3>
     <label class="f-label">Matter Name</label>
@@ -940,7 +945,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
   </div>
 </div>
 
-<div class="overlay" id="editMatterModal" style="display:none">
+<div class="overlay" id="editMatterModal" role="dialog" aria-modal="true" aria-label="Edit Matter" style="display:none">
   <div class="modal">
     <h3>Edit Matter</h3>
     <label class="f-label">Matter Name</label>
@@ -958,7 +963,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
   </div>
 </div>
 
-<div class="overlay" id="shareModal" style="display:none">
+<div class="overlay" id="shareModal" role="dialog" aria-modal="true" aria-label="Share Matter" style="display:none">
   <div class="modal">
     <h3>Share Matter</h3>
     <div id="shareList" style="margin-bottom:1rem"></div>
@@ -974,7 +979,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
   </div>
 </div>
 
-<div class="overlay" id="toolModal" style="display:none">
+<div class="overlay" id="toolModal" role="dialog" aria-modal="true" aria-label="Tool Options" style="display:none">
   <div class="modal tool-modal">
     <h3 id="toolModalTitle"></h3>
     <div id="toolModalBody"></div>
@@ -985,7 +990,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
   </div>
 </div>
 
-<div class="overlay" id="bundleModal" style="display:none">
+<div class="overlay" id="bundleModal" role="dialog" aria-modal="true" aria-label="Document Bundle" style="display:none">
   <div class="modal bundle-modal">
     <h3 id="bundleModalTitle">Document Bundle Index</h3>
     <div id="bundleModalBody"></div>
@@ -998,7 +1003,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 
 <!-- Diagram workspace is created dynamically in JS via getOrCreateDiagramTab() -->
 
-<div class="overlay" id="issueBriefingModal" style="display:none">
+<div class="overlay" id="issueBriefingModal" role="dialog" aria-modal="true" aria-label="Issue Briefing" style="display:none">
   <div class="modal tool-modal" style="max-width:560px">
     <h3>📝 Select Issues for Detailed Briefing</h3>
     <p class="tool-desc">Select one or more issues to analyse. The system will produce a detailed briefing with commentary, document references, and strengths and weaknesses for each party.</p>
@@ -1017,7 +1022,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 </div>
 
 <!-- Heading editor popup -->
-<div class="overlay" id="headingModal" style="display:none">
+<div class="overlay" id="headingModal" role="dialog" aria-modal="true" aria-label="Edit Case Heading" style="display:none">
   <div class="modal heading-popup">
     <h3>Edit Case Heading</h3>
     <div class="heading-preview" id="headingPreview"></div>
@@ -1036,7 +1041,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 </div>
 
 <!-- Quick add modal -->
-<div class="overlay" id="quickAddModal" style="display:none;z-index:250">
+<div class="overlay" id="quickAddModal" role="dialog" aria-modal="true" aria-label="Add Item" style="display:none;z-index:250">
   <div class="modal" style="max-width:380px">
     <h3 id="quickAddTitle">Add</h3>
     <label class="f-label">Name</label>
@@ -1049,7 +1054,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 </div>
 
 <!-- Precedent Upload Modal -->
-<div class="overlay" id="precUploadModal" style="display:none">
+<div class="overlay" id="precUploadModal" role="dialog" aria-modal="true" aria-label="Upload Precedent" style="display:none">
   <div class="modal" style="max-width:500px;width:95%">
     <h3>Upload Precedent Document</h3>
     <label class="f-label">Document Name *</label>

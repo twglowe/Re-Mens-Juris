@@ -69,11 +69,8 @@ export default async function handler(req, res) {
       const { id } = req.query;
       const { data: matter } = await supabase.from("matters").select("owner_id").eq("id", id).single();
       if (!matter || matter.owner_id !== user.id) return res.status(403).json({ error: "Only the owner can delete this matter" });
-      await supabase.from("matter_shares").delete().eq("matter_id", id);
-      await supabase.from("conversation_history").delete().eq("matter_id", id);
-      await supabase.from("chunks").delete().eq("matter_id", id);
-      await supabase.from("documents").delete().eq("matter_id", id);
-      await supabase.from("drafts").delete().eq("matter_id", id);
+      /* All child tables (matter_shares, conversation_history, chunks, documents, drafts)
+         have ON DELETE CASCADE foreign keys — PostgreSQL handles cleanup atomically */
       const { error } = await supabase.from("matters").delete().eq("id", id);
       if (error) throw error;
       return res.status(200).json({ success: true });

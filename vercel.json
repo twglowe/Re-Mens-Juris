@@ -3,6 +3,20 @@
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/public/index.html" }
   ],
+  "headers": [
+    {
+      "source": "/js/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=3600" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    }
+  ],
   "functions": {
     "api/upload.js": { "maxDuration": 300 },
     "api/analyse.js": { "maxDuration": 300 },
@@ -10,14 +24,15 @@
     "api/worker.js": { "maxDuration": 300 },
     "api/jobs.js": { "maxDuration": 10 },
     "api/library.js": { "maxDuration": 120 },
-    "api/diagram.js": { "maxDuration": 120 },
-    "api/diagram-chat.js": { "maxDuration": 120 },
     "api/matters.js": { "maxDuration": 30 },
     "api/documents.js": { "maxDuration": 30 },
     "api/auth.js": { "maxDuration": 30 },
     "api/sharing.js": { "maxDuration": 30 },
     "api/history.js": { "maxDuration": 30 },
     "api/export.js": { "maxDuration": 30 },
-    "api/drafts.js": { "maxDuration": 30 }
+    "api/drafts.js": { "maxDuration": 30 },
+    "api/diagram.js": { "maxDuration": 300 },
+    "api/diagram-chat.js": { "maxDuration": 300 },
+    "api/usage.js": { "maxDuration": 30 }
   }
 }

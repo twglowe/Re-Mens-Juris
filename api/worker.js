@@ -264,7 +264,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     var slice = batches.slice(i, i + PARALLEL);
     var results = await Promise.all(slice.map(function(batch, j) {
       var batchText = docsToText(batch);
-      return runTool(systemBase, extractPromptFn(batchText, i + j + 1, batches.length), 2048);
+      return runTool(systemBase, extractPromptFn(batchText, i + j + 1, batches.length), 4096);
     }));
     for (var ri = 0; ri < results.length; ri++) {
       extracts.push(results[ri].text);

@@ -124,7 +124,8 @@ function buildPageIndex(byDoc) {
 }
 
 async function runTool(system, userPrompt, maxTokens) {
-  maxTokens = maxTokens || 8192;
+  /* v4.1: raised from 8192 to API max — synthesis of large matters was truncating */
+  maxTokens = maxTokens || 64000;
   var response = await anthropic.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: maxTokens,

@@ -125,21 +125,23 @@ function buildPageIndex(byDoc) {
 
 async function runTool(system, userPrompt, maxTokens) {
   /* v4.1: raised from 8192 to API max — synthesis of large matters was truncating */
+  /* v4.1b: switched to streaming to avoid Anthropic 10-minute timeout on large outputs */
   maxTokens = maxTokens || 64000;
-  var response = await anthropic.messages.create({
+  var stream = anthropic.messages.stream({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: maxTokens,
     system: system,
     messages: [{ role: "user", content: userPrompt }],
   });
+  var finalMessage = await stream.finalMessage();
   var text = "";
-  if (response.content) {
-    for (var i = 0; i < response.content.length; i++) {
-      if (response.content[i].type === "text") { text = response.content[i].text; break; }
+  if (finalMessage.content) {
+    for (var i = 0; i < finalMessage.content.length; i++) {
+      if (finalMessage.content[i].type === "text") { text = finalMessage.content[i].text; break; }
     }
   }
-  var inputTokens = (response.usage && response.usage.input_tokens) || 0;
-  var outputTokens = (response.usage && response.usage.output_tokens) || 0;
+  var inputTokens = (finalMessage.usage && finalMessage.usage.input_tokens) || 0;
+  var outputTokens = (finalMessage.usage && finalMessage.usage.output_tokens) || 0;
   var cost = (inputTokens * INPUT_COST_PER_M / 1000000) + (outputTokens * OUTPUT_COST_PER_M / 1000000);
   return { text: text, inputTokens: inputTokens, outputTokens: outputTokens, cost: cost };
 }

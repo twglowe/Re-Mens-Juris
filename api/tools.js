@@ -1,12 +1,10 @@
-/* EX LIBRIS JURIS v3.4.1 — tools.js
+/* EX LIBRIS JURIS v4.2e — tools.js (API)
    Thin job dispatcher: creates a tool_jobs row, fires worker, returns jobId.
    NO Claude API calls happen here. All processing is in worker.js.
 
-   v3.4.1 FIX: The worker fetch is now awaited with a 5-second timeout.
-   Previously the non-awaited fetch was killed when Vercel terminated the
-   tools.js function after sending its response. The AbortController timeout
-   ensures we wait long enough for the worker to receive the request, but
-   still return the jobId quickly to the frontend. */
+   v4.2e: Worker fetch is fire-and-forget (no await, no AbortController).
+   If the worker doesn't start, the frontend polling loop detects "pending"
+   status and re-fires the worker itself. No server-to-server chaining. */
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -42,7 +40,7 @@ export default async function handler(req, res) {
 
   if (!tool || !matterId) return res.status(400).json({ error: "tool and matterId required" });
 
-  const validTools = ["proposition", "inconsistency", "chronology", "persons", "issues", "citations", "briefing", "draft"];
+  const validTools = ["proposition", "inconsistency", "chronology", "persons", "issues", "citations", "briefing", "draft", "issueBriefing"];
   if (!validTools.includes(tool)) return res.status(400).json({ error: "Unknown tool: " + tool });
 
   if (tool === "proposition" && !instructions) {
@@ -90,26 +88,19 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to create job: " + insertError.message });
   }
 
-  /* Fire the worker with a 5-second timeout.
-     We AWAIT this so Vercel doesn't kill the in-flight request.
-     The AbortController ensures we don't wait for the full worker run.
-     The worker responds quickly with { ok: true } then continues processing
-     because it defers its real work via its own internal logic. */
+  /* Fire the worker — fire-and-forget.
+     v4.2e: No AbortController, no await. The frontend polling loop handles
+     retries if the worker doesn't start. */
   const workerUrl = `https://${req.headers.host}/api/worker?jobId=${job.id}`;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    await fetch(workerUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-  } catch (e) {
-    /* Timeout or network error — worker may still be starting.
-       This is not fatal; the worker runs independently once started. */
-    console.log("Worker fire (expected timeout or abort):", e.message);
-  }
+  fetch(workerUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  }).catch(function(e) {
+    console.log("Worker fire (expected):", e.message);
+  });
+
+  /* Brief delay to let the fetch reach the network */
+  await new Promise(function(r) { setTimeout(r, 500); });
 
   /* Return jobId to frontend */
   return res.status(200).json({ jobId: job.id });

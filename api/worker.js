@@ -286,9 +286,13 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     });
   }
 
-  /* All extraction done — check time before synthesis */
-  if (Date.now() - startTime > TIME_LIMIT_MS) {
-    console.log("Worker chain: extraction done, chaining for synthesis");
+  /* All extraction done — always chain for synthesis so it gets a fresh 250s window.
+     v4.1b: synthesis with streaming + 64000 max_tokens can take several minutes.
+     Starting it with only seconds remaining causes Vercel to kill the function.
+     Use elapsed time > 10s as indicator that we ran extraction in this invocation
+     (if we just resumed with extraction already done, startTime is fresh). */
+  if (Date.now() - startTime > 10000) {
+    console.log("Worker chain: extraction done (" + batches.length + " batches, " + Math.round((Date.now() - startTime) / 1000) + "s elapsed), chaining for synthesis");
     await updateJob(jobId, {
       batches_done: batches.length,
       extracts: extracts,

@@ -251,16 +251,13 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         cost_usd: totalCost,
       });
       /* Self-chain: fire next invocation */
-      try {
-        var controller = new AbortController();
-        var chainTimeout = setTimeout(function() { controller.abort(); }, 5000);
-        await fetch(hostUrl + "/api/worker?jobId=" + jobId, {
+      /* Fire-and-forget: don't await — just ensure the request leaves this process */
+      fetch(hostUrl + "/api/worker?jobId=" + jobId, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-        });
-        clearTimeout(chainTimeout);
-      } catch (ce) { console.log("Chain fire (expected):", ce.message); }
+      }).catch(function(ce) { console.log("Chain fire:", ce.message); });
+      /* Brief pause to let the HTTP request leave the process before we return */
+      await new Promise(function(resolve) { setTimeout(resolve, 1500); });
       return null; /* null means chained, not done */
     }
 
@@ -300,16 +297,13 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
       output_tokens: totalOutput,
       cost_usd: totalCost,
     });
-    try {
-      var controller2 = new AbortController();
-      var chainTimeout2 = setTimeout(function() { controller2.abort(); }, 5000);
-      await fetch(hostUrl + "/api/worker?jobId=" + jobId, {
+    /* Fire-and-forget: don't await — just ensure the request leaves this process */
+    fetch(hostUrl + "/api/worker?jobId=" + jobId, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: controller2.signal,
-      });
-      clearTimeout(chainTimeout2);
-    } catch (ce2) { console.log("Chain fire (expected):", ce2.message); }
+    }).catch(function(ce2) { console.log("Chain fire:", ce2.message); });
+    /* Brief pause to let the HTTP request leave the process before we return */
+    await new Promise(function(resolve) { setTimeout(resolve, 1500); });
     return null;
   }
 
@@ -437,12 +431,9 @@ export default async function handler(req, res) {
       for (var ii = batchesDone; ii < otherBatches.length; ii += INCON_PARALLEL) {
         if (Date.now() - startTime > TIME_LIMIT_MS) {
           await updateJob(jobId, { batches_done: ii, extracts: allFindings, input_tokens: totalInput, output_tokens: totalOutput, cost_usd: totalCost });
-          try {
-            var ctrl = new AbortController();
-            var to = setTimeout(function() { ctrl.abort(); }, 5000);
-            await fetch(hostUrl + "/api/worker?jobId=" + jobId, { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal });
-            clearTimeout(to);
-          } catch (ce) { console.log("Chain fire:", ce.message); }
+          /* Fire-and-forget chain */
+          fetch(hostUrl + "/api/worker?jobId=" + jobId, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function(ce) { console.log("Chain fire:", ce.message); });
+          await new Promise(function(resolve) { setTimeout(resolve, 1500); });
           return res.status(200).json({ ok: true, status: "chained" });
         }
         var slice = otherBatches.slice(ii, ii + INCON_PARALLEL);
@@ -465,12 +456,9 @@ export default async function handler(req, res) {
       } else {
         if (Date.now() - startTime > TIME_LIMIT_MS) {
           await updateJob(jobId, { batches_done: otherBatches.length, extracts: allFindings, input_tokens: totalInput, output_tokens: totalOutput, cost_usd: totalCost });
-          try {
-            var ctrl2 = new AbortController();
-            var to2 = setTimeout(function() { ctrl2.abort(); }, 5000);
-            await fetch(hostUrl + "/api/worker?jobId=" + jobId, { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl2.signal });
-            clearTimeout(to2);
-          } catch (ce2) { console.log("Chain fire:", ce2.message); }
+          /* Fire-and-forget chain */
+          fetch(hostUrl + "/api/worker?jobId=" + jobId, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function(ce2) { console.log("Chain fire:", ce2.message); });
+          await new Promise(function(resolve) { setTimeout(resolve, 1500); });
           return res.status(200).json({ ok: true, status: "chained" });
         }
         var synth = await runTool(systemBase,

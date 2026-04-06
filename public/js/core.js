@@ -420,7 +420,7 @@ async function uploadFiles(files){
 async function extractPdfText(file){
   var pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
   if(!pdfjsLib)throw new Error('PDF library not loaded. Refresh and try again.');
-  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc='/js/pdf.worker.min.js';
   var buf=await file.arrayBuffer();
   var pdf=await pdfjsLib.getDocument({data:buf}).promise;
   var pages=[];

@@ -207,6 +207,16 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
           }
           return;
         }
+        /* v4.2e: Worker paused or ready for synthesis — re-fire worker from frontend */
+        if(j.status==='paused'||j.status==='synthesising'){
+          if(j.status==='synthesising'){
+            progressLabel.textContent='Synthesising '+toolLabel+'\u2026';
+            progressFill.style.width='95%';
+          }else{
+            progressLabel.textContent='Resuming '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
+          }
+          fetch('/api/worker?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Worker re-fire:',e.message);});
+        }
         /* Job failed */
         if(j.status==='failed'){
           clearInterval(pollInterval);typing.remove();
@@ -456,6 +466,16 @@ async function runIssueBriefing(selectedIssues,extraInstructions){
             noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);
           }
           return;
+        }
+        /* v4.2e: Worker paused or ready for synthesis — re-fire worker from frontend */
+        if(j.status==='paused'||j.status==='synthesising'){
+          if(j.status==='synthesising'){
+            progressLabel.textContent='Synthesising '+toolLabel+'\u2026';
+            progressFill.style.width='95%';
+          }else{
+            progressLabel.textContent='Resuming '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
+          }
+          fetch('/api/worker?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Worker re-fire:',e.message);});
         }
         if(j.status==='failed'){
           clearInterval(pollInterval);typing.remove();

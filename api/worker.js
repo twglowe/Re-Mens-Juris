@@ -199,17 +199,18 @@ async function failJob(jobId, errorMsg) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   CHAINED BATCHED RUNNER
+   BATCHED RUNNER (v4.2e: frontend-driven chaining)
    Processes extraction batches within time limit. If time runs out, saves
-   progress and self-chains by firing another request to /api/worker.
-   Returns null if chained (caller should return response and stop).
+   progress and sets status to "paused". Frontend polls, detects "paused",
+   and calls /api/worker again. No server-to-server chaining.
+   Returns null if paused/synthesising (caller should return response and stop).
    ══════════════════════════════════════════════════════════════════════════ */
 
 async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthPromptFn, byDoc, hostUrl) {
   var batches = batchDocs(byDoc);
   var startTime = Date.now();
 
-  /* Resume from previous chain link */
+  /* Resume from previous invocation */
   var batchesDone = job.batches_done || 0;
   var extracts = [];
   try {
@@ -218,6 +219,17 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
   var totalInput = job.input_tokens || 0;
   var totalOutput = job.output_tokens || 0;
   var totalCost = parseFloat(job.cost_usd) || 0;
+
+  /* v4.2e: If status is "synthesising", skip extraction — go straight to synthesis */
+  if (job.status === "synthesising") {
+    console.log("Worker: running synthesis for " + jobId + " (" + extracts.length + " extracts)");
+    var combinedExtracts = extracts.map(function(e, idx) { return "=== BATCH " + (idx + 1) + " FINDINGS ===\n" + e; }).join("\n\n");
+    var synthResult = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length));
+    totalInput += synthResult.inputTokens;
+    totalOutput += synthResult.outputTokens;
+    totalCost += synthResult.cost;
+    return { text: synthResult.text, inputTokens: totalInput, outputTokens: totalOutput, cost: totalCost, done: true };
+  }
 
   await updateJob(jobId, {
     batches_total: batches.length,
@@ -250,15 +262,11 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         output_tokens: totalOutput,
         cost_usd: totalCost,
       });
-      /* Self-chain: fire next invocation */
-      /* Fire-and-forget: don't await — just ensure the request leaves this process */
-      fetch(hostUrl + "/api/worker?jobId=" + jobId, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-      }).catch(function(ce) { console.log("Chain fire:", ce.message); });
-      /* Brief pause to let the HTTP request leave the process before we return */
-      await new Promise(function(resolve) { setTimeout(resolve, 1500); });
-      return null; /* null means chained, not done */
+      /* v4.2e: No self-chaining. Set status to "paused" and exit.
+         The frontend polling loop will detect "paused" and fire a new /api/worker call. */
+      await updateJob(jobId, { status: "paused" });
+      console.log("Worker: paused at batch " + i + " of " + batches.length);
+      return null; /* null means paused, not done */
     }
 
     var slice = batches.slice(i, i + PARALLEL);
@@ -283,31 +291,22 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     });
   }
 
-  /* All extraction done — always chain for synthesis so it gets a fresh 250s window.
-     v4.1b: synthesis with streaming + 64000 max_tokens can take several minutes.
-     Starting it with only seconds remaining causes Vercel to kill the function.
-     Use elapsed time > 10s as indicator that we ran extraction in this invocation
-     (if we just resumed with extraction already done, startTime is fresh). */
+  /* v4.2e: All extraction done. If we used significant time, set "synthesising"
+     and exit. Frontend will detect this and fire a fresh worker call. */
   if (Date.now() - startTime > 10000) {
-    console.log("Worker chain: extraction done (" + batches.length + " batches, " + Math.round((Date.now() - startTime) / 1000) + "s elapsed), chaining for synthesis");
+    console.log("Worker: extraction done (" + batches.length + " batches, " + Math.round((Date.now() - startTime) / 1000) + "s elapsed), setting synthesising");
     await updateJob(jobId, {
       batches_done: batches.length,
       extracts: extracts,
       input_tokens: totalInput,
       output_tokens: totalOutput,
       cost_usd: totalCost,
+      status: "synthesising",
     });
-    /* Fire-and-forget: don't await — just ensure the request leaves this process */
-    fetch(hostUrl + "/api/worker?jobId=" + jobId, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-    }).catch(function(ce2) { console.log("Chain fire:", ce2.message); });
-    /* Brief pause to let the HTTP request leave the process before we return */
-    await new Promise(function(resolve) { setTimeout(resolve, 1500); });
     return null;
   }
 
-  /* Synthesis */
+  /* Enough time remaining — run synthesis directly */
   var combinedExtracts = extracts.map(function(e, idx) { return "=== BATCH " + (idx + 1) + " FINDINGS ===\n" + e; }).join("\n\n");
   var synthResult = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length));
   totalInput += synthResult.inputTokens;
@@ -342,6 +341,7 @@ export default async function handler(req, res) {
       console.log("Job already finished: " + jobId);
       return res.status(200).json({ ok: true, status: "already_done" });
     }
+    /* v4.2e: "paused" and "synthesising" are valid — worker should continue */
 
     var hostUrl = "https://" + req.headers.host;
     var matterId = job.matter_id;
@@ -390,7 +390,7 @@ export default async function handler(req, res) {
         function(combined, numBatches) { return numBatches ? "PROPOSITION: \"" + instructions + "\"\n\nSynthesise findings from " + numBatches + " batches into a single evidence assessment.\n\nRetain format:\n### [Document] \u2014 [Description]\nGRADE: [1-5]\n[Passage]\n**Analysis:** [Relevance]\n**Reference:** [page and paragraph]\n\nThen:\n## Overall Assessment\nStrength of evidence for/against and view on balance of probabilities.\n\n\u26A0\uFE0F Professional Caution: AI-generated analysis. Verify all passages before reliance.\n\nFINDINGS:\n\n" + combined : "PROPOSITION: \"" + instructions + "\"\n\nFind ALL evidence \u2014 supporting, contradicting, or neutral.\n\n### [Document] \u2014 [Description]\nGRADE: [1-5] (5=strong direct, 4=good supportive, 3=moderate indirect, 2=weak tangential, 1=contrary)\n[Relevant passage]\n**Analysis:** [Relevance]\n**Reference:** [page and paragraph if available]\n\n## Overall Assessment\nSummary and preliminary view.\n\n\u26A0\uFE0F Professional Caution: AI-generated. Verify all passages before reliance." + pageIndex + "\n\nDOCUMENTS:\n\n" + combined; },
         byDoc, hostUrl
       );
-      if (r === null) return res.status(200).json({ ok: true, status: "chained" });
+      if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
@@ -430,11 +430,9 @@ export default async function handler(req, res) {
       var INCON_PARALLEL = 2;
       for (var ii = batchesDone; ii < otherBatches.length; ii += INCON_PARALLEL) {
         if (Date.now() - startTime > TIME_LIMIT_MS) {
-          await updateJob(jobId, { batches_done: ii, extracts: allFindings, input_tokens: totalInput, output_tokens: totalOutput, cost_usd: totalCost });
-          /* Fire-and-forget chain */
-          fetch(hostUrl + "/api/worker?jobId=" + jobId, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function(ce) { console.log("Chain fire:", ce.message); });
-          await new Promise(function(resolve) { setTimeout(resolve, 1500); });
-          return res.status(200).json({ ok: true, status: "chained" });
+          await updateJob(jobId, { batches_done: ii, extracts: allFindings, input_tokens: totalInput, output_tokens: totalOutput, cost_usd: totalCost, status: "paused" });
+          console.log("Worker: inconsistency paused at batch " + ii);
+          return res.status(200).json({ ok: true, status: "paused" });
         }
         var slice = otherBatches.slice(ii, ii + INCON_PARALLEL);
         var results = await Promise.all(slice.map(function(batch, j) {
@@ -455,11 +453,9 @@ export default async function handler(req, res) {
         result = allFindings[0] + "\n\n\u26A0\uFE0F Professional Caution: AI-generated analysis. Verify quotations before reliance.";
       } else {
         if (Date.now() - startTime > TIME_LIMIT_MS) {
-          await updateJob(jobId, { batches_done: otherBatches.length, extracts: allFindings, input_tokens: totalInput, output_tokens: totalOutput, cost_usd: totalCost });
-          /* Fire-and-forget chain */
-          fetch(hostUrl + "/api/worker?jobId=" + jobId, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function(ce2) { console.log("Chain fire:", ce2.message); });
-          await new Promise(function(resolve) { setTimeout(resolve, 1500); });
-          return res.status(200).json({ ok: true, status: "chained" });
+          await updateJob(jobId, { batches_done: otherBatches.length, extracts: allFindings, input_tokens: totalInput, output_tokens: totalOutput, cost_usd: totalCost, status: "synthesising" });
+          console.log("Worker: inconsistency extraction done, set synthesising");
+          return res.status(200).json({ ok: true, status: "synthesising" });
         }
         var synth = await runTool(systemBase,
           "Consolidate these inconsistency findings, remove duplicates, sort by significance (CRITICAL first).\n\nEnd with:\n## Summary\nOverall factual assessment.\n\n\u26A0\uFE0F Professional Caution: AI-generated. Verify quotations before reliance.\n\nFINDINGS:\n\n" + allFindings.map(function(f, fi) { return "=== BATCH " + (fi + 1) + " ===\n" + f; }).join("\n\n")
@@ -490,7 +486,7 @@ export default async function handler(req, res) {
         function(combined, numBatches) { return numBatches ? "Synthesise chronology from " + numBatches + " batches into a single de-duplicated chronology sorted by date.\n\n## " + entityTitle + "\n\n**[DATE]** \u2014 [Event] *(Source: [document], p.[page] \u00b6[paragraph])*\n\nGroup by year. Flag disputed dates. Include page and paragraph references.\n\n## Key Dates Summary\nThe 10-15 most significant dates.\n\n\u26A0\uFE0F Professional Caution: AI-generated chronology. Verify all dates before reliance.\n\n" + focusBlock + "EXTRACTS:\n\n" + combined : "Construct a complete chronology. Be exhaustive.\n\n## " + entityTitle + "\n\n**[DATE]** \u2014 [Event] *(Source: [document], p.[page] \u00b6[paragraph])*\n\nAll date formats. Flag disputed dates. Include page and paragraph references where available.\n\n## Key Dates Summary\n\n\u26A0\uFE0F Professional Caution: AI-generated. Verify all dates before reliance.\n\n" + focusBlock + "DOCUMENTS:\n\n" + combined + pageIndex; },
         byDoc, hostUrl
       );
-      if (r === null) return res.status(200).json({ ok: true, status: "chained" });
+      if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
@@ -505,7 +501,7 @@ export default async function handler(req, res) {
         function(combined, numBatches) { return numBatches ? "Synthesise persons from " + numBatches + " batches. Merge entries for the same person/entity. Sort alphabetically.\n\n## Dramatis Personae \u2014 " + matterName + "\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Full Name]\n**Description:** [Concise description of who they are and their relevance]\n**References in pleadings/petitions:** [document, page, paragraph \u2014 listed first]\n**References in affidavits:** [document, page, paragraph \u2014 listed second]\n**References in other documents:** [document, page, paragraph \u2014 listed third]\n\n\u26A0\uFE0F Professional Caution: AI-generated. Verify before reliance.\n\nEXTRACTS:\n\n" + combined : "Compile a complete dramatis personae. Include EVERY person and entity.\n\n## Dramatis Personae \u2014 " + matterName + "\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Full Name]\n**Description:** [Concise description of who they are and their relevance to the proceedings]\n**References in pleadings/petitions:** [document, page, paragraph \u2014 listed first]\n**References in affidavits:** [document, page, paragraph \u2014 listed second]\n**References in other documents:** [document, page, paragraph \u2014 listed third]\n\nSort alphabetically.\n\n\u26A0\uFE0F Professional Caution: AI-generated. Verify before reliance.\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
         byDoc, hostUrl
       );
-      if (r === null) return res.status(200).json({ ok: true, status: "chained" });
+      if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
@@ -520,7 +516,7 @@ export default async function handler(req, res) {
         function(combined, numBatches) { return numBatches ? "Synthesise issues from " + numBatches + " batches. Merge duplicates.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n\u26A0\uFE0F Professional Caution: AI-generated. Verify before reliance.\n\nFINDINGS:\n\n" + combined : "Produce a complete issue tracker.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n\u26A0\uFE0F Professional Caution: AI-generated. Verify before reliance.\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
         byDoc, hostUrl
       );
-      if (r === null) return res.status(200).json({ ok: true, status: "chained" });
+      if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
@@ -561,7 +557,7 @@ export default async function handler(req, res) {
         function(combined, numBatches) { return numBatches ? "Using findings from " + numBatches + " batches, produce a complete briefing note.\n\n## Briefing Note \u2014 " + matterName + "\n**Jurisdiction:** " + jur + "\n**Date:** " + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) + "\n\n## 1. Summary of the Proceedings\nBrief overview of the nature and status of the proceedings.\n\n## 2. The Issues\nSet out each issue that arises in the proceedings \u2014 both legal and factual. Reference the pleadings or other documents where each issue is raised.\n\n## 3. Common Ground and Admissions\nSet out all facts, matters, or legal points that are admitted or agreed between the parties. These may appear in pleadings, witness statements, correspondence, or skeleton arguments. Distinguish between formal admissions and matters that appear to be common ground.\n\n## 4. The Case on Disputed Matters\nFor each disputed issue identified in section 2, set out:\n- The case for the " + (actingFor || "client") + ": what evidence and arguments support the position\n- The opposing case: what evidence and arguments the other side relies on\n- Assessment: preliminary view on the strength of each side\u2019s position\n\n## 5. Key Evidence\nSummary of the most important evidence, with page and paragraph references where available.\n\n## 6. Procedural Position and Next Steps\nCurrent procedural stage, upcoming deadlines, and recommended next steps.\n\n## 7. Key Risks\nSignificant risks to be aware of.\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "FINDINGS:\n\n" + combined : "Produce a structured briefing note.\n\n## Briefing Note \u2014 " + matterName + "\n**Jurisdiction:** " + jur + "\n**Date:** " + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) + "\n\n## 1. Summary of the Proceedings\nBrief overview of the nature and status of the proceedings.\n\n## 2. The Issues\nSet out each issue that arises in the proceedings \u2014 both legal and factual. Reference the pleadings or other documents where each issue is raised.\n\n## 3. Common Ground and Admissions\nSet out all facts, matters, or legal points that are admitted or agreed between the parties. Distinguish between formal admissions and matters that appear to be common ground.\n\n## 4. The Case on Disputed Matters\nFor each disputed issue, set out the case for the " + (actingFor || "client") + ", the opposing case, and a preliminary assessment.\n\n## 5. Key Evidence\nSummary of the most important evidence, with page and paragraph references.\n\n## 6. Procedural Position and Next Steps\n\n## 7. Key Risks\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
         byDoc, hostUrl
       );
-      if (r === null) return res.status(200).json({ ok: true, status: "chained" });
+      if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
@@ -649,7 +645,7 @@ export default async function handler(req, res) {
         function(combined, numBatches) { return numBatches ? "Using source material from " + numBatches + " batches, produce:\n\n" + (instructions || "Draft a skeleton argument.") + "\n\nApply " + jur + " court rules and conventions.\n\n\u26A0\uFE0F Professional Caution: AI-generated draft. Review carefully before use.\n\nSOURCE MATERIAL:\n\n" + combined : (instructions || "Draft a skeleton argument based on the matter documents.") + "\n\nApply " + jur + " court rules and conventions.\n\n\u26A0\uFE0F Professional Caution: AI-generated draft. Review carefully before use.\n\nDOCUMENTS:\n\n" + combined; },
         byDoc, hostUrl
       );
-      if (r === null) return res.status(200).json({ ok: true, status: "chained" });
+      if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 
@@ -709,7 +705,7 @@ export default async function handler(req, res) {
         },
         byDoc, hostUrl
       );
-      if (r === null) return res.status(200).json({ ok: true, status: "chained" });
+      if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
     }
 

@@ -1,9 +1,19 @@
-/* EX LIBRIS JURIS v4.2k — worker.js
-   Background tool processor. Called by tools.js (fire-and-forget).
-   Frontend-driven chaining: worker pauses with status="paused" or "synthesising"
-   when time runs out. Frontend polls /api/jobs and re-fires /api/worker.
+/* EX LIBRIS JURIS v4.3 — worker.js
+   Background tool processor. Called by tools.js (fire-and-forget) AND by
+   cron-resume.js (every 2 minutes, for laptop-closed processing).
 
-   v4.2k FIXES (7 Apr 2026):
+   v4.3 CHANGES (7 Apr 2026):
+   1. updateJob() now writes a heartbeat (updated_at) on every call. The new
+      api/cron-resume.js endpoint queries tool_jobs for in-progress rows whose
+      updated_at is older than 60 seconds and re-fires the worker for each.
+      This means jobs continue progressing even when the user closes the
+      laptop or the browser tab — the frontend polling loop is now a live UI
+      nicety rather than a load-bearing requirement.
+   2. No changes to extraction, condense, or synthesis logic. Heartbeat is
+      a single line at the top of updateJob(). updated_at is deliberately NOT
+      in CRITICAL_FIELDS (Postgres normalises timestamps on return).
+
+   v4.2k FIXES (carried forward):
    1. Final synthesis max_tokens reduced from 16000 to 10000. The 16000 ceiling
       allowed Claude to stream for >300s on dense legal content with 6+
       condensed summaries as input, blowing the Vercel function ceiling.
@@ -241,6 +251,11 @@ var CRITICAL_FIELDS = {
 };
 
 async function updateJob(jobId, fields) {
+  /* v4.3: heartbeat. Every updateJob() call stamps updated_at so the cron-resume
+     endpoint can identify stale in-progress jobs. updated_at is intentionally
+     NOT in CRITICAL_FIELDS — Postgres normalises timestamps on return and a
+     string comparison would report false positives. */
+  fields.updated_at = new Date().toISOString();
   var resp = await supabase
     .from("tool_jobs")
     .update(fields)

@@ -1,36 +1,38 @@
-/* EX LIBRIS JURIS v4.2h — worker.js
+/* EX LIBRIS JURIS v4.2i — worker.js
    Background tool processor. Called by tools.js (fire-and-forget).
    Frontend-driven chaining: worker pauses with status="paused" or "synthesising"
    when time runs out. Frontend polls /api/jobs and re-fires /api/worker.
 
-   v4.2h FIXES (7 Apr 2026):
-   1. Condense loop now persists progress to DB after EVERY successful group,
-      not only when the time guard fires. Previously, if Vercel killed the
-      function mid-condense-call, all in-memory progress (groups 1, 2, 3...)
-      was lost and the next invocation started from group 0 again.
-   2. Condense time guard tightened from 250s to 150s. A single condense call
-      can take 60-120s on dense input. Starting one at 240s elapsed risks
-      blowing past the 300s Vercel ceiling. 150s leaves a safety margin.
-   3. Re-entry condition fixed: previously checked `if (!condensed)` which
-      skipped the loop entirely on resume, leaving final synthesis to run on
-      a partial condensed array. Now checks `condense_done < extracts.length`.
+   v4.2i FIXES (7 Apr 2026):
+   1. SYNTH_GROUP reduced from 5 to 3. Diagnostic data showed a single condense
+      call on 5 dense extracts was exceeding the 300s Vercel function ceiling
+      before the per-group save could happen, leaving condensed_extracts=null
+      and condense_done=0 forever. Smaller groups → faster individual calls.
+   2. Condense max_tokens reduced from 16000 to 10000. A summary of 3 extracts
+      should never need 16000 tokens of output and the higher ceiling allowed
+      the streaming call to run for too long.
+   3. Heavy console.log instrumentation around every condense call so the
+      Vercel function logs show exactly what happened: when each call started,
+      how long it took, how many tokens it produced, and whether the DB write
+      after it succeeded. If this version still fails, the logs will tell us
+      precisely where instead of forcing inference from row state.
+   4. try/catch around the condense runTool call. If a condense call throws
+      (timeout, API error), the partial progress is saved before the error is
+      re-thrown, so the next invocation can resume from the last successful
+      group rather than starting over.
+
+   v4.2h FIXES (carried forward):
+   - Per-group DB persistence in condense loop.
+   - Re-entry condition checks condense_done < extracts.length, not !condensed.
 
    v4.2g FIXES (carried forward):
-   1. Handler no longer clobbers in-progress status on re-entry.
-   2. Condense pause path explicitly writes status="synthesising".
+   - Handler doesn't clobber status="synthesising"/"paused" on re-entry.
+   - Condense pause path explicitly writes status="synthesising".
 
    PRECONDITION: tool_jobs table must have these columns (added by migration):
      - condensed_extracts jsonb
      - condense_done integer DEFAULT 0
-     - synthesis_phase text
-
-   CHAINING MECHANISM:
-   - Extraction phase: process N batches in parallel groups; if time runs out,
-     save progress and set status="paused", return null. Frontend re-fires.
-   - When extraction complete: set status="synthesising", return null.
-   - Synthesis phase: if more than 5 extracts, condense in groups of 5 first.
-     Each group's result is saved to DB immediately. Time guard at 150s.
-   - Final synthesis: single Claude call on condensed (or raw) extracts. */
+     - synthesis_phase text */
 
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -241,9 +243,14 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     console.log("Worker: running synthesis for " + jobId + " (" + extracts.length + " extracts)");
 
     /* v4.2f: Two-stage synthesis for large jobs.
-       If more than 6 extracts, first condense in groups of 4-5, then synthesise.
-       Each stage respects the time limit — if time runs out, save progress and pause. */
-    var SYNTH_GROUP = 5;
+       v4.2i: SYNTH_GROUP reduced from 5 to 3 and condense max_tokens reduced
+       from 16000 to 10000. Diagnostic data from v4.2h showed that a single
+       condense call on 5 dense extracts was exceeding the 300s Vercel ceiling
+       before any per-group save could happen, so condensed_extracts stayed null
+       and condense_done stayed at 0 forever. Smaller groups + smaller output
+       ceiling should make each call complete in 30-60s. */
+    var SYNTH_GROUP = 3;
+    var CONDENSE_MAX_TOKENS = 10000;
     var condensed = job.condensed_extracts || null;
     var condenseDoneFromDb = job.condense_done || 0;
     var needsCondense = extracts.length > SYNTH_GROUP && condenseDoneFromDb < extracts.length;
@@ -255,16 +262,17 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
          leaving final synthesis to run with only the partial condensed array. */
       if (!condensed) condensed = [];
       var condenseDone = condenseDoneFromDb;
-      console.log("Worker: condensing " + extracts.length + " extracts (starting from group " + condenseDone + ", " + condensed.length + " already done)");
+      console.log("v4.2i Worker: condensing " + extracts.length + " extracts in groups of " + SYNTH_GROUP + " (starting from group " + condenseDone + ", " + condensed.length + " already done)");
 
-      /* v4.2h: Tightened time guard. A single condense call can take 60-120s on
-         dense input. Allow at most ~150s elapsed before pausing — leaves a 150s
+      /* v4.2h: Tightened time guard. A single condense call should now take
+         30-60s. Allow at most ~150s elapsed before pausing — leaves a 150s
          safety margin for the in-flight call to finish before Vercel's 300s kill. */
       var CONDENSE_TIME_LIMIT_MS = 150000;
 
       for (var gi = condenseDone; gi < extracts.length; gi += SYNTH_GROUP) {
+        var elapsedSec = Math.round((Date.now() - startTime) / 1000);
         if (Date.now() - startTime > CONDENSE_TIME_LIMIT_MS) {
-          console.log("Worker: condense paused at group " + gi + " (" + Math.round((Date.now() - startTime) / 1000) + "s elapsed)");
+          console.log("v4.2i Worker: condense paused at group " + gi + " (" + elapsedSec + "s elapsed)");
           await updateJob(jobId, {
             condensed_extracts: condensed,
             condense_done: gi,
@@ -278,10 +286,34 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
 
         var group = extracts.slice(gi, gi + SYNTH_GROUP);
         var groupText = group.map(function(e, idx) { return "=== BATCH " + (gi + idx + 1) + " FINDINGS ===\n" + e; }).join("\n\n");
-        var condenseResult = await runTool(systemBase,
-          "Condense these extraction findings into a comprehensive summary. Preserve ALL key facts, dates, names, document references, and evidence. Do not omit anything significant.\n\nFINDINGS:\n\n" + groupText,
-          16000
-        );
+
+        console.log("v4.2i Worker: starting condense call for group " + gi + " (" + group.length + " extracts, " + groupText.length + " chars input, " + elapsedSec + "s elapsed)");
+        var condenseCallStart = Date.now();
+
+        var condenseResult;
+        try {
+          condenseResult = await runTool(systemBase,
+            "Condense these extraction findings into a comprehensive summary. Preserve ALL key facts, dates, names, document references, and evidence. Do not omit anything significant.\n\nFINDINGS:\n\n" + groupText,
+            CONDENSE_MAX_TOKENS
+          );
+        } catch (condenseErr) {
+          console.log("v4.2i Worker: CONDENSE CALL FAILED at group " + gi + " after " + Math.round((Date.now() - condenseCallStart) / 1000) + "s: " + condenseErr.message);
+          /* Save what we have so far so the next invocation can resume */
+          await updateJob(jobId, {
+            condensed_extracts: condensed,
+            condense_done: gi,
+            status: "synthesising",
+            input_tokens: totalInput,
+            output_tokens: totalOutput,
+            cost_usd: totalCost,
+            error: "Condense group " + gi + " failed: " + condenseErr.message,
+          });
+          throw condenseErr;
+        }
+
+        var condenseCallSec = Math.round((Date.now() - condenseCallStart) / 1000);
+        console.log("v4.2i Worker: condense call for group " + gi + " returned in " + condenseCallSec + "s, output " + (condenseResult.text ? condenseResult.text.length : 0) + " chars, " + condenseResult.outputTokens + " tokens");
+
         condensed.push(condenseResult.text);
         totalInput += condenseResult.inputTokens;
         totalOutput += condenseResult.outputTokens;
@@ -290,6 +322,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         /* v4.2h: Persist progress after EVERY successful group. If Vercel kills
            the function during the next iteration's condense call, the work
            already completed survives and the next invocation resumes from here. */
+        console.log("v4.2i Worker: writing progress to DB after group " + gi + " (condense_done=" + (gi + SYNTH_GROUP) + ", condensed.length=" + condensed.length + ")");
         await updateJob(jobId, {
           condensed_extracts: condensed,
           condense_done: gi + SYNTH_GROUP,
@@ -298,7 +331,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
           output_tokens: totalOutput,
           cost_usd: totalCost,
         });
-        console.log("Worker: condense group " + gi + " done (" + condensed.length + "/" + Math.ceil(extracts.length / SYNTH_GROUP) + "), " + Math.round((Date.now() - startTime) / 1000) + "s elapsed");
+        console.log("v4.2i Worker: DB write complete for group " + gi + ", total elapsed " + Math.round((Date.now() - startTime) / 1000) + "s");
       }
 
       /* Save condensed extracts — if time is short, set synthesising and chain */

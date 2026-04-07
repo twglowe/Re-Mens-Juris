@@ -1,20 +1,29 @@
-/* EX LIBRIS JURIS v3.4.1 — worker.js
+/* EX LIBRIS JURIS v4.2g — worker.js
    Background tool processor. Called by tools.js (fire-and-forget).
-   Self-chains: if processing exceeds 250s, saves progress and fires itself again.
-   No browser connection required — runs entirely server-side.
+   Frontend-driven chaining: worker pauses with status="paused" or "synthesising"
+   when time runs out. Frontend polls /api/jobs and re-fires /api/worker.
 
-   v3.4.1 FIX: The response is NOT sent until processing completes (or chains).
-   Previously res.status(200) was sent immediately, and Vercel killed the function
-   before any work was done. Now the response is sent at the end.
+   v4.2g FIXES (7 Apr 2026):
+   1. Handler no longer clobbers in-progress status. Previously, every worker
+      re-entry wrote status="running", overwriting "synthesising"/"paused" set
+      by the previous invocation. The frontend then saw "running" and stopped
+      re-firing the worker, killing the chain mid-condense.
+   2. Condense pause path now explicitly writes status="synthesising" — belt
+      and braces in case any other code path clobbers it later.
+
+   PRECONDITION: tool_jobs table must have these columns (added by migration):
+     - condensed_extracts jsonb
+     - condense_done integer DEFAULT 0
+     - synthesis_phase text
+   Without these, the condense state machine has no memory and loops at group 0.
 
    CHAINING MECHANISM:
-   - Worker processes extraction batches within a 250-second time guard
-   - If time runs out before all batches are done, it saves progress to the
-     tool_jobs row (batches_done, extracts, token counts) and fires a new
-     request to /api/worker with the same jobId
-   - The next invocation reads saved progress and continues from where it stopped
-   - This repeats until all batches are done, then synthesis runs
-   - A 30-minute job might chain through 6-7 invocations, each under 300s */
+   - Extraction phase: process N batches in parallel groups; if time runs out,
+     save progress and set status="paused", return null. Frontend re-fires.
+   - When extraction complete: set status="synthesising", return null.
+   - Synthesis phase: if more than 5 extracts, condense in groups of 5 first.
+     Each condense pause sets status="synthesising" and returns null.
+   - Final synthesis: single Claude call on condensed (or raw) extracts. */
 
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -242,11 +251,12 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
           await updateJob(jobId, {
             condensed_extracts: condensed,
             condense_done: gi,
+            status: "synthesising",
             input_tokens: totalInput,
             output_tokens: totalOutput,
             cost_usd: totalCost,
           });
-          return null; /* stays in "synthesising" — frontend will re-fire */
+          return null; /* v4.2g: status explicitly set to synthesising — frontend will re-fire */
         }
 
         var group = extracts.slice(gi, gi + SYNTH_GROUP);
@@ -446,7 +456,15 @@ export default async function handler(req, res) {
     }
     var headingText = heading ? formatCourtHeading(heading) : "";
 
-    await updateJob(jobId, { status: "running", started_at: job.started_at || new Date().toISOString() });
+    /* v4.2g: Do not clobber an in-progress synthesising/paused status on re-entry.
+       The worker is re-fired by the frontend when status is "paused" or "synthesising";
+       overwriting it back to "running" here would prevent the next pause from being
+       visible to the frontend, breaking the chain. */
+    var statusUpdate = { started_at: job.started_at || new Date().toISOString() };
+    if (job.status !== "synthesising" && job.status !== "paused") {
+      statusUpdate.status = "running";
+    }
+    await updateJob(jobId, statusUpdate);
 
     var result = "";
     var inputTokens = 0;

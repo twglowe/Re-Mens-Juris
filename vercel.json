@@ -42,6 +42,10 @@
     "api/drafts.js": { "maxDuration": 30 },
     "api/diagram.js": { "maxDuration": 300 },
     "api/diagram-chat.js": { "maxDuration": 300 },
-    "api/usage.js": { "maxDuration": 30 }
-  }
+    "api/usage.js": { "maxDuration": 30 },
+    "api/cron-resume.js": { "maxDuration": 10 }
+  },
+  "crons": [
+    { "path": "/api/cron-resume", "schedule": "*/2 * * * *" }
+  ]
 }

@@ -177,6 +177,13 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     progressFill.style.width='10%';
     /* Poll for completion */
     var jobId=d.jobId;var pollCount=0;
+    /* v4.2k: Frontend over-firing fix. Track last fire status + time. Only re-fire
+       when status has changed since last fire, or more than 180s have passed.
+       Without this, every 10s poll fires /api/worker, producing 15-20 parallel
+       invocations per condense pause and wasting Anthropic spend on duplicates. */
+    var lastFireStatus=null;
+    var lastFireTime=0;
+    var FIRE_COOLDOWN_MS=180000;
     var pollInterval=setInterval(async function(){
       try{
         pollCount++;
@@ -208,6 +215,7 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
           return;
         }
         /* v4.2e: Worker paused or ready for synthesis — re-fire worker from frontend */
+        /* v4.2k: Only fire if status changed since last fire OR cooldown elapsed */
         if(j.status==='paused'||j.status==='synthesising'){
           if(j.status==='synthesising'){
             progressLabel.textContent='Synthesising '+toolLabel+'\u2026';
@@ -215,7 +223,15 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
           }else{
             progressLabel.textContent='Resuming '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
           }
-          fetch('/api/worker?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Worker re-fire:',e.message);});
+          var nowMs=Date.now();
+          var statusChanged=(j.status!==lastFireStatus);
+          var cooldownElapsed=(nowMs-lastFireTime>FIRE_COOLDOWN_MS);
+          if(statusChanged||cooldownElapsed){
+            console.log('v4.2k re-fire worker:',j.status,statusChanged?'(status changed)':'(cooldown elapsed)');
+            lastFireStatus=j.status;
+            lastFireTime=nowMs;
+            fetch('/api/worker?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Worker re-fire:',e.message);});
+          }
         }
         /* Job failed */
         if(j.status==='failed'){
@@ -441,6 +457,10 @@ async function runIssueBriefing(selectedIssues,extraInstructions){
     progressFill.style.width='10%';
 
     var jobId=d.jobId;var pollCount=0;
+    /* v4.2k: Frontend over-firing fix. See first polling loop for explanation. */
+    var lastFireStatus=null;
+    var lastFireTime=0;
+    var FIRE_COOLDOWN_MS=180000;
     var pollInterval=setInterval(async function(){
       try{
         pollCount++;
@@ -468,6 +488,7 @@ async function runIssueBriefing(selectedIssues,extraInstructions){
           return;
         }
         /* v4.2e: Worker paused or ready for synthesis — re-fire worker from frontend */
+        /* v4.2k: Only fire if status changed since last fire OR cooldown elapsed */
         if(j.status==='paused'||j.status==='synthesising'){
           if(j.status==='synthesising'){
             progressLabel.textContent='Synthesising '+toolLabel+'\u2026';
@@ -475,7 +496,15 @@ async function runIssueBriefing(selectedIssues,extraInstructions){
           }else{
             progressLabel.textContent='Resuming '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
           }
-          fetch('/api/worker?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Worker re-fire:',e.message);});
+          var nowMs2=Date.now();
+          var statusChanged2=(j.status!==lastFireStatus);
+          var cooldownElapsed2=(nowMs2-lastFireTime>FIRE_COOLDOWN_MS);
+          if(statusChanged2||cooldownElapsed2){
+            console.log('v4.2k re-fire worker:',j.status,statusChanged2?'(status changed)':'(cooldown elapsed)');
+            lastFireStatus=j.status;
+            lastFireTime=nowMs2;
+            fetch('/api/worker?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Worker re-fire:',e.message);});
+          }
         }
         if(j.status==='failed'){
           clearInterval(pollInterval);typing.remove();

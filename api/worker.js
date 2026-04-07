@@ -1,26 +1,27 @@
-/* EX LIBRIS JURIS v4.2j — worker.js
+/* EX LIBRIS JURIS v4.2k — worker.js
    Background tool processor. Called by tools.js (fire-and-forget).
    Frontend-driven chaining: worker pauses with status="paused" or "synthesising"
    when time runs out. Frontend polls /api/jobs and re-fires /api/worker.
 
-   v4.2j FIXES (7 Apr 2026) — the real fix:
-   1. Supabase client is created fresh for every handler invocation. Previously
-      the client was instantiated once at module scope and reused across warm
-      Vercel function invocations. supabase-js caches the PostgREST schema on
-      first use; if the first use happened before a schema migration added
-      new columns, the cached schema lacked those columns and the client
-      silently stripped them from every UPDATE payload — with no error logged.
-      This is why v4.2g, v4.2h, and v4.2i all appeared to succeed in the logs
-      but condensed_extracts and condense_done never actually persisted.
-   2. updateJob is hardened: throws on error, uses .select() to force a
-      round-trip, and verifies that a whitelist of critical fields (including
-      condensed_extracts and condense_done) actually persisted. A stale-schema
-      strip now produces a loud, immediate failure instead of silent success.
+   v4.2k FIXES (7 Apr 2026):
+   1. Final synthesis max_tokens reduced from 16000 to 10000. The 16000 ceiling
+      allowed Claude to stream for >300s on dense legal content with 6+
+      condensed summaries as input, blowing the Vercel function ceiling.
+      10000 tokens is still ~30 pages, plenty for any Chronology output.
+   2. Final synthesis call now logs start and end with elapsed time and token
+      counts, so we can see if it gets close to the ceiling on future runs.
+
+   v4.2k NOTE: This must be deployed alongside the v4.2k tools.js, which fixes
+   the frontend over-firing bug. Without that fix, parallel worker invocations
+   continue to waste Anthropic spend even though the chain works.
+
+   v4.2j FIXES (carried forward) — the real fix:
+   1. Supabase client created fresh per handler invocation (fresh schema cache).
+   2. updateJob throws on error and verifies critical fields persisted.
 
    v4.2i FIXES (carried forward):
    - SYNTH_GROUP = 3, condense max_tokens = 10000.
    - Heavy console.log instrumentation around every condense call.
-   - try/catch around condense runTool saves partial progress before re-throw.
 
    v4.2h FIXES (carried forward):
    - Per-group DB persistence in condense loop.
@@ -427,7 +428,15 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
       console.log("Worker: direct synthesis from " + extracts.length + " extracts");
     }
 
-    var synthResult = await runTool(systemBase, synthPromptFn(synthInput, batches.length), 16000);
+    /* Stage 2 (or single stage for small jobs): final synthesis.
+       v4.2k: max_tokens lowered from 16000 to 10000. The 16000 ceiling allowed
+       Claude to stream for >300s on dense legal content with 6 condensed
+       summaries as input, blowing the Vercel function ceiling. 10000 tokens is
+       still ~30 pages of output, which should comfortably cover any Chronology. */
+    var synthCallStart = Date.now();
+    console.log("v4.2k Worker: starting final synthesis call");
+    var synthResult = await runTool(systemBase, synthPromptFn(synthInput, batches.length), 10000);
+    console.log("v4.2k Worker: final synthesis returned in " + Math.round((Date.now() - synthCallStart) / 1000) + "s, output " + (synthResult.text ? synthResult.text.length : 0) + " chars, " + synthResult.outputTokens + " tokens");
     totalInput += synthResult.inputTokens;
     totalOutput += synthResult.outputTokens;
     totalCost += synthResult.cost;
@@ -517,9 +526,11 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     return null;
   }
 
-  /* Enough time remaining — run synthesis directly */
+  /* Enough time remaining — run synthesis directly.
+     v4.2k: max_tokens lowered from 16000 to 10000 to ensure single-call completion
+     within Vercel's 300s ceiling. */
   var combinedExtracts = extracts.map(function(e, idx) { return "=== BATCH " + (idx + 1) + " FINDINGS ===\n" + e; }).join("\n\n");
-  var synthResult = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length), 16000);
+  var synthResult = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length), 10000);
   totalInput += synthResult.inputTokens;
   totalOutput += synthResult.outputTokens;
   totalCost += synthResult.cost;

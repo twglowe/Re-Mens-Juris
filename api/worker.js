@@ -1,35 +1,37 @@
-/* EX LIBRIS JURIS v4.2i — worker.js
+/* EX LIBRIS JURIS v4.2j — worker.js
    Background tool processor. Called by tools.js (fire-and-forget).
    Frontend-driven chaining: worker pauses with status="paused" or "synthesising"
    when time runs out. Frontend polls /api/jobs and re-fires /api/worker.
 
-   v4.2i FIXES (7 Apr 2026):
-   1. SYNTH_GROUP reduced from 5 to 3. Diagnostic data showed a single condense
-      call on 5 dense extracts was exceeding the 300s Vercel function ceiling
-      before the per-group save could happen, leaving condensed_extracts=null
-      and condense_done=0 forever. Smaller groups → faster individual calls.
-   2. Condense max_tokens reduced from 16000 to 10000. A summary of 3 extracts
-      should never need 16000 tokens of output and the higher ceiling allowed
-      the streaming call to run for too long.
-   3. Heavy console.log instrumentation around every condense call so the
-      Vercel function logs show exactly what happened: when each call started,
-      how long it took, how many tokens it produced, and whether the DB write
-      after it succeeded. If this version still fails, the logs will tell us
-      precisely where instead of forcing inference from row state.
-   4. try/catch around the condense runTool call. If a condense call throws
-      (timeout, API error), the partial progress is saved before the error is
-      re-thrown, so the next invocation can resume from the last successful
-      group rather than starting over.
+   v4.2j FIXES (7 Apr 2026) — the real fix:
+   1. Supabase client is created fresh for every handler invocation. Previously
+      the client was instantiated once at module scope and reused across warm
+      Vercel function invocations. supabase-js caches the PostgREST schema on
+      first use; if the first use happened before a schema migration added
+      new columns, the cached schema lacked those columns and the client
+      silently stripped them from every UPDATE payload — with no error logged.
+      This is why v4.2g, v4.2h, and v4.2i all appeared to succeed in the logs
+      but condensed_extracts and condense_done never actually persisted.
+   2. updateJob is hardened: throws on error, uses .select() to force a
+      round-trip, and verifies that a whitelist of critical fields (including
+      condensed_extracts and condense_done) actually persisted. A stale-schema
+      strip now produces a loud, immediate failure instead of silent success.
+
+   v4.2i FIXES (carried forward):
+   - SYNTH_GROUP = 3, condense max_tokens = 10000.
+   - Heavy console.log instrumentation around every condense call.
+   - try/catch around condense runTool saves partial progress before re-throw.
 
    v4.2h FIXES (carried forward):
    - Per-group DB persistence in condense loop.
-   - Re-entry condition checks condense_done < extracts.length, not !condensed.
+   - Re-entry condition checks condense_done < extracts.length.
+   - Condense time guard at 150s.
 
    v4.2g FIXES (carried forward):
    - Handler doesn't clobber status="synthesising"/"paused" on re-entry.
    - Condense pause path explicitly writes status="synthesising".
 
-   PRECONDITION: tool_jobs table must have these columns (added by migration):
+   PRECONDITION: tool_jobs table must have these columns:
      - condensed_extracts jsonb
      - condense_done integer DEFAULT 0
      - synthesis_phase text */
@@ -39,7 +41,20 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const config = { maxDuration: 300 };
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+
+/* v4.2j: Supabase client is created per-invocation inside the handler, not at
+   module scope. Module-scope clients persist across invocations on warm Vercel
+   functions, and supabase-js caches the PostgREST schema on first use. If the
+   first invocation happened before a schema migration, the cached schema lacks
+   the new columns and supabase-js silently strips them from UPDATE payloads
+   with no error — which is exactly what bit us through v4.2g/h/i.
+
+   The `supabase` binding is `let` so the handler can overwrite it at the start
+   of every invocation. All helper functions read the current value, so they
+   automatically use the fresh client. */
+let supabase = createClient(supabaseUrl, supabaseKey);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const INPUT_COST_PER_M = 3.00;
@@ -207,9 +222,58 @@ function formatCourtHeading(h) {
    JOB MANAGEMENT
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* v4.2j: updateJob now throws on error instead of swallowing. It also chains
+   .select() to force a round-trip that returns the updated row, so we can
+   verify critical fields actually persisted. Previously updateJob logged errors
+   to console.error but returned normally, so a silent failure (stale schema
+   cache stripping columns, for example) looked identical to success.
+
+   Strict field verification is limited to a whitelist of fields where a
+   mismatch would be catastrophic. Timestamp and numeric fields are omitted
+   because Postgres normalises them on return and the string comparison would
+   report false positives. */
+var CRITICAL_FIELDS = {
+  condensed_extracts: true,
+  condense_done: true,
+  status: true,
+  batches_done: true,
+};
+
 async function updateJob(jobId, fields) {
-  var resp = await supabase.from("tool_jobs").update(fields).eq("id", jobId);
-  if (resp.error) console.error("Job update error:", resp.error.message);
+  var resp = await supabase
+    .from("tool_jobs")
+    .update(fields)
+    .eq("id", jobId)
+    .select();
+  if (resp.error) {
+    console.error("Job update error for " + jobId + ":", resp.error.message);
+    throw new Error("updateJob failed: " + resp.error.message);
+  }
+  if (!resp.data || resp.data.length === 0) {
+    console.error("Job update returned no rows for " + jobId + " — row missing or RLS blocking");
+    throw new Error("updateJob returned no rows for " + jobId);
+  }
+  /* Verify critical fields actually persisted. If supabase-js silently strips
+     an unknown column from the payload (stale schema cache), the returned row
+     will still have the old value — this check catches that. */
+  var returned = resp.data[0];
+  var mismatch = [];
+  for (var k in fields) {
+    if (fields.hasOwnProperty(k) && CRITICAL_FIELDS[k]) {
+      var expected = JSON.stringify(fields[k]);
+      var actual = JSON.stringify(returned[k]);
+      if (expected !== actual) {
+        var expectedShort = expected.length > 80 ? expected.slice(0, 80) + "..." : expected;
+        var actualShort = actual.length > 80 ? actual.slice(0, 80) + "..." : actual;
+        mismatch.push(k + " expected=" + expectedShort + " got=" + actualShort);
+      }
+    }
+  }
+  if (mismatch.length > 0) {
+    console.error("Job update critical fields did not persist for " + jobId + ": " + mismatch.join("; "));
+    throw new Error("updateJob field mismatch: " + mismatch.join("; "));
+  }
+  return returned;
 }
 
 async function failJob(jobId, errorMsg) {
@@ -474,6 +538,12 @@ export default async function handler(req, res) {
 
   var jobId = req.query.jobId;
   if (!jobId) return res.status(400).json({ error: "jobId required" });
+
+  /* v4.2j: Fresh Supabase client for this invocation. Overwrites the module-level
+     binding so every helper in this file uses the new client without needing a
+     signature change. Fresh client = fresh PostgREST schema cache. */
+  supabase = createClient(supabaseUrl, supabaseKey);
+  console.log("v4.2j Worker: fresh supabase client created for job " + jobId);
 
   try {
     /* Load job */

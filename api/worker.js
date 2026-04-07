@@ -223,8 +223,74 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
   /* v4.2e: If status is "synthesising", skip extraction — go straight to synthesis */
   if (job.status === "synthesising") {
     console.log("Worker: running synthesis for " + jobId + " (" + extracts.length + " extracts)");
-    var combinedExtracts = extracts.map(function(e, idx) { return "=== BATCH " + (idx + 1) + " FINDINGS ===\n" + e; }).join("\n\n");
-    var synthResult = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length));
+
+    /* v4.2f: Two-stage synthesis for large jobs.
+       If more than 6 extracts, first condense in groups of 4-5, then synthesise.
+       Each stage respects the time limit — if time runs out, save progress and pause. */
+    var SYNTH_GROUP = 5;
+    var condensed = job.condensed_extracts || null;
+
+    if (!condensed && extracts.length > SYNTH_GROUP) {
+      /* Stage 1: condense extracts in groups */
+      condensed = [];
+      var condenseDone = job.condense_done || 0;
+      console.log("Worker: condensing " + extracts.length + " extracts (starting from group " + condenseDone + ")");
+
+      for (var gi = condenseDone; gi < extracts.length; gi += SYNTH_GROUP) {
+        if (Date.now() - startTime > TIME_LIMIT_MS) {
+          console.log("Worker: condense paused at group " + gi + " (" + Math.round((Date.now() - startTime) / 1000) + "s elapsed)");
+          await updateJob(jobId, {
+            condensed_extracts: condensed,
+            condense_done: gi,
+            input_tokens: totalInput,
+            output_tokens: totalOutput,
+            cost_usd: totalCost,
+          });
+          return null; /* stays in "synthesising" — frontend will re-fire */
+        }
+
+        var group = extracts.slice(gi, gi + SYNTH_GROUP);
+        var groupText = group.map(function(e, idx) { return "=== BATCH " + (gi + idx + 1) + " FINDINGS ===\n" + e; }).join("\n\n");
+        var condenseResult = await runTool(systemBase,
+          "Condense these extraction findings into a comprehensive summary. Preserve ALL key facts, dates, names, document references, and evidence. Do not omit anything significant.\n\nFINDINGS:\n\n" + groupText,
+          16000
+        );
+        condensed.push(condenseResult.text);
+        totalInput += condenseResult.inputTokens;
+        totalOutput += condenseResult.outputTokens;
+        totalCost += condenseResult.cost;
+      }
+
+      /* Save condensed extracts — if time is short, set synthesising and chain */
+      if (Date.now() - startTime > TIME_LIMIT_MS) {
+        console.log("Worker: condense done, setting synthesising before final synthesis");
+        await updateJob(jobId, {
+          condensed_extracts: condensed,
+          condense_done: extracts.length,
+          input_tokens: totalInput,
+          output_tokens: totalOutput,
+          cost_usd: totalCost,
+          status: "synthesising",
+        });
+        fetch(hostUrl + "/api/worker?jobId=" + jobId, {
+          method: "POST", headers: { "Content-Type": "application/json" }
+        }).catch(function(ce) { console.log("Chain attempt:", ce.message); });
+        await new Promise(function(r) { setTimeout(r, 2000); });
+        return null;
+      }
+    }
+
+    /* Stage 2 (or single stage for small jobs): final synthesis */
+    var synthInput;
+    if (condensed && condensed.length > 0) {
+      synthInput = condensed.map(function(e, idx) { return "=== SUMMARY " + (idx + 1) + " ===\n" + e; }).join("\n\n");
+      console.log("Worker: final synthesis from " + condensed.length + " condensed summaries");
+    } else {
+      synthInput = extracts.map(function(e, idx) { return "=== BATCH " + (idx + 1) + " FINDINGS ===\n" + e; }).join("\n\n");
+      console.log("Worker: direct synthesis from " + extracts.length + " extracts");
+    }
+
+    var synthResult = await runTool(systemBase, synthPromptFn(synthInput, batches.length), 16000);
     totalInput += synthResult.inputTokens;
     totalOutput += synthResult.outputTokens;
     totalCost += synthResult.cost;
@@ -262,10 +328,14 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         output_tokens: totalOutput,
         cost_usd: totalCost,
       });
-      /* v4.2e: No self-chaining. Set status to "paused" and exit.
-         The frontend polling loop will detect "paused" and fire a new /api/worker call. */
+      /* v4.2f: Hybrid chaining — try server-side chain first (works with laptop closed),
+         frontend polling is backup if the chain fetch gets killed by Vercel. */
       await updateJob(jobId, { status: "paused" });
       console.log("Worker: paused at batch " + i + " of " + batches.length);
+      fetch(hostUrl + "/api/worker?jobId=" + jobId, {
+        method: "POST", headers: { "Content-Type": "application/json" }
+      }).catch(function(ce) { console.log("Chain attempt (frontend will retry if needed):", ce.message); });
+      await new Promise(function(r) { setTimeout(r, 2000); });
       return null; /* null means paused, not done */
     }
 
@@ -291,8 +361,8 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     });
   }
 
-  /* v4.2e: All extraction done. If we used significant time, set "synthesising"
-     and exit. Frontend will detect this and fire a fresh worker call. */
+  /* v4.2f: All extraction done. Set "synthesising" and try server-side chain.
+     Frontend polling is backup if the chain fetch gets killed. */
   if (Date.now() - startTime > 10000) {
     console.log("Worker: extraction done (" + batches.length + " batches, " + Math.round((Date.now() - startTime) / 1000) + "s elapsed), setting synthesising");
     await updateJob(jobId, {
@@ -303,12 +373,16 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
       cost_usd: totalCost,
       status: "synthesising",
     });
+    fetch(hostUrl + "/api/worker?jobId=" + jobId, {
+      method: "POST", headers: { "Content-Type": "application/json" }
+    }).catch(function(ce) { console.log("Chain attempt (frontend will retry if needed):", ce.message); });
+    await new Promise(function(r) { setTimeout(r, 2000); });
     return null;
   }
 
   /* Enough time remaining — run synthesis directly */
   var combinedExtracts = extracts.map(function(e, idx) { return "=== BATCH " + (idx + 1) + " FINDINGS ===\n" + e; }).join("\n\n");
-  var synthResult = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length));
+  var synthResult = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length), 16000);
   totalInput += synthResult.inputTokens;
   totalOutput += synthResult.outputTokens;
   totalCost += synthResult.cost;
@@ -432,6 +506,8 @@ export default async function handler(req, res) {
         if (Date.now() - startTime > TIME_LIMIT_MS) {
           await updateJob(jobId, { batches_done: ii, extracts: allFindings, input_tokens: totalInput, output_tokens: totalOutput, cost_usd: totalCost, status: "paused" });
           console.log("Worker: inconsistency paused at batch " + ii);
+          fetch(hostUrl + "/api/worker?jobId=" + jobId, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function(ce) { console.log("Chain attempt:", ce.message); });
+          await new Promise(function(r) { setTimeout(r, 2000); });
           return res.status(200).json({ ok: true, status: "paused" });
         }
         var slice = otherBatches.slice(ii, ii + INCON_PARALLEL);
@@ -455,6 +531,8 @@ export default async function handler(req, res) {
         if (Date.now() - startTime > TIME_LIMIT_MS) {
           await updateJob(jobId, { batches_done: otherBatches.length, extracts: allFindings, input_tokens: totalInput, output_tokens: totalOutput, cost_usd: totalCost, status: "synthesising" });
           console.log("Worker: inconsistency extraction done, set synthesising");
+          fetch(hostUrl + "/api/worker?jobId=" + jobId, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function(ce) { console.log("Chain attempt:", ce.message); });
+          await new Promise(function(r) { setTimeout(r, 2000); });
           return res.status(200).json({ ok: true, status: "synthesising" });
         }
         var synth = await runTool(systemBase,

@@ -1,8 +1,23 @@
-/* EX LIBRIS JURIS v4.3 — worker.js
+/* EX LIBRIS JURIS v4.3b — worker.js
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
 
-   v4.3 CHANGES (7 Apr 2026):
+   v4.3b CHANGES (8 Apr 2026):
+   1. runTool() now retries on overloaded_error and rate_limit_error from
+      the Anthropic API. Up to 4 attempts total (initial + 3 retries) with
+      exponential backoff (5s, 15s, 45s). Non-retryable errors propagate
+      immediately, identical to v4.3 behaviour.
+      Why: Anthropic Sonnet 4.6 has been intermittently overloaded — daily
+      incidents on status.anthropic.com over the v4.x development period.
+      Without retry, every brief overload kills a job. With retry, brief
+      overloads become invisible to the user.
+   2. New helper isRetryableAnthropicError() detects retryable errors by
+      checking HTTP status (529/429), structured error.type, and message
+      string as a fallback. Defensive across SDK error shapes.
+   3. No changes to extraction, condense, synthesis chaining, updateJob,
+      or any database code. The change is fully isolated to runTool().
+
+   v4.3 CHANGES (carried forward):
    1. updateJob() now writes a heartbeat (updated_at) on every call. The new
       api/cron-resume.js endpoint queries tool_jobs for in-progress rows whose
       updated_at is older than 60 seconds and re-fires the worker for each.
@@ -167,27 +182,85 @@ function buildPageIndex(byDoc) {
   return lines.length > 0 ? "\n\nPAGE REFERENCE INDEX:\n" + lines.join("\n") : "";
 }
 
+/* v4.3b: helper that detects whether a thrown Anthropic error is a transient
+   overload/rate-limit that we should retry, vs a hard error we should propagate.
+   The SDK can throw errors in several shapes depending on whether the error
+   surfaces at HTTP level, JSON-parse level, or inside the stream. We check
+   every plausible path. */
+function isRetryableAnthropicError(err) {
+  if (!err) return false;
+  /* HTTP status check — SDK exceptions usually carry .status */
+  if (err.status === 529 || err.status === 429) return true;
+  /* Structured error.type check — both .error.type and .error.error.type seen */
+  var t1 = err.error && err.error.type;
+  var t2 = err.error && err.error.error && err.error.error.type;
+  if (t1 === "overloaded_error" || t1 === "rate_limit_error") return true;
+  if (t2 === "overloaded_error" || t2 === "rate_limit_error") return true;
+  /* String match on the message as a final fallback — for cases where the
+     SDK has stringified the error before throwing. */
+  var msg = (err.message || "") + "";
+  if (msg.indexOf("overloaded_error") !== -1) return true;
+  if (msg.indexOf("rate_limit_error") !== -1) return true;
+  if (msg.indexOf("Overloaded") !== -1) return true;
+  return false;
+}
+
 async function runTool(system, userPrompt, maxTokens) {
   /* v4.1: raised from 8192 to API max — synthesis of large matters was truncating */
   /* v4.1b: switched to streaming to avoid Anthropic 10-minute timeout on large outputs */
+  /* v4.3b: retry on overloaded_error / rate_limit_error with exponential backoff.
+     Anthropic Sonnet 4.6 has been intermittently overloaded — daily incidents on
+     status.anthropic.com over the v4.x development period. Without retry, every
+     brief overload kills a job. With retry, brief overloads become invisible.
+     Non-retryable errors (auth, bad request, anything else) propagate immediately
+     with no retry, identical to v4.3 behaviour. */
   maxTokens = maxTokens || 64000;
-  var stream = anthropic.messages.stream({
-    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-    max_tokens: maxTokens,
-    system: system,
-    messages: [{ role: "user", content: userPrompt }],
-  });
-  var finalMessage = await stream.finalMessage();
-  var text = "";
-  if (finalMessage.content) {
-    for (var i = 0; i < finalMessage.content.length; i++) {
-      if (finalMessage.content[i].type === "text") { text = finalMessage.content[i].text; break; }
+  var BACKOFF_MS = [5000, 15000, 45000]; /* attempt 1 fails -> wait 5s, attempt 2 fails -> 15s, attempt 3 fails -> 45s, attempt 4 is the last */
+  var MAX_ATTEMPTS = BACKOFF_MS.length + 1;
+  var attempt = 0;
+  var lastErr = null;
+  while (attempt < MAX_ATTEMPTS) {
+    attempt++;
+    try {
+      var stream = anthropic.messages.stream({
+        model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+        max_tokens: maxTokens,
+        system: system,
+        messages: [{ role: "user", content: userPrompt }],
+      });
+      var finalMessage = await stream.finalMessage();
+      var text = "";
+      if (finalMessage.content) {
+        for (var i = 0; i < finalMessage.content.length; i++) {
+          if (finalMessage.content[i].type === "text") { text = finalMessage.content[i].text; break; }
+        }
+      }
+      var inputTokens = (finalMessage.usage && finalMessage.usage.input_tokens) || 0;
+      var outputTokens = (finalMessage.usage && finalMessage.usage.output_tokens) || 0;
+      var cost = (inputTokens * INPUT_COST_PER_M / 1000000) + (outputTokens * OUTPUT_COST_PER_M / 1000000);
+      if (attempt > 1) {
+        console.log("v4.3b runTool: succeeded on attempt " + attempt + " of " + MAX_ATTEMPTS);
+      }
+      return { text: text, inputTokens: inputTokens, outputTokens: outputTokens, cost: cost };
+    } catch (err) {
+      lastErr = err;
+      if (!isRetryableAnthropicError(err)) {
+        /* Non-retryable — throw immediately, identical to v4.3 behaviour */
+        throw err;
+      }
+      if (attempt >= MAX_ATTEMPTS) {
+        /* Out of retries — log and throw */
+        console.log("v4.3b runTool: retryable error on final attempt " + attempt + ", giving up: " + (err.message || err));
+        throw err;
+      }
+      var waitMs = BACKOFF_MS[attempt - 1];
+      console.log("v4.3b runTool: retryable error on attempt " + attempt + " of " + MAX_ATTEMPTS + " (" + (err.message || "no message").slice(0, 200) + "), waiting " + (waitMs / 1000) + "s before retry");
+      await new Promise(function(r) { setTimeout(r, waitMs); });
     }
   }
-  var inputTokens = (finalMessage.usage && finalMessage.usage.input_tokens) || 0;
-  var outputTokens = (finalMessage.usage && finalMessage.usage.output_tokens) || 0;
-  var cost = (inputTokens * INPUT_COST_PER_M / 1000000) + (outputTokens * OUTPUT_COST_PER_M / 1000000);
-  return { text: text, inputTokens: inputTokens, outputTokens: outputTokens, cost: cost };
+  /* Unreachable in normal flow — the loop either returns or throws — but if
+     we somehow exit, throw the last error so the caller knows. */
+  throw lastErr || new Error("runTool: exhausted retries with no final error");
 }
 
 async function logUsage(matterId, userId, toolName, inputTokens, outputTokens, cost) {

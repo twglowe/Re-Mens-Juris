@@ -175,87 +175,133 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     if(!d||!d.jobId)throw new Error('No jobId returned');
     progressLabel.textContent='Processing '+toolLabel+'\u2026 (you can close your laptop \u2014 processing continues in the background)';
     progressFill.style.width='10%';
-    /* Poll for completion */
-    var jobId=d.jobId;var pollCount=0;
-    /* v4.2k: Frontend over-firing fix. Track last fire status + time. Only re-fire
-       when status has changed since last fire, or more than 180s have passed.
-       Without this, every 10s poll fires /api/worker, producing 15-20 parallel
-       invocations per condense pause and wasting Anthropic spend on duplicates. */
-    var lastFireStatus=null;
-    var lastFireTime=0;
-    var FIRE_COOLDOWN_MS=180000;
-    var pollInterval=setInterval(async function(){
-      try{
-        pollCount++;
-        var j=await api('/api/jobs?id='+jobId);
-        if(!j)return;
-        /* Update progress bar with batch info */
-        if(j.batchesTotal>0&&j.batchesDone>0){
-          var pct=Math.min(10+Math.round((j.batchesDone/j.batchesTotal)*80),90);
-          progressFill.style.width=pct+'%';
-          progressLabel.textContent='Processing '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
-        }
-        /* Job complete */
-        if(j.status==='complete'||j.status==='partial'){
-          clearInterval(pollInterval);typing.remove();
-          progressFill.style.width='100%';
-          setTimeout(function(){progressWrap.classList.remove('on');progressFill.style.width='0%';},800);
-          if(j.result){
-            var isProp=toolName==='proposition';
-            var costStr=j.usage&&j.usage.costUsd?' \u00B7 $'+j.usage.costUsd.toFixed(4):'';
-            /* Worker already saved to history — reload and display */
-            await loadHistory(currentMatter.id);
-            var latestH=matterHistory.find(function(h){return h.tool_name===toolName;});
-            var hId=latestH?latestH.id:null;
-            appendMsgTo(msgsArea,'assistant',j.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);
-          }else{
-            var noRes=document.createElement('div');noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem;';
-            noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);
-          }
-          return;
-        }
-        /* v4.2e: Worker paused or ready for synthesis — re-fire worker from frontend */
-        /* v4.2k: Only fire if status changed since last fire OR cooldown elapsed */
-        if(j.status==='paused'||j.status==='synthesising'){
-          if(j.status==='synthesising'){
-            progressLabel.textContent='Synthesising '+toolLabel+'\u2026';
-            progressFill.style.width='95%';
-          }else{
-            progressLabel.textContent='Resuming '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
-          }
-          var nowMs=Date.now();
-          var statusChanged=(j.status!==lastFireStatus);
-          var cooldownElapsed=(nowMs-lastFireTime>FIRE_COOLDOWN_MS);
-          if(statusChanged||cooldownElapsed){
-            console.log('v4.2k re-fire worker:',j.status,statusChanged?'(status changed)':'(cooldown elapsed)');
-            lastFireStatus=j.status;
-            lastFireTime=nowMs;
-            fetch('/api/worker?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Worker re-fire:',e.message);});
-          }
-        }
-        /* Job failed */
-        if(j.status==='failed'){
-          clearInterval(pollInterval);typing.remove();
-          progressWrap.classList.remove('on');progressFill.style.width='0%';
-          var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
-          errEl.textContent='\u26A0\uFE0F Tool error: '+(j.error||'Unknown error');msgsArea.appendChild(errEl);
-          return;
-        }
-        /* Safety: stop polling after 60 minutes (360 polls at 10s) */
-        if(pollCount>360){
-          clearInterval(pollInterval);typing.remove();
-          progressWrap.classList.remove('on');progressFill.style.width='0%';
-          var toEl=document.createElement('div');toEl.style.cssText='text-align:center;font-size:.78rem;color:var(--warning);padding:.45rem;';
-          toEl.textContent='Processing is taking longer than expected. Check History later for results.';msgsArea.appendChild(toEl);
-        }
-      }catch(pollErr){console.log('Poll error:',pollErr.message);}
-    },10000);
+    /* v4.4: Polling loop extracted into startPollingJob for reuse by resumeInProgressJobs */
+    startPollingJob(d.jobId,toolName,toolLabel,instructions,msgsArea,progressWrap,progressLabel,progressFill,typing);
   }catch(e){
     typing.remove();progressWrap.classList.remove('on');progressFill.style.width='0%';
     var errEl2=document.createElement('div');errEl2.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
     errEl2.textContent='\u26A0\uFE0F Tool error: '+e.message;msgsArea.appendChild(errEl2);
   }
 });
+
+/* ── v4.4: POLLING LOOP (extracted from toolRunBtn handler for reuse) ────── */
+/* Starts polling /api/jobs for a single job. Handles status updates, progress
+   bar, worker re-firing on paused/synthesising, completion, failure, and the
+   60-minute safety stop. Used both by new tool runs and by resumeInProgressJobs
+   on matter reload. All v4.2k over-firing protection preserved. */
+function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progressWrap,progressLabel,progressFill,typing){
+  var pollCount=0;
+  /* v4.2k: Frontend over-firing fix. Track last fire status + time. Only re-fire
+     when status has changed since last fire, or more than 180s have passed.
+     Without this, every 10s poll fires /api/worker, producing 15-20 parallel
+     invocations per condense pause and wasting Anthropic spend on duplicates. */
+  var lastFireStatus=null;
+  var lastFireTime=0;
+  var FIRE_COOLDOWN_MS=180000;
+  var pollInterval=setInterval(async function(){
+    try{
+      pollCount++;
+      var j=await api('/api/jobs?id='+jobId);
+      if(!j)return;
+      if(j.batchesTotal>0&&j.batchesDone>0){
+        var pct=Math.min(10+Math.round((j.batchesDone/j.batchesTotal)*80),90);
+        progressFill.style.width=pct+'%';
+        progressLabel.textContent='Processing '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
+      }
+      if(j.status==='complete'||j.status==='partial'){
+        clearInterval(pollInterval);if(typing)typing.remove();
+        progressFill.style.width='100%';
+        setTimeout(function(){progressWrap.classList.remove('on');progressFill.style.width='0%';},800);
+        if(j.result){
+          var isProp=toolName==='proposition';
+          var costStr=j.usage&&j.usage.costUsd?' \u00B7 $'+j.usage.costUsd.toFixed(4):'';
+          if(currentMatter)await loadHistory(currentMatter.id);
+          var latestH=matterHistory.find(function(h){return h.tool_name===toolName;});
+          var hId=latestH?latestH.id:null;
+          appendMsgTo(msgsArea,'assistant',j.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);
+        }else{
+          var noRes=document.createElement('div');noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem;';
+          noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);
+        }
+        return;
+      }
+      if(j.status==='paused'||j.status==='synthesising'){
+        /* v4.2e: Worker paused or ready for synthesis — re-fire worker from frontend */
+        /* v4.2k: Only fire if status changed since last fire OR cooldown elapsed */
+        if(j.status==='synthesising'){
+          progressLabel.textContent='Synthesising '+toolLabel+'\u2026';
+          progressFill.style.width='95%';
+        }else{
+          progressLabel.textContent='Resuming '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
+        }
+        var nowMs=Date.now();
+        var statusChanged=(j.status!==lastFireStatus);
+        var cooldownElapsed=(nowMs-lastFireTime>FIRE_COOLDOWN_MS);
+        if(statusChanged||cooldownElapsed){
+          console.log('v4.2k re-fire worker:',j.status,statusChanged?'(status changed)':'(cooldown elapsed)');
+          lastFireStatus=j.status;
+          lastFireTime=nowMs;
+          fetch('/api/worker?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Worker re-fire:',e.message);});
+        }
+      }
+      if(j.status==='failed'){
+        clearInterval(pollInterval);if(typing)typing.remove();
+        progressWrap.classList.remove('on');progressFill.style.width='0%';
+        var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
+        errEl.textContent='\u26A0\uFE0F Tool error: '+(j.error||'Unknown error');msgsArea.appendChild(errEl);
+        return;
+      }
+      if(pollCount>360){
+        clearInterval(pollInterval);if(typing)typing.remove();
+        progressWrap.classList.remove('on');progressFill.style.width='0%';
+        var toEl=document.createElement('div');toEl.style.cssText='text-align:center;font-size:.78rem;color:var(--warning);padding:.45rem;';
+        toEl.textContent='Processing is taking longer than expected. Check History later for results.';msgsArea.appendChild(toEl);
+      }
+    }catch(pollErr){console.log('Poll error:',pollErr.message);}
+  },10000);
+}
+
+/* ── v4.4: RESUME IN-PROGRESS JOBS ON MATTER LOAD ────────────────────────── */
+/* On matter load, query /api/jobs for any jobs in running/paused/synthesising
+   state and resume polling for each. Opens the matching tool tab and hooks back
+   into the shared progress bar. Called from selectMatter in core.js.
+   If multiple jobs are in flight the progress bar shows the last one opened;
+   each tool tab still reflects its own result when its job lands. */
+async function resumeInProgressJobs(matterId){
+  if(!matterId)return;
+  try{
+    var resp=await api('/api/jobs?matterId='+matterId);
+    if(!resp||!resp.jobs||!resp.jobs.length)return;
+    var active=resp.jobs.filter(function(j){
+      return j.status==='running'||j.status==='paused'||j.status==='synthesising';
+    });
+    if(!active.length)return;
+    console.log('v4.4 resuming '+active.length+' in-progress job(s) for matter '+matterId);
+    var progressWrap=document.getElementById('progressWrap');
+    var progressLabel=document.getElementById('progressLabel');
+    var progressFill=document.getElementById('progressFill');
+    active.forEach(function(job){
+      var toolName=job.tool_name||job.toolName;
+      if(!toolName||!toolDefs[toolName]){
+        console.log('v4.4 skipping job '+job.id+' \u2014 unknown tool name:',toolName);
+        return;
+      }
+      var toolLabel=toolDefs[toolName].title;
+      getOrCreateToolTab(toolName);
+      var msgsArea=showToolResult(toolName);
+      progressWrap.classList.add('on');
+      progressLabel.textContent='Resuming '+toolLabel+'\u2026';
+      progressFill.style.width='10%';
+      var typing=document.createElement('div');
+      typing.className='msg msg-assistant msg-tool';
+      typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
+      msgsArea.appendChild(typing);msgsArea.scrollTop=msgsArea.scrollHeight;
+      startPollingJob(job.id,toolName,toolLabel,'(resumed)',msgsArea,progressWrap,progressLabel,progressFill,typing);
+    });
+  }catch(e){
+    console.log('v4.4 resumeInProgressJobs error:',e.message);
+  }
+}
 
 /* ── SOURCE PANEL ─────────────────────────────────────────────────────────── */
 async function openSourcePanel(docName,contextText,chunkIdx){

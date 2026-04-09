@@ -174,6 +174,8 @@ async function selectMatter(id){
   sysMsg('Matter loaded: **'+currentMatter.name+'** · '+currentMatter.jurisdiction+(currentMatter.acting_for?' · Acting for: '+currentMatter.acting_for:''));
   if(currentMatter.nature)sysMsg('Dispute: '+currentMatter.nature);
   renderMatterRecord();
+  /* v4.4: Resume polling for any in-progress tool jobs on this matter */
+  if(typeof resumeInProgressJobs==='function')resumeInProgressJobs(id);
 }
 
 /* Matter left tab switching */

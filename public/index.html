@@ -6,6 +6,7 @@
 <title>Ex Libris Juris — Legal Analysis</title>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/js/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -765,7 +766,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
                   <button class="lib-box-btn" onclick="draftSelectDoc('draftSrcDoc1','src1')" title="Add selected" style="min-width:26px">✓</button>
                 </div>
                 <div style="margin-bottom:.3rem">
-                  <input type="file" id="draftUpFile1" accept=".pdf,.doc,.docx" style="display:none" onchange="draftUploadInPlace(this,'src1')">
+                  <input type="file" id="draftUpFile1" accept=".pdf,.docx" style="display:none" onchange="draftUploadInPlace(this,'src1')">
                   <button class="lib-box-btn" onclick="document.getElementById('draftUpFile1').click()" style="font-size:.78rem">📎 Upload from device</button>
                 </div>
                 <div class="draft-selected-docs" id="draftSelectedSrc1"></div>
@@ -779,7 +780,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
                   <button class="lib-box-btn" onclick="draftSelectDoc('draftSrcDoc2','src2')" title="Add selected" style="min-width:26px">✓</button>
                 </div>
                 <div style="margin-bottom:.3rem">
-                  <input type="file" id="draftUpFile2" accept=".pdf,.doc,.docx" style="display:none" onchange="draftUploadInPlace(this,'src2')">
+                  <input type="file" id="draftUpFile2" accept=".pdf,.docx" style="display:none" onchange="draftUploadInPlace(this,'src2')">
                   <button class="lib-box-btn" onclick="document.getElementById('draftUpFile2').click()" style="font-size:.78rem">📎 Upload from device</button>
                 </div>
                 <div class="draft-selected-docs" id="draftSelectedSrc2"></div>
@@ -793,7 +794,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
                   <button class="lib-box-btn" onclick="draftSelectDoc('draftSrcDoc3','src3')" title="Add selected" style="min-width:26px">✓</button>
                 </div>
                 <div style="margin-bottom:.3rem">
-                  <input type="file" id="draftUpFile3" accept=".pdf,.doc,.docx" style="display:none" onchange="draftUploadInPlace(this,'src3')">
+                  <input type="file" id="draftUpFile3" accept=".pdf,.docx" style="display:none" onchange="draftUploadInPlace(this,'src3')">
                   <button class="lib-box-btn" onclick="document.getElementById('draftUpFile3').click()" style="font-size:.78rem">📎 Upload from device</button>
                 </div>
                 <div class="draft-selected-docs" id="draftSelectedSrc3"></div>
@@ -809,7 +810,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
                 </div>
                 <div class="draft-doc-list" id="draftPrecList" style="max-height:100px"></div>
                 <div style="margin-top:.3rem">
-                  <input type="file" id="draftUpFilePrec" accept=".pdf,.doc,.docx" style="display:none" onchange="draftUploadInPlace(this,'prec')">
+                  <input type="file" id="draftUpFilePrec" accept=".pdf,.docx" style="display:none" onchange="draftUploadInPlace(this,'prec')">
                   <button class="lib-box-btn" onclick="document.getElementById('draftUpFilePrec').click()" style="font-size:.78rem">📎 Upload precedent from device</button>
                 </div>
                 <div class="draft-selected-docs" id="draftSelectedPrecs"></div>
@@ -891,7 +892,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
         <option>Correspondence</option><option>Expert Report</option><option>Trial Bundle</option><option>Other</option>
       </select>
       <div class="upload-zone" id="uploadZone">
-        <input type="file" id="fileInput" accept=".pdf,.doc,.docx" multiple>
+        <input type="file" id="fileInput" accept=".pdf,.docx" multiple>
         <div class="uz-icon">📎</div>
         <div class="uz-text">Drop PDFs here or click to upload</div>
         <div class="uz-hint">PDF, Word · up to 50MB per file</div>
@@ -1082,7 +1083,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
       <option value="">Any</option><option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option>
     </select>
     <label class="f-label" style="margin-top:.85rem">PDF Document *</label>
-    <input type="file" id="precUpFile" accept=".pdf" style="width:100%;padding:.5rem;border:2px solid var(--border);border-radius:7px;font-size:.92rem;background:var(--off-white)" onchange="precUpFileChanged(this)">
+    <input type="file" id="precUpFile" accept=".pdf,.docx" style="width:100%;padding:.5rem;border:2px solid var(--border);border-radius:7px;font-size:.92rem;background:var(--off-white)" onchange="precUpFileChanged(this)">
     <div id="precUpAiHint" style="display:none;margin-top:.3rem;padding:.4rem .6rem;background:var(--blue-faint);border:1px solid var(--border);border-radius:5px;font-size:.78rem;color:var(--blue);font-weight:500">Reading PDF to suggest a name…</div>
     <div style="font-size:.75rem;color:var(--text-faint);margin-top:.2rem">The document will be chunked and stored in your library.</div>
     <div id="precUpProgress" style="display:none;margin-top:.5rem;padding:.5rem;background:var(--blue-pale);border-radius:6px;font-size:.82rem;font-weight:600;color:var(--blue)">Uploading and processing…</div>

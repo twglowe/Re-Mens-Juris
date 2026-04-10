@@ -396,9 +396,11 @@ async function deleteDoc(id,name){if(!confirm('Remove "'+name+'"?'))return;try{a
 var uploadZone=document.getElementById('uploadZone'),fileInput=document.getElementById('fileInput');
 uploadZone.addEventListener('dragover',function(e){e.preventDefault();uploadZone.classList.add('drag-over');});
 uploadZone.addEventListener('dragleave',function(){uploadZone.classList.remove('drag-over');});
-uploadZone.addEventListener('drop',function(e){e.preventDefault();uploadZone.classList.remove('drag-over');if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(e.dataTransfer.files).filter(function(f){return f.type==='application/pdf';}));});
+/* v4.5: Drop handler filters by extension (.pdf/.docx) instead of MIME type */
+uploadZone.addEventListener('drop',function(e){e.preventDefault();uploadZone.classList.remove('drag-over');if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(e.dataTransfer.files).filter(function(f){var n=f.name.toLowerCase();return n.endsWith('.pdf')||n.endsWith('.docx');}));});
 fileInput.addEventListener('change',function(){if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(fileInput.files));fileInput.value='';});
 
+/* v4.5: Dispatch by extension, reject legacy .doc, support .docx via mammoth */
 async function uploadFiles(files){
   if(!files.length||!currentMatter)return;
   var docType=document.getElementById('docTypeSelect').value;
@@ -406,12 +408,18 @@ async function uploadFiles(files){
   errEl.classList.remove('on');
   for(var fi=0;fi<files.length;fi++){
     var file=files[fi];
+    var lowerName=file.name.toLowerCase();
+    var isDocx=lowerName.endsWith('.docx');
+    var isPdf=lowerName.endsWith('.pdf');
+    if(lowerName.endsWith('.doc')&&!isDocx){errEl.textContent=file.name+': legacy .doc format is not supported. Please save as .docx first.';errEl.classList.add('on');continue;}
+    if(!isPdf&&!isDocx){errEl.textContent=file.name+': unsupported file type. Please use .pdf or .docx.';errEl.classList.add('on');continue;}
     prog.textContent='Extracting text: '+file.name+'…';prog.classList.add('on');
     try{
-      var pages=await extractPdfText(file);
+      var pages=isDocx?await extractDocxText(file):await extractPdfText(file);
       var fullText=pages.map(function(p){return p.text;}).join('\n\n');
-      if(!fullText||fullText.trim().length<50){errEl.textContent='No readable text in '+file.name+'. Try OCR at ilovepdf.com first.';errEl.classList.add('on');continue;}
-      prog.textContent='Uploading: '+file.name+' ('+Math.round(fullText.length/1024)+'KB text, '+pages.length+' pages)…';
+      if(!fullText||fullText.trim().length<50){errEl.textContent='No readable text in '+file.name+'. '+(isPdf?'Try OCR at ilovepdf.com first.':'The document may be empty or corrupted.');errEl.classList.add('on');continue;}
+      var unitLabel=isDocx?'block(s)':'page(s)';
+      prog.textContent='Uploading: '+file.name+' ('+Math.round(fullText.length/1024)+'KB text, '+pages.length+' '+unitLabel+')…';
       var d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,pageTexts:pages,docType:docType});
       if(d)showToast('\u2713 '+file.name+' — '+d.chunks+' passages indexed'+(d.pageAware?' (page-aware)':''));
     }catch(e){errEl.textContent='Failed: '+file.name+' — '+e.message;errEl.classList.add('on');}
@@ -428,6 +436,18 @@ async function extractPdfText(file){
   var pages=[];
   for(var i=1;i<=pdf.numPages;i++){var page=await pdf.getPage(i);var tc=await page.getTextContent();var pageText=tc.items.map(function(item){return item.str;}).join(' ');pages.push({page:i,text:pageText});}
   return pages;
+}
+/* v4.5: Extract raw text from a .docx file via mammoth.js. Returns the same
+   [{page,text},...] shape as extractPdfText so callers can treat both uniformly.
+   .docx has no true page concept, so we return a single "page 1" block. */
+async function extractDocxText(file){
+  if(!window.mammoth||!window.mammoth.extractRawText){
+    throw new Error('Word library not loaded. Refresh and try again.');
+  }
+  var buf=await file.arrayBuffer();
+  var result=await window.mammoth.extractRawText({arrayBuffer:buf});
+  var text=(result&&result.value)||'';
+  return [{page:1,text:text}];
 }
 /* ── CHAT ─────────────────────────────────────────────────────────────────── */
 async function sendMessage(){

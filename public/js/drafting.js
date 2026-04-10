@@ -418,25 +418,23 @@ function renderDraftSelectedDocs(boxKey){
   }).join('');
 }
 
+/* v4.5: Rewritten — dispatches .pdf/.docx via extractors, unwraps page array,
+   rejects legacy .doc, fixes v3.2 page-array bug */
 async function draftUploadInPlace(input,boxKey){
   var file=input.files[0];
   if(!file)return;
   var matterId=document.getElementById('draftMatterSelect').value;
   if(!matterId){showToast('Select a matter first');input.value='';return;}
-  var isPdf=file.name.toLowerCase().endsWith('.pdf');
-  var isWord=file.name.toLowerCase().endsWith('.doc')||file.name.toLowerCase().endsWith('.docx');
-  if(!isPdf&&!isWord){showToast('Please select a PDF or Word document');input.value='';return;}
+  var lowerName=file.name.toLowerCase();
+  var isDocx=lowerName.endsWith('.docx');
+  var isPdf=lowerName.endsWith('.pdf');
+  if(lowerName.endsWith('.doc')&&!isDocx){showToast(file.name+': legacy .doc format is not supported. Please save as .docx first.');input.value='';return;}
+  if(!isPdf&&!isDocx){showToast('Please select a PDF or Word (.docx) document');input.value='';return;}
   showToast('Uploading '+file.name+'…');
   try{
-    var text='';
-    if(isPdf){
-      text=await extractPdfText(file);
-      if(!text||text.trim().length<50){showToast('No readable text in '+file.name);input.value='';return;}
-    }else{
-      /* For Word files, read as text (basic extraction) */
-      text=await new Promise(function(resolve){var reader=new FileReader();reader.onload=function(e){resolve(e.target.result);};reader.readAsText(file);});
-      if(!text||text.trim().length<20){showToast('Could not extract text from '+file.name+'. Try converting to PDF first.');input.value='';return;}
-    }
+    var pages=isDocx?await extractDocxText(file):await extractPdfText(file);
+    var text=pages.map(function(p){return p.text;}).join('\n\n');
+    if(!text||text.trim().length<50){showToast('No readable text in '+file.name+(isPdf?'. Try OCR at ilovepdf.com first.':'. The document may be empty or corrupted.'));input.value='';return;}
     var docType='Other';
     var d=await api('/api/upload','POST',{matterId:matterId,fileName:file.name,textContent:text,docType:docType});
     if(d){

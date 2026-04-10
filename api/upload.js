@@ -5,6 +5,26 @@ export const config = { maxDuration: 300, api: { bodyParser: { sizeLimit: "50mb"
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
+/* ── v4.3c: TEXT SANITISATION ────────────────────────────────────────────
+   PostgreSQL (via PostgREST) rejects strings containing certain Unicode
+   sequences with "unsupported Unicode escape sequence". The main offenders
+   in PDF-extracted text are:
+     - NULL byte \u0000 (always rejected by Postgres text columns)
+     - Other C0 control characters (mostly noise from PDF binary streams)
+     - C1 control characters (\u0080–\u009F, also noise)
+     - Lone surrogates (unpaired \uD800–\uDFFF code units, invalid UTF-8)
+   This function strips all of those while preserving \t, \n, \r which are
+   legitimate in document text. Applied to every text field before insertion.
+   ─────────────────────────────────────────────────────────────────────── */
+function sanitiseText(s) {
+  if (typeof s !== "string" || !s) return "";
+  // Strip C0 controls except \t \n \r, and all C1 controls
+  let cleaned = s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "");
+  // Strip lone surrogates (high not followed by low, or low not preceded by high)
+  cleaned = cleaned.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "");
+  return cleaned;
+}
+
 async function getUser(req) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
@@ -119,17 +139,19 @@ export default async function handler(req, res) {
 
     if (pageTexts && Array.isArray(pageTexts) && pageTexts.length > 0) {
       // v3.2: Client sends per-page text array — use page-aware chunking
-      pages = pageTexts;
-      extractedText = pageTexts.map(p => p.text).join("\n\n");
+      // v4.3c: Sanitise each page's text before any further processing
+      pages = pageTexts.map(p => ({ page: p.page, text: sanitiseText(p.text) }));
+      extractedText = pages.map(p => p.text).join("\n\n");
     } else if (textContent) {
       // v3.0 path: Client sent single text string — no page info
-      extractedText = textContent;
+      // v4.3c: Sanitise before insertion
+      extractedText = sanitiseText(textContent);
     } else if (fileData) {
       // Legacy path: base64 PDF, extract server-side
       const buffer = Buffer.from(fileData, "base64");
       try {
         const parsed = await pdfParse(buffer);
-        extractedText = parsed.text || "";
+        extractedText = sanitiseText(parsed.text || "");
       } catch (e) {
         return res.status(400).json({ error: "Could not read this PDF. It may be password-protected or a scanned image. Please use ilovepdf.com to OCR it first." });
       }

@@ -188,7 +188,8 @@ function closePrecUpModal(){
   precUpLastId=null;
   closeModal('precUploadModal');
 }
-/* A3: AI auto-fills document name when PDF selected */
+/* A3: AI auto-fills document name when PDF or Word file selected */
+/* v4.5: Rewritten — unwraps page array (fixes v3.2 bug), adds .docx routing */
 async function precUpFileChanged(input){
   if(!input.files||!input.files[0])return;
   var file=input.files[0];
@@ -196,9 +197,15 @@ async function precUpFileChanged(input){
   /* Only suggest if the name field is empty */
   if(nameField.value.trim())return;
   var hint=document.getElementById('precUpAiHint');
-  hint.style.display='';hint.textContent='Reading PDF to suggest a name…';
+  hint.style.display='';hint.textContent='Reading document to suggest a name…';
   try{
-    var text=await extractPdfText(file);
+    var lowerName=file.name.toLowerCase();
+    var isDocx=lowerName.endsWith('.docx');
+    var isPdf=lowerName.endsWith('.pdf');
+    if(!isPdf&&!isDocx){hint.style.display='none';return;}
+    /* v4.5: Unwrap page array from extractors. Both return [{page,text},...] */
+    var pages=isDocx?await extractDocxText(file):await extractPdfText(file);
+    var text=pages.map(function(p){return p.text;}).join('\n\n');
     if(!text||text.trim().length<30){hint.style.display='none';return;}
     /* Send first 2000 chars to AI for name suggestion */
     var snippet=text.slice(0,2000);

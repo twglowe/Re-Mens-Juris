@@ -392,6 +392,7 @@ function renderDocs(){
 }
 async function deleteDoc(id,name){if(!confirm('Remove "'+name+'"?'))return;try{await api('/api/documents?id='+id,'DELETE');await loadDocuments(currentMatter.id);await loadMatters();showToast('Document removed');}catch(e){showToast('Error: '+e.message);}}
 
+/* v4.5a: Rebuild trigger */
 /* ── UPLOAD ──────────────────────────────────────────────────────────────── */
 var uploadZone=document.getElementById('uploadZone'),fileInput=document.getElementById('fileInput');
 uploadZone.addEventListener('dragover',function(e){e.preventDefault();uploadZone.classList.add('drag-over');});

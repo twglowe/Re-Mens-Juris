@@ -127,7 +127,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
-  const { matterId, fileName, fileData, textContent, pageTexts, docType, party, docIssues } = req.body;
+  /* v5.0: folderIds is an optional array of folder UUIDs to assign this
+     document to on upload. Empty / missing = uncategorised. */
+  const { matterId, fileName, fileData, textContent, pageTexts, docType, party, docIssues, folderIds } = req.body;
   if (!matterId || !fileName) return res.status(400).json({ error: "Missing fields" });
   if (!fileData && !textContent && !pageTexts) return res.status(400).json({ error: "No file data or text content provided" });
   const allowed = await canEdit(user.id, matterId);
@@ -169,6 +171,27 @@ export default async function handler(req, res) {
       })
       .select().single();
     if (docError) throw docError;
+
+    /* v5.0: assign document to folders if folderIds were supplied. Validate
+       each folder belongs to the same matter to prevent cross-matter assignment. */
+    if (Array.isArray(folderIds) && folderIds.length > 0) {
+      const { data: validFolders, error: vfErr } = await supabase
+        .from("folders")
+        .select("id, matter_id")
+        .in("id", folderIds);
+      if (vfErr) {
+        console.log("v5.0 folder validation failed:", vfErr.message);
+      } else {
+        const sameMatter = (validFolders || []).filter(function (f) { return f.matter_id === matterId; });
+        if (sameMatter.length > 0) {
+          const joinRows = sameMatter.map(function (f) {
+            return { document_id: doc.id, folder_id: f.id };
+          });
+          const { error: joinErr } = await supabase.from("document_folders").insert(joinRows);
+          if (joinErr) console.log("v5.0 folder assignment insert failed:", joinErr.message);
+        }
+      }
+    }
 
     let chunkRows;
 

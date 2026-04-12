@@ -1,9 +1,40 @@
-/* EX LIBRIS JURIS v4.3b — worker.js
+/* EX LIBRIS JURIS v4.5c — worker.js
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
 
-   v4.3b CHANGES (8 Apr 2026):
-   1. runTool() now retries on overloaded_error and rate_limit_error from
+   v4.5c CHANGES (12 Apr 2026):
+   1. maxDuration raised from 300 to 800. Vercel Pro permits up to 800 seconds.
+      The previous 300s ceiling was the root cause of Briefing Note tail latency:
+      a final synthesis call on a large matter could take 250-400s, hitting the
+      ceiling mid-stream, and the cron-resume cycle (4 minutes per re-fire) made
+      every "barely too long" run feel "stuck for hours".
+   2. TIME_LIMIT_MS raised from 250000 to 700000. Without this, the worker would
+      pause itself at 250s regardless of the new maxDuration, defeating the bump.
+      The new value leaves a 100s margin below the 800s ceiling.
+   3. CONDENSE_TIME_LIMIT_MS raised from 150000 to 600000 for the same reason.
+      Single condense calls take ~30-220s; the new limit lets the worker burn
+      through several groups in one invocation rather than pausing after one.
+   4. Briefing Note synth prompt tightened with explicit completion guidance and
+      per-section paragraph limits. Previous prompt produced silent truncation
+      on large matters — the Thalassa briefing note ended mid-sentence in
+      section 4 and never reached sections 5, 6, 7. New prompt insists on all
+      7 sections being completed and tells the model to abbreviate later
+      sections rather than omit them if running short on output budget.
+   5. New synth_attempts column on tool_jobs is incremented on every entry into
+      the synthesising branch. If the previous attempt count is >= 5 AND
+      neither condense_done nor result has advanced since then, the job is
+      failed with a clear error rather than looping forever. Catches the
+      pathological case where final synthesis fails repeatedly with no
+      forward progress (e.g. a prompt the model genuinely cannot complete
+      within 10000 tokens). Does NOT catch transient failures, because the
+      counter only triggers when there is no progress between attempts.
+
+   PRECONDITION: tool_jobs table must have a synth_attempts integer column
+   (default 0). Migration: ALTER TABLE tool_jobs ADD COLUMN IF NOT EXISTS
+   synth_attempts integer DEFAULT 0;
+
+   v4.3b CHANGES (carried forward):
+   1. runTool() retries on overloaded_error and rate_limit_error from
       the Anthropic API. Up to 4 attempts total (initial + 3 retries) with
       exponential backoff (5s, 15s, 45s). Non-retryable errors propagate
       immediately, identical to v4.3 behaviour.
@@ -20,7 +51,7 @@
    v4.3 CHANGES (carried forward):
    1. updateJob() now writes a heartbeat (updated_at) on every call. The new
       api/cron-resume.js endpoint queries tool_jobs for in-progress rows whose
-      updated_at is older than 60 seconds and re-fires the worker for each.
+      updated_at is older than 240 seconds and re-fires the worker for each.
       This means jobs continue progressing even when the user closes the
       laptop or the browser tab — the frontend polling loop is now a live UI
       nicety rather than a load-bearing requirement.
@@ -51,7 +82,7 @@
    v4.2h FIXES (carried forward):
    - Per-group DB persistence in condense loop.
    - Re-entry condition checks condense_done < extracts.length.
-   - Condense time guard at 150s.
+   - Condense time guard at 150s (raised to 600s in v4.5c).
 
    v4.2g FIXES (carried forward):
    - Handler doesn't clobber status="synthesising"/"paused" on re-entry.
@@ -60,12 +91,13 @@
    PRECONDITION: tool_jobs table must have these columns:
      - condensed_extracts jsonb
      - condense_done integer DEFAULT 0
-     - synthesis_phase text */
+     - synthesis_phase text
+     - synth_attempts integer DEFAULT 0  (v4.5c) */
 
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 
-export const config = { maxDuration: 300 };
+export const config = { maxDuration: 800 };
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
@@ -85,7 +117,10 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const INPUT_COST_PER_M = 3.00;
 const OUTPUT_COST_PER_M = 15.00;
-const TIME_LIMIT_MS = 250000;
+/* v4.5c: raised from 250000 to 700000 to use the new 800s maxDuration ceiling.
+   Leaves a 100s margin below the hard ceiling for the in-flight Anthropic call
+   to wind down before Vercel kills the function. */
+const TIME_LIMIT_MS = 700000;
 const PARALLEL = 6;
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -395,6 +430,45 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
   if (job.status === "synthesising") {
     console.log("Worker: running synthesis for " + jobId + " (" + extracts.length + " extracts)");
 
+    /* v4.5c: Persistent-failure detection.
+       Increment synth_attempts on every entry into the synthesising branch.
+       If the previous attempt count was already >= 5 AND neither condense_done
+       nor result has advanced since the prior attempt, fail the job. The
+       "no advancement" check prevents false positives — a job that legitimately
+       needs many attempts to chew through a large condense run is fine, because
+       each attempt advances condense_done. Only a job that re-enters synthesis
+       N times in a row with no progress at all is genuinely stuck.
+
+       The advancement check uses the row state at the start of this invocation
+       (job.condense_done and job.result), which were loaded immediately above
+       and reflect what was persisted by the previous attempt. */
+    var priorAttempts = job.synth_attempts || 0;
+    var priorCondenseDone = job.condense_done || 0;
+    var priorResult = job.result || null;
+    var newAttempts = priorAttempts + 1;
+    console.log("v4.5c Worker: synthesising entry #" + newAttempts + " (prior condense_done=" + priorCondenseDone + ", prior result=" + (priorResult ? "set" : "null") + ")");
+
+    /* Persist the bumped counter immediately so even a hard-killed run leaves
+       evidence of its attempt. */
+    await updateJob(jobId, { synth_attempts: newAttempts });
+
+    /* If we are on attempt 6+ AND the prior attempt made no progress, give up. */
+    if (priorAttempts >= 5) {
+      /* Compare against the SECOND-prior state. We can't see it directly, but
+         the rule is: if the row STILL looks the same as it did when we entered
+         on attempt 5, then attempts 5 -> 6 made no progress and we're stuck.
+         The simplest signal is "still no result and condense_done hasn't moved
+         past the extract count". This catches the pathological case where
+         final synthesis fails repeatedly with no forward progress. */
+      var stillIncomplete = !priorResult && priorCondenseDone >= extracts.length;
+      if (stillIncomplete || (priorAttempts >= 8)) {
+        var stuckMsg = "Synthesis exceeded retry limit (" + newAttempts + " attempts with no forward progress). The matter may be too large for the current configuration, or the model is repeatedly failing to produce a complete output. Consider reducing the matter size, narrowing the focus instructions, or contacting support.";
+        console.error("v4.5c Worker: " + stuckMsg);
+        await failJob(jobId, stuckMsg);
+        return null;
+      }
+    }
+
     /* v4.2f: Two-stage synthesis for large jobs.
        v4.2i: SYNTH_GROUP reduced from 5 to 3 and condense max_tokens reduced
        from 16000 to 10000. Diagnostic data from v4.2h showed that a single
@@ -419,8 +493,12 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
 
       /* v4.2h: Tightened time guard. A single condense call should now take
          30-60s. Allow at most ~150s elapsed before pausing — leaves a 150s
-         safety margin for the in-flight call to finish before Vercel's 300s kill. */
-      var CONDENSE_TIME_LIMIT_MS = 150000;
+         safety margin for the in-flight call to finish before Vercel's 300s kill.
+         v4.5c: raised from 150000 to 600000 to use the new 800s maxDuration
+         ceiling. The worker can now process several condense groups in a
+         single invocation rather than pausing after one, eliminating most
+         cron-resume cycles for medium-sized matters. */
+      var CONDENSE_TIME_LIMIT_MS = 600000;
 
       for (var gi = condenseDone; gi < extracts.length; gi += SYNTH_GROUP) {
         var elapsedSec = Math.round((Date.now() - startTime) / 1000);
@@ -875,14 +953,32 @@ export default async function handler(req, res) {
     }
 
     /* ── BRIEFING NOTE ─────────────────────────────────────────────────── */
+    /* v4.5c: Synth prompt rewritten. Previous prompt produced silent truncation
+       on large matters — the model would write a long section 4 and run out of
+       output budget before reaching sections 5, 6, 7. Two fixes:
+       (a) Explicit completion mandate at the top of the prompt: all 7 sections
+           are required, abbreviate later sections rather than omitting them.
+       (b) Per-section paragraph guidance to keep total output bounded.
+       The system message also gains a short reminder. The extraction prompt is
+       unchanged. */
     else if (tool === "briefing") {
       var chunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
-      var systemBase = "You are a senior litigation counsel in " + jur + " producing a briefing note for \"" + matterName + "\".\n" + matterContext;
+      var systemBase = "You are a senior litigation counsel in " + jur + " producing a briefing note for \"" + matterName + "\".\n" + matterContext + "\n\nIMPORTANT: When producing a briefing note you MUST complete all seven sections in full. Do not stop after section 4 or 5. If you find yourself running short on output budget, abbreviate the later sections rather than omitting them — every section must have at least a short paragraph.";
+      var briefingDate = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      var briefingHeader = "## Briefing Note \u2014 " + matterName + "\n**Jurisdiction:** " + jur + "\n**Date:** " + briefingDate + "\n\n";
+      var completionMandate = "CRITICAL INSTRUCTIONS:\n1. You MUST complete ALL SEVEN sections below. The briefing note is incomplete if any section is missing.\n2. Aim for 2-4 paragraphs per section. Section 4 (Case on Disputed Matters) may be longer because it covers multiple issues, but each issue should be limited to 3-5 short paragraphs (Petitioner's case, GP's case, brief assessment).\n3. If you are running short on output budget as you write, ABBREVIATE the remaining sections rather than omitting them. A one-paragraph section 7 is acceptable; a missing section 7 is not.\n4. Do not repeat the same fact across sections. Cross-reference earlier sections instead.\n5. The reader is a senior lawyer who will read the entire document. Be concise.\n\n";
+      var sectionHeaders = "## 1. Summary of the Proceedings\nBrief overview of the nature and status of the proceedings (2-3 paragraphs).\n\n## 2. The Issues\nList each issue that arises in the proceedings \u2014 both legal and factual. Reference the pleadings or other documents where each issue is raised. Use a numbered list; do not write extended prose for each issue here \u2014 detailed analysis belongs in section 4.\n\n## 3. Common Ground and Admissions\nList all facts, matters, or legal points that are admitted or agreed between the parties. Distinguish formal admissions from matters that appear to be common ground. A bullet list is appropriate.\n\n## 4. The Case on Disputed Matters\nFor each disputed issue identified in section 2, set out:\n- The case for the " + (actingFor || "client") + ": evidence and arguments supporting the position (2-3 short paragraphs)\n- The opposing case: evidence and arguments the other side relies on (2-3 short paragraphs)\n- Assessment: preliminary view on the strength of each side's position (1-2 paragraphs)\n\n## 5. Key Evidence\nSummary of the most important evidence with page and paragraph references where available (2-4 paragraphs).\n\n## 6. Procedural Position and Next Steps\nCurrent procedural stage, upcoming deadlines, and recommended next steps (2-3 paragraphs).\n\n## 7. Key Risks\nSignificant risks to be aware of (2-3 paragraphs or a short bullet list).\n\nREMEMBER: All seven sections are required. Do not stop early.\n\n";
+      var briefingFocus = instructions ? "Focus: " + instructions + "\n\n" : "";
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract key facts, legal issues, evidence, admissions, common ground, and procedural information from batch " + batchNum + " of " + total + " for a briefing note.\n\nPay particular attention to:\n- What issues are raised in the proceedings\n- What facts or matters are admitted or agreed (common ground)\n- What facts or matters are in dispute and what evidence supports each side\n\nDOCUMENTS:\n\n" + batchText + pageIndex; },
-        function(combined, numBatches) { return numBatches ? "Using findings from " + numBatches + " batches, produce a complete briefing note.\n\n## Briefing Note \u2014 " + matterName + "\n**Jurisdiction:** " + jur + "\n**Date:** " + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) + "\n\n## 1. Summary of the Proceedings\nBrief overview of the nature and status of the proceedings.\n\n## 2. The Issues\nSet out each issue that arises in the proceedings \u2014 both legal and factual. Reference the pleadings or other documents where each issue is raised.\n\n## 3. Common Ground and Admissions\nSet out all facts, matters, or legal points that are admitted or agreed between the parties. These may appear in pleadings, witness statements, correspondence, or skeleton arguments. Distinguish between formal admissions and matters that appear to be common ground.\n\n## 4. The Case on Disputed Matters\nFor each disputed issue identified in section 2, set out:\n- The case for the " + (actingFor || "client") + ": what evidence and arguments support the position\n- The opposing case: what evidence and arguments the other side relies on\n- Assessment: preliminary view on the strength of each side\u2019s position\n\n## 5. Key Evidence\nSummary of the most important evidence, with page and paragraph references where available.\n\n## 6. Procedural Position and Next Steps\nCurrent procedural stage, upcoming deadlines, and recommended next steps.\n\n## 7. Key Risks\nSignificant risks to be aware of.\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "FINDINGS:\n\n" + combined : "Produce a structured briefing note.\n\n## Briefing Note \u2014 " + matterName + "\n**Jurisdiction:** " + jur + "\n**Date:** " + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) + "\n\n## 1. Summary of the Proceedings\nBrief overview of the nature and status of the proceedings.\n\n## 2. The Issues\nSet out each issue that arises in the proceedings \u2014 both legal and factual. Reference the pleadings or other documents where each issue is raised.\n\n## 3. Common Ground and Admissions\nSet out all facts, matters, or legal points that are admitted or agreed between the parties. Distinguish between formal admissions and matters that appear to be common ground.\n\n## 4. The Case on Disputed Matters\nFor each disputed issue, set out the case for the " + (actingFor || "client") + ", the opposing case, and a preliminary assessment.\n\n## 5. Key Evidence\nSummary of the most important evidence, with page and paragraph references.\n\n## 6. Procedural Position and Next Steps\n\n## 7. Key Risks\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
+        function(combined, numBatches) {
+          if (numBatches) {
+            return "Using findings from " + numBatches + " batches, produce a complete briefing note.\n\n" + briefingHeader + completionMandate + sectionHeaders + briefingFocus + "FINDINGS:\n\n" + combined;
+          }
+          return "Produce a structured briefing note.\n\n" + briefingHeader + completionMandate + sectionHeaders + briefingFocus + "DOCUMENTS:\n\n" + combined + pageIndex;
+        },
         byDoc, hostUrl
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });

@@ -891,6 +891,8 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
         <option>Exhibit</option><option>Case Law</option><option>Statute / Regulation</option>
         <option>Correspondence</option><option>Expert Report</option><option>Trial Bundle</option><option>Other</option>
       </select>
+      <!-- v5.0: Folder picker populated by renderUploadFolderPicker() -->
+      <div id="uploadFolderPicker" style="display:none;margin-bottom:.4rem"></div>
       <div class="upload-zone" id="uploadZone">
         <input type="file" id="fileInput" accept=".pdf,.docx" multiple>
         <div class="uz-icon">📎</div>
@@ -1104,6 +1106,37 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
       <button class="btn-primary" id="precUpSaveBtn" onclick="precUploadSave()">Upload</button>
       <button class="btn-primary" id="precUpSaveCommentaryBtn" onclick="precUpSaveCommentary()" style="display:none">Save &amp; Close</button>
       <button class="btn-secondary" id="precUpSkipBtn" onclick="closePrecUpModal()" style="display:none">Skip</button>
+    </div>
+  </div>
+</div>
+
+<!-- v5.0: Manage folders modal — rename / delete folders in the current matter -->
+<div class="overlay" id="manageFoldersModal" role="dialog" aria-modal="true" aria-label="Manage Folders" style="display:none">
+  <div class="modal" style="max-width:540px;width:95%">
+    <h3>🗂 Manage Folders</h3>
+    <p class="tool-desc">Rename or delete folders in this matter. Deleting a folder does not delete its documents — they become unassigned.</p>
+    <div id="manageFoldersList" style="max-height:420px;overflow-y:auto;margin-top:.5rem"></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal('manageFoldersModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- v5.0: Per-document edit modal — description + folder assignment -->
+<div class="overlay" id="documentEditModal" role="dialog" aria-modal="true" aria-label="Edit Document" style="display:none">
+  <div class="modal" style="max-width:540px;width:95%">
+    <h3>📄 Edit Document</h3>
+    <div style="padding:.5rem .7rem;background:var(--blue-faint);border:1px solid var(--border);border-radius:6px;margin-bottom:.7rem">
+      <div style="font-size:.9rem;font-weight:700;color:var(--text-dark);word-break:break-word" id="docEditName"></div>
+      <div style="font-size:.72rem;color:var(--text-faint);font-weight:500;margin-top:.15rem" id="docEditType"></div>
+    </div>
+    <label class="f-label">Description <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-faint)">(optional — helps tools understand this document)</span></label>
+    <textarea id="docEditDescription" placeholder="e.g. First affidavit of John Smith in support of the injunction application" style="width:100%;padding:.6rem .75rem;border:1.5px solid var(--border);border-radius:6px;font-family:'Source Sans 3',sans-serif;font-size:.88rem;min-height:70px;resize:vertical;background:var(--white)"></textarea>
+    <label class="f-label" style="margin-top:.75rem">Folders <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-faint)">(click to assign — a document can belong to multiple folders)</span></label>
+    <div id="docEditFolderChips" style="padding:.3rem 0;min-height:30px"></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal('documentEditModal')">Cancel</button>
+      <button class="btn-primary" id="docEditSaveBtn" onclick="saveDocumentEdit()">Save</button>
     </div>
   </div>
 </div>

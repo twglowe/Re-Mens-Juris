@@ -147,6 +147,20 @@ function filterExcluded(chunks, excludeDocNames) {
   return chunks.filter(function(c) { return excludeDocNames.indexOf(c.document_name) === -1; });
 }
 
+/* v5.0: Filter to ONLY included documents (folder filter from frontend).
+   Empty/null = no filter (all documents included). Applied in addition to
+   filterExcluded; the two compose. The frontend resolves selected folders
+   to a list of document names and passes them in p.includeDocNames. */
+function filterIncluded(chunks, includeDocNames) {
+  if (!includeDocNames || includeDocNames.length === 0) return chunks;
+  return chunks.filter(function(c) { return includeDocNames.indexOf(c.document_name) !== -1; });
+}
+
+/* v5.0: Apply both filters in one call. Used by every tool's chunk fetch. */
+function applyDocFilters(chunks, excludeDocNames, includeDocNames) {
+  return filterIncluded(filterExcluded(chunks, excludeDocNames), includeDocNames);
+}
+
 function chunksToDocMap(chunks) {
   var byDoc = {};
   for (var i = 0; i < chunks.length; i++) {
@@ -747,6 +761,9 @@ export default async function handler(req, res) {
     var matterName = p.matterName || "";
     var actingFor = p.actingFor || "";
     var excludeDocNames = p.excludeDocNames || [];
+    /* v5.0: includeDocNames is the folder filter — frontend resolves selected
+       folders to document names and passes them here. Empty = no filter. */
+    var includeDocNames = p.includeDocNames || [];
 
     var matterContext = [
       p.matterNature ? "Nature of the dispute: " + p.matterNature : "",
@@ -783,7 +800,7 @@ export default async function handler(req, res) {
 
     /* ── PROPOSITION EVIDENCE FINDER ───────────────────────────────────── */
     if (tool === "proposition") {
-      var chunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
+      var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
       var systemBase = "You are a senior litigation counsel in " + jur + " conducting an evidence assessment for the matter \"" + matterName + "\".\n" + matterContext;
@@ -798,7 +815,7 @@ export default async function handler(req, res) {
 
     /* ── INCONSISTENCY TRACKER ─────────────────────────────────────────── */
     else if (tool === "inconsistency") {
-      var chunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
+      var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var anchorDocs = {};
       var otherDocs = {};
@@ -874,7 +891,7 @@ export default async function handler(req, res) {
 
     /* ── CHRONOLOGY ────────────────────────────────────────────────────── */
     else if (tool === "chronology") {
-      var chunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
+      var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
 
@@ -898,7 +915,7 @@ export default async function handler(req, res) {
 
     /* ── DRAMATIS PERSONAE ─────────────────────────────────────────────── */
     else if (tool === "persons") {
-      var chunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
+      var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
       var systemBase = "You are a senior litigation counsel compiling a dramatis personae for \"" + matterName + "\" in " + jur + ".\n" + matterContext;
@@ -913,7 +930,7 @@ export default async function handler(req, res) {
 
     /* ── ISSUE TRACKER ─────────────────────────────────────────────────── */
     else if (tool === "issues") {
-      var chunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
+      var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
       var systemBase = "You are a senior litigation counsel in " + jur + " mapping issues for \"" + matterName + "\".\n" + matterContext;
@@ -928,7 +945,7 @@ export default async function handler(req, res) {
 
     /* ── CITATION CHECKER ──────────────────────────────────────────────── */
     else if (tool === "citations") {
-      var allChunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
+      var allChunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var skeletonChunks, caselawChunks;
       if (p.citationSource) {
         skeletonChunks = allChunks.filter(function(c) { return c.document_name === p.citationSource; });
@@ -962,7 +979,7 @@ export default async function handler(req, res) {
        The system message also gains a short reminder. The extraction prompt is
        unchanged. */
     else if (tool === "briefing") {
-      var chunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
+      var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
       var systemBase = "You are a senior litigation counsel in " + jur + " producing a briefing note for \"" + matterName + "\".\n" + matterContext + "\n\nIMPORTANT: When producing a briefing note you MUST complete all seven sections in full. Do not stop after section 4 or 5. If you find yourself running short on output budget, abbreviate the later sections rather than omitting them — every section must have at least a short paragraph.";
@@ -1055,7 +1072,7 @@ export default async function handler(req, res) {
         }
       } catch (e) { console.log("Past drafts fetch skipped:", e.message); }
 
-      var chunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
+      var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
 
       var headingInstruction = heading && (heading.court || heading.party1)
@@ -1082,7 +1099,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: false, error: "No issues selected" });
       }
 
-      var chunks = filterExcluded(await getAllChunks(matterId), excludeDocNames);
+      var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
 

@@ -3,6 +3,14 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
+/* v5.0: Folders for the current matter. Loaded on matter select. Each entry:
+   { id, name, sort_order, created_at, document_count }. */
+var currentFolders=[];
+/* v5.0: Folder IDs selected in the upload modal for the current upload batch. */
+var uploadSelectedFolderIds=[];
+/* v5.0: Folder IDs being edited in the per-document edit modal. */
+var docEditSelectedFolderIds=[];
+var docEditCurrentId=null;
 var libraryData={caseTypes:[],subcats:[],docTypes:[],precedents:[],sections:[]};
 var selectedPrecedentId=null;
 var draftHeading={court:'',caseNo:'',party1:'',party1Role:'',party2:'',party2Role:'',docTitle:''};
@@ -169,6 +177,7 @@ async function selectMatter(id){
   switchTab('chat');
   clearMessages();
   await loadDocuments(id);
+  await loadFolders(id);
   await loadHistory(id);
   toolHistoryCache[id]={};
   sysMsg('Matter loaded: **'+currentMatter.name+'** · '+currentMatter.jurisdiction+(currentMatter.acting_for?' · Acting for: '+currentMatter.acting_for:''));
@@ -383,12 +392,43 @@ async function saveHistory(q,a,toolName){
 
 /* ── DOCUMENTS ───────────────────────────────────────────────────────────── */
 async function loadDocuments(matterId){try{var d=await api('/api/documents?matter_id='+matterId);documents=d&&d.documents?d.documents:[];renderDocs();}catch(e){documents=[];renderDocs();}}
+/* v5.0: Render docs with folder chips and a "+ classify" affordance for
+   unassigned docs. Clicking a chip OR the "+ classify" opens the per-document
+   edit modal where the user can change folder assignments and edit the
+   description. Also shows a "Manage folders" button above the list. */
 function renderDocs(){
   var list=document.getElementById('docsList');
   if(!currentMatter){list.innerHTML='<div class="docs-empty-msg">Select a matter to see documents.</div>';return;}
-  if(!documents.length){list.innerHTML='<div class="docs-empty-msg">No documents yet.<br>Upload PDFs above.</div>';return;}
+  var header='<div class="docs-header-row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;gap:.4rem">'
+    +'<button class="btn-dl" onclick="openManageFoldersModal()" style="font-size:.74rem;padding:.28rem .55rem" title="Rename or delete folders">🗂 Manage folders</button>'
+    +(currentFolders.length?'<span style="font-size:.7rem;color:var(--text-faint);font-weight:500">'+currentFolders.length+' folder'+(currentFolders.length!==1?'s':'')+'</span>':'')
+    +'</div>';
+  if(!documents.length){list.innerHTML=header+'<div class="docs-empty-msg">No documents yet.<br>Upload PDFs above.</div>';return;}
   var icons={'Pleading':'📋','Skeleton Argument':'📝','Witness Statement':'👤','Exhibit':'📎','Case Law':'⚖️','Statute / Regulation':'📖','Correspondence':'✉️','Expert Report':'🔬','Trial Bundle':'📦','Other':'📄'};
-  list.innerHTML=documents.map(function(doc){return '<div class="doc-item"><span class="doc-icon">'+(icons[doc.doc_type]||'📄')+'</span><div class="doc-info"><div class="doc-name" title="'+esc(doc.name)+'">'+esc(doc.name)+'</div><div class="doc-meta">'+esc(doc.doc_type)+(doc.chunk_count?' · '+doc.chunk_count+' passages':'')+'</div></div><button onclick="deleteDoc(\''+doc.id+'\',\''+esc(doc.name)+'\')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.1rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Remove">×</button></div>';}).join('');
+  /* Build a quick lookup from folder id → folder name */
+  var folderById={};currentFolders.forEach(function(f){folderById[f.id]=f;});
+  list.innerHTML=header+documents.map(function(doc){
+    var folderIds=doc.folder_ids||[];
+    var chipsHtml='';
+    if(folderIds.length){
+      chipsHtml=folderIds.map(function(fid){
+        var f=folderById[fid];
+        if(!f)return '';
+        return '<span class="folder-chip" onclick="event.stopPropagation();openDocumentEditModal(\''+doc.id+'\')" title="Click to edit classification" style="display:inline-block;font-size:.68rem;font-weight:600;padding:.1rem .45rem;margin:.15rem .2rem 0 0;border-radius:10px;background:var(--blue-pale);color:var(--blue);border:1px solid var(--border);cursor:pointer">'+esc(f.name)+'</span>';
+      }).join('');
+    }else{
+      chipsHtml='<span class="folder-classify-btn" onclick="event.stopPropagation();openDocumentEditModal(\''+doc.id+'\')" title="Assign to a folder" style="display:inline-block;font-size:.68rem;font-weight:600;padding:.1rem .45rem;margin-top:.15rem;border-radius:10px;background:var(--off-white);color:var(--text-faint);border:1px dashed var(--border-strong);cursor:pointer">+ classify</span>';
+    }
+    var descHtml=doc.description?'<div class="doc-desc" style="font-size:.68rem;color:var(--text-light);margin-top:.08rem;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(doc.description)+'">'+esc(doc.description)+'</div>':'';
+    return '<div class="doc-item"><span class="doc-icon">'+(icons[doc.doc_type]||'📄')+'</span><div class="doc-info">'
+      +'<div class="doc-name" title="'+esc(doc.name)+'">'+esc(doc.name)+'</div>'
+      +'<div class="doc-meta">'+esc(doc.doc_type)+(doc.chunk_count?' · '+doc.chunk_count+' passages':'')+'</div>'
+      +descHtml
+      +'<div class="doc-chips">'+chipsHtml+'</div>'
+      +'</div>'
+      +'<button onclick="deleteDoc(\''+doc.id+'\',\''+esc(doc.name)+'\')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.1rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Remove">×</button>'
+      +'</div>';
+  }).join('');
 }
 async function deleteDoc(id,name){if(!confirm('Remove "'+name+'"?'))return;try{await api('/api/documents?id='+id,'DELETE');await loadDocuments(currentMatter.id);await loadMatters();showToast('Document removed');}catch(e){showToast('Error: '+e.message);}}
 
@@ -421,11 +461,15 @@ async function uploadFiles(files){
       if(!fullText||fullText.trim().length<50){errEl.textContent='No readable text in '+file.name+'. '+(isPdf?'Try OCR at ilovepdf.com first.':'The document may be empty or corrupted.');errEl.classList.add('on');continue;}
       var unitLabel=isDocx?'block(s)':'page(s)';
       prog.textContent='Uploading: '+file.name+' ('+Math.round(fullText.length/1024)+'KB text, '+pages.length+' '+unitLabel+')…';
-      var d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,pageTexts:pages,docType:docType});
+      var d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,pageTexts:pages,docType:docType,folderIds:uploadSelectedFolderIds.slice()});
       if(d)showToast('\u2713 '+file.name+' — '+d.chunks+' passages indexed'+(d.pageAware?' (page-aware)':''));
     }catch(e){errEl.textContent='Failed: '+file.name+' — '+e.message;errEl.classList.add('on');}
   }
   prog.classList.remove('on');await loadDocuments(currentMatter.id);await loadMatters();
+  /* v5.0: Clear the upload folder selection after a batch and refresh the
+     folder picker (document counts may have changed). */
+  uploadSelectedFolderIds=[];
+  await loadFolders(currentMatter.id);
 }
 /* v3.2: Extract text per page for page-aware chunking */
 async function extractPdfText(file){
@@ -450,6 +494,225 @@ async function extractDocxText(file){
   var text=(result&&result.value)||'';
   return [{page:1,text:text}];
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v5.0 — DOCUMENT FOLDERS (categorisation)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Load the current matter's folders and refresh the upload picker UI. */
+async function loadFolders(matterId){
+  try{
+    var d=await api('/api/folders?matter_id='+matterId);
+    currentFolders=(d&&d.folders)?d.folders:[];
+  }catch(e){currentFolders=[];console.error('loadFolders:',e);}
+  renderUploadFolderPicker();
+  /* Re-render docs so the chips reflect the latest folder names */
+  renderDocs();
+}
+
+/* Render the chip-style folder picker above the upload drop zone. */
+function renderUploadFolderPicker(){
+  var host=document.getElementById('uploadFolderPicker');
+  if(!host)return;
+  if(!currentMatter){host.innerHTML='';host.style.display='none';return;}
+  host.style.display='';
+  var chipsHtml=currentFolders.map(function(f){
+    var on=uploadSelectedFolderIds.indexOf(f.id)!==-1;
+    return '<span class="upload-folder-chip'+(on?' on':'')+'" data-fid="'+f.id+'" onclick="toggleUploadFolder(\''+f.id+'\')" style="display:inline-block;font-size:.72rem;font-weight:600;padding:.2rem .55rem;margin:.15rem .2rem 0 0;border-radius:11px;cursor:pointer;border:1.5px solid '+(on?'var(--blue)':'var(--border)')+';background:'+(on?'var(--blue-pale)':'var(--white)')+';color:'+(on?'var(--blue)':'var(--text-mid)')+'">'+esc(f.name)+'</span>';
+  }).join('');
+  var addBtn='<span class="upload-folder-chip chip-add" onclick="showNewFolderInput()" style="display:inline-block;font-size:.72rem;font-weight:700;padding:.2rem .55rem;margin:.15rem .2rem 0 0;border-radius:11px;cursor:pointer;border:1.5px dashed var(--border-strong);background:var(--off-white);color:var(--text-faint)">+ new folder</span>';
+  host.innerHTML='<div class="focus-label" style="margin-bottom:.25rem">Classify upload <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-faint)">(optional — applies to all files in this batch)</span></div>'
+    +'<div id="uploadFolderChipRow" style="margin-bottom:.4rem">'+chipsHtml+addBtn+'</div>'
+    +'<div id="newFolderInputRow" style="display:none;margin-bottom:.5rem">'
+    +'<div style="display:flex;gap:.3rem;align-items:center">'
+    +'<input type="text" id="newFolderNameInput" list="newFolderSuggestions" placeholder="Folder name…" style="flex:1;padding:.35rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;background:var(--white)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();createFolderInline();}else if(event.key===\'Escape\'){event.preventDefault();hideNewFolderInput();}">'
+    +'<datalist id="newFolderSuggestions"></datalist>'
+    +'<button class="btn-dl" onclick="createFolderInline()" style="font-size:.72rem;padding:.28rem .55rem">Add</button>'
+    +'<button class="btn-dl" onclick="hideNewFolderInput()" style="font-size:.72rem;padding:.28rem .55rem;background:var(--off-white);color:var(--text-faint)">Cancel</button>'
+    +'</div>'
+    +'</div>';
+}
+
+function toggleUploadFolder(folderId){
+  var idx=uploadSelectedFolderIds.indexOf(folderId);
+  if(idx===-1)uploadSelectedFolderIds.push(folderId);
+  else uploadSelectedFolderIds.splice(idx,1);
+  renderUploadFolderPicker();
+}
+
+async function showNewFolderInput(){
+  var row=document.getElementById('newFolderInputRow');
+  if(!row)return;
+  row.style.display='';
+  var input=document.getElementById('newFolderNameInput');
+  if(input){input.value='';setTimeout(function(){input.focus();},40);}
+  /* Populate suggestions from per-user defaults */
+  try{
+    var d=await api('/api/folders?action=defaults');
+    var defaults=(d&&d.defaults)||[];
+    /* Filter out names that already exist in this matter */
+    var existing={};currentFolders.forEach(function(f){existing[f.name.toLowerCase()]=true;});
+    var list=document.getElementById('newFolderSuggestions');
+    if(list){
+      list.innerHTML=defaults.filter(function(n){return !existing[String(n).toLowerCase()];}).map(function(n){return '<option value="'+esc(n)+'">';}).join('');
+    }
+  }catch(e){/* defaults are optional — silent */}
+}
+
+function hideNewFolderInput(){
+  var row=document.getElementById('newFolderInputRow');
+  if(row)row.style.display='none';
+}
+
+async function createFolderInline(){
+  var input=document.getElementById('newFolderNameInput');
+  if(!input)return;
+  var name=input.value.trim();
+  if(!name){showToast('Folder name required');return;}
+  if(!currentMatter){showToast('Select a matter first');return;}
+  /* Client-side duplicate guard */
+  var lower=name.toLowerCase();
+  for(var i=0;i<currentFolders.length;i++){
+    if(currentFolders[i].name.toLowerCase()===lower){
+      showToast('Folder "'+name+'" already exists');
+      return;
+    }
+  }
+  try{
+    var d=await api('/api/folders','POST',{matter_id:currentMatter.id,name:name});
+    if(d&&d.folder){
+      currentFolders.push(d.folder);
+      /* Auto-select the new folder for the current upload batch */
+      uploadSelectedFolderIds.push(d.folder.id);
+      hideNewFolderInput();
+      renderUploadFolderPicker();
+      renderDocs();
+      showToast('Folder "'+name+'" created');
+    }
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+/* ── Per-document edit modal ─────────────────────────────────────────────── */
+
+function openDocumentEditModal(docId){
+  var doc=documents.find(function(d){return d.id===docId;});
+  if(!doc){showToast('Document not found');return;}
+  docEditCurrentId=docId;
+  docEditSelectedFolderIds=(doc.folder_ids||[]).slice();
+  document.getElementById('docEditName').textContent=doc.name;
+  document.getElementById('docEditType').textContent=doc.doc_type||'';
+  document.getElementById('docEditDescription').value=doc.description||'';
+  renderDocEditFolderChips();
+  openModal('documentEditModal');
+}
+
+function renderDocEditFolderChips(){
+  var host=document.getElementById('docEditFolderChips');
+  if(!host)return;
+  if(!currentFolders.length){
+    host.innerHTML='<div style="font-size:.78rem;color:var(--text-faint);font-style:italic;padding:.3rem 0">No folders yet. Create one from the upload area, or use Manage folders.</div>';
+    return;
+  }
+  host.innerHTML=currentFolders.map(function(f){
+    var on=docEditSelectedFolderIds.indexOf(f.id)!==-1;
+    return '<span class="doc-edit-chip'+(on?' on':'')+'" data-fid="'+f.id+'" onclick="toggleDocEditFolder(\''+f.id+'\')" style="display:inline-block;font-size:.78rem;font-weight:600;padding:.25rem .6rem;margin:.2rem .25rem 0 0;border-radius:12px;cursor:pointer;border:1.5px solid '+(on?'var(--blue)':'var(--border)')+';background:'+(on?'var(--blue-pale)':'var(--white)')+';color:'+(on?'var(--blue)':'var(--text-mid)')+'">'+esc(f.name)+'</span>';
+  }).join('');
+}
+
+function toggleDocEditFolder(folderId){
+  var idx=docEditSelectedFolderIds.indexOf(folderId);
+  if(idx===-1)docEditSelectedFolderIds.push(folderId);
+  else docEditSelectedFolderIds.splice(idx,1);
+  renderDocEditFolderChips();
+}
+
+async function saveDocumentEdit(){
+  if(!docEditCurrentId){closeModal('documentEditModal');return;}
+  var desc=document.getElementById('docEditDescription').value;
+  var btn=document.getElementById('docEditSaveBtn');
+  if(btn)btn.disabled=true;
+  try{
+    await api('/api/documents?id='+docEditCurrentId,'PATCH',{description:desc,folder_ids:docEditSelectedFolderIds.slice()});
+    closeModal('documentEditModal');
+    docEditCurrentId=null;
+    docEditSelectedFolderIds=[];
+    await loadDocuments(currentMatter.id);
+    await loadFolders(currentMatter.id);
+    showToast('Document updated');
+  }catch(e){
+    showToast('Error: '+e.message);
+  }finally{
+    if(btn)btn.disabled=false;
+  }
+}
+
+/* ── Manage folders modal ────────────────────────────────────────────────── */
+
+function openManageFoldersModal(){
+  if(!currentMatter){showToast('Select a matter first');return;}
+  renderManageFoldersList();
+  openModal('manageFoldersModal');
+}
+
+function renderManageFoldersList(){
+  var host=document.getElementById('manageFoldersList');
+  if(!host)return;
+  if(!currentFolders.length){
+    host.innerHTML='<div style="font-size:.82rem;color:var(--text-faint);font-style:italic;padding:.75rem 0;text-align:center">No folders yet. Create one from the upload area in the Documents panel.</div>';
+    return;
+  }
+  host.innerHTML=currentFolders.map(function(f){
+    return '<div class="manage-folder-row" data-fid="'+f.id+'" style="display:flex;gap:.4rem;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--border)">'
+      +'<input type="text" value="'+esc(f.name)+'" data-orig="'+esc(f.name)+'" id="mf-name-'+f.id+'" style="flex:1;padding:.35rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-size:.88rem;background:var(--white)">'
+      +'<span style="font-size:.7rem;color:var(--text-faint);font-weight:600;min-width:42px;text-align:right">'+(f.document_count||0)+' doc'+((f.document_count||0)!==1?'s':'')+'</span>'
+      +'<button class="btn-dl" onclick="renameFolderFromModal(\''+f.id+'\')" style="font-size:.72rem;padding:.28rem .55rem">Rename</button>'
+      +'<button class="btn-dl" onclick="deleteFolderFromModal(\''+f.id+'\',\''+esc(f.name)+'\')" style="font-size:.72rem;padding:.28rem .55rem;background:#fdf0f0;color:var(--error);border-color:#f0b0b0">Delete</button>'
+      +'</div>';
+  }).join('');
+}
+
+async function renameFolderFromModal(folderId){
+  var input=document.getElementById('mf-name-'+folderId);
+  if(!input)return;
+  var newName=input.value.trim();
+  var orig=input.getAttribute('data-orig')||'';
+  if(!newName){showToast('Folder name required');input.value=orig;return;}
+  if(newName===orig){showToast('No change');return;}
+  try{
+    await api('/api/folders?id='+folderId,'PATCH',{name:newName});
+    /* Update in-memory folder and refresh */
+    var f=currentFolders.find(function(x){return x.id===folderId;});
+    if(f)f.name=newName;
+    renderManageFoldersList();
+    renderDocs();
+    renderUploadFolderPicker();
+    showToast('Folder renamed');
+  }catch(e){
+    showToast('Error: '+e.message);
+    input.value=orig;
+  }
+}
+
+async function deleteFolderFromModal(folderId,folderName){
+  var f=currentFolders.find(function(x){return x.id===folderId;});
+  var count=f?(f.document_count||0):0;
+  var msg='Delete folder "'+folderName+'"?';
+  if(count>0)msg+='\n\n'+count+' document'+(count!==1?'s':'')+' currently assigned to this folder will be un-classified (the documents themselves will NOT be deleted).';
+  if(!confirm(msg))return;
+  try{
+    await api('/api/folders?id='+folderId,'DELETE');
+    /* Remove from in-memory state and clean selections */
+    currentFolders=currentFolders.filter(function(x){return x.id!==folderId;});
+    uploadSelectedFolderIds=uploadSelectedFolderIds.filter(function(id){return id!==folderId;});
+    docEditSelectedFolderIds=docEditSelectedFolderIds.filter(function(id){return id!==folderId;});
+    renderManageFoldersList();
+    renderUploadFolderPicker();
+    /* Reload documents so folder_ids on each doc reflect the delete */
+    await loadDocuments(currentMatter.id);
+    showToast('Folder deleted');
+  }catch(e){showToast('Error: '+e.message);}
+}
+
 /* ── CHAT ─────────────────────────────────────────────────────────────────── */
 async function sendMessage(){
   if(isLoading||!currentMatter)return;

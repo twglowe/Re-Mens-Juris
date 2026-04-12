@@ -1,7 +1,18 @@
-/* EX LIBRIS JURIS v3.4 — jobs.js
+/* EX LIBRIS JURIS v4.5c — jobs.js
    Job status polling endpoint.
    GET /api/jobs?id=xxx        — single job status (for polling)
-   GET /api/jobs?matterId=xxx  — all recent jobs for a matter (for resume on page load) */
+   GET /api/jobs?matterId=xxx  — all recent jobs for a matter (for resume on page load)
+
+   v4.5c CHANGES (12 Apr 2026):
+   1. Single-job SELECT now includes condensed_extracts, condense_done, extracts,
+      and synth_attempts so the frontend polling loop can show condense progress
+      and retry counts. condensed_extracts and extracts are arrays — to save
+      bandwidth, we expose only their lengths (condensedCount, extractsCount),
+      not the array contents themselves. condense_done and synth_attempts are
+      small integers and are exposed directly.
+   2. The matter-list endpoint is unchanged — those fields are not needed for
+      the resume-on-load list.
+   3. No changes to auth, structure, or anything else. */
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -31,12 +42,16 @@ export default async function handler(req, res) {
   if (id) {
     const { data: job, error } = await supabase
       .from("tool_jobs")
-      .select("id, matter_id, tool_name, status, result, error, batches_total, batches_done, input_tokens, output_tokens, cost_usd, created_at, started_at, completed_at, instructions")
+      .select("id, matter_id, tool_name, status, result, error, batches_total, batches_done, input_tokens, output_tokens, cost_usd, created_at, started_at, completed_at, instructions, condensed_extracts, condense_done, extracts, synth_attempts")
       .eq("id", id)
       .eq("user_id", user.id)
       .single();
 
     if (error || !job) return res.status(404).json({ error: "Job not found" });
+
+    /* v4.5c: expose array lengths rather than arrays themselves to save bandwidth */
+    var extractsCount = (job.extracts && Array.isArray(job.extracts)) ? job.extracts.length : 0;
+    var condensedCount = (job.condensed_extracts && Array.isArray(job.condensed_extracts)) ? job.condensed_extracts.length : 0;
 
     return res.status(200).json({
       id: job.id,
@@ -47,6 +62,11 @@ export default async function handler(req, res) {
       error: (job.status === "failed") ? job.error : null,
       batchesTotal: job.batches_total,
       batchesDone: job.batches_done,
+      /* v4.5c: condense progress fields */
+      extractsCount: extractsCount,
+      condensedCount: condensedCount,
+      condenseDone: job.condense_done || 0,
+      synthAttempts: job.synth_attempts || 0,
       usage: {
         inputTokens: job.input_tokens,
         outputTokens: job.output_tokens,

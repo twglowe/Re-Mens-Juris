@@ -188,7 +188,8 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
 /* Starts polling /api/jobs for a single job. Handles status updates, progress
    bar, worker re-firing on paused/synthesising, completion, failure, and the
    60-minute safety stop. Used both by new tool runs and by resumeInProgressJobs
-   on matter reload. All v4.2k over-firing protection preserved. */
+   on matter reload. All v4.2k over-firing protection preserved.
+   v4.5c: Condense progress and synth attempt count surfaced in the label. */
 function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progressWrap,progressLabel,progressFill,typing){
   var pollCount=0;
   /* v4.2k: Frontend over-firing fix. Track last fire status + time. Only re-fire
@@ -203,6 +204,8 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
       pollCount++;
       var j=await api('/api/jobs?id='+jobId);
       if(!j)return;
+      /* v4.5c: build attempt suffix once — used in several status labels. */
+      var attemptSuffix=(j.synthAttempts&&j.synthAttempts>=2)?' (attempt '+j.synthAttempts+')':'';
       if(j.batchesTotal>0&&j.batchesDone>0){
         var pct=Math.min(10+Math.round((j.batchesDone/j.batchesTotal)*80),90);
         progressFill.style.width=pct+'%';
@@ -228,11 +231,28 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
       if(j.status==='paused'||j.status==='synthesising'){
         /* v4.2e: Worker paused or ready for synthesis — re-fire worker from frontend */
         /* v4.2k: Only fire if status changed since last fire OR cooldown elapsed */
+        /* v4.5c: Refined synthesising labels — show condense progress, then
+           "Producing final document" once condense is complete. */
         if(j.status==='synthesising'){
-          progressLabel.textContent='Synthesising '+toolLabel+'\u2026';
-          progressFill.style.width='95%';
+          var extractsCount=j.extractsCount||0;
+          var condenseDone=j.condenseDone||0;
+          var condensedCount=j.condensedCount||0;
+          if(extractsCount>0&&condenseDone<extractsCount){
+            /* Still in condense phase — show X of Y. condenseDone counts in
+               groups of 3 and may briefly equal or exceed extractsCount on the
+               final partial group; clamp the display so it never reads "X of X"
+               while still working on the last group. */
+            var displayDone=Math.min(condensedCount*3,extractsCount);
+            progressLabel.textContent='Condensing '+toolLabel+'\u2026 '+displayDone+' of '+extractsCount+attemptSuffix;
+            /* Map condense progress between 90% and 95% */
+            var condensePct=90+Math.round((displayDone/extractsCount)*5);
+            progressFill.style.width=condensePct+'%';
+          }else{
+            progressLabel.textContent='Producing final '+toolLabel+'\u2026'+attemptSuffix;
+            progressFill.style.width='95%';
+          }
         }else{
-          progressLabel.textContent='Resuming '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
+          progressLabel.textContent='Resuming '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal+attemptSuffix;
         }
         var nowMs=Date.now();
         var statusChanged=(j.status!==lastFireStatus);

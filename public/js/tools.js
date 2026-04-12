@@ -74,6 +74,113 @@ function openTool(t){
   if(!isNew)return;
   promptTool(t);
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+   v5.0 — FOLDER FILTER for tool launcher
+   ───────────────────────────────────────────────────────────────────────────
+   The folder filter is the primary way to scope a tool run. It composes with
+   the existing per-document exclude filter: folder selection produces an
+   "include" set, then any per-doc boxes the user unticks further narrow it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Renders the folder filter section. Always shows "All documents" at the top,
+   then "Unassigned" (if any unclassified docs exist), then each folder.
+   Returns '' if the matter has neither folders nor unassigned documents —
+   which effectively never happens once any document exists, because every
+   document is at least in one of those buckets. */
+function folderFilterHtml(){
+  if(!documents||!documents.length)return '';
+  var folders=(typeof currentFolders!=='undefined'&&currentFolders)?currentFolders:[];
+  /* Count unassigned documents */
+  var unassignedCount=0;
+  documents.forEach(function(d){if(!d.folder_ids||!d.folder_ids.length)unassignedCount++;});
+  /* If there are no folders at all AND nothing to filter by, skip */
+  if(!folders.length&&unassignedCount===documents.length)return '';
+  var html='<details class="folder-filter-details" open style="margin-top:.85rem;border:1.5px solid var(--blue);border-radius:6px;padding:.4rem .6rem;background:var(--blue-pale)">'
+    +'<summary style="font-size:.78rem;font-weight:700;color:var(--blue);cursor:pointer;letter-spacing:.04em;text-transform:uppercase">Folder Filter <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-mid)">(focus the tool on specific folders)</span></summary>'
+    +'<div style="margin-top:.5rem">'
+    +'<label class="anchor-item" style="font-size:.82rem;font-weight:700;border-bottom:1px dashed var(--border);padding-bottom:.3rem;margin-bottom:.3rem"><input type="radio" name="folderFilterMode" value="all" checked onchange="folderFilterChanged()"> All documents <span style="color:var(--text-faint);font-size:.72rem;font-weight:500">('+documents.length+')</span></label>'
+    +'<label class="anchor-item" style="font-size:.82rem"><input type="checkbox" class="folder-filter-cb" value="__unassigned" data-ff="unassigned" onchange="folderFilterChanged()"'+(unassignedCount?'':' disabled')+'> Unassigned <span style="color:var(--text-faint);font-size:.72rem">('+unassignedCount+')</span></label>';
+  folders.forEach(function(f){
+    html+='<label class="anchor-item" style="font-size:.82rem"><input type="checkbox" class="folder-filter-cb" value="'+esc(f.id)+'" data-ff="folder" onchange="folderFilterChanged()"> '+esc(f.name)+' <span style="color:var(--text-faint);font-size:.72rem">('+(f.document_count||0)+')</span></label>';
+  });
+  html+='</div></details>';
+  return html;
+}
+
+/* Read folder filter state. Returns:
+     { mode: 'all' }  — the "All documents" radio is selected
+     { mode: 'subset', folderIds: [...], includeUnassigned: bool }
+   If subset mode but nothing is ticked, behaves like 'all'. */
+function getFolderFilterState(){
+  var all=document.querySelector('input[name="folderFilterMode"][value="all"]');
+  if(all&&all.checked)return {mode:'all'};
+  var folderIds=[];var includeUnassigned=false;
+  document.querySelectorAll('.folder-filter-cb').forEach(function(cb){
+    if(!cb.checked)return;
+    if(cb.getAttribute('data-ff')==='unassigned')includeUnassigned=true;
+    else folderIds.push(cb.value);
+  });
+  if(!folderIds.length&&!includeUnassigned)return {mode:'all'};
+  return {mode:'subset',folderIds:folderIds,includeUnassigned:includeUnassigned};
+}
+
+/* Walk the documents array and return the names matching the folder filter.
+   Returns null when mode is 'all' (meaning: no include filter, let the worker
+   process everything subject only to excludes). */
+function resolveIncludeDocNames(){
+  var state=getFolderFilterState();
+  if(state.mode==='all')return null;
+  var wantedFolders={};state.folderIds.forEach(function(id){wantedFolders[id]=true;});
+  var names=[];
+  documents.forEach(function(d){
+    var fids=d.folder_ids||[];
+    if(!fids.length){
+      if(state.includeUnassigned)names.push(d.name);
+      return;
+    }
+    for(var i=0;i<fids.length;i++){
+      if(wantedFolders[fids[i]]){names.push(d.name);return;}
+    }
+  });
+  return names;
+}
+
+/* When the folder filter changes, sync the per-document checkbox list: tick
+   docs that are in the include set, untick the rest. This lets the user then
+   un-tick individual stragglers in the per-doc list below. */
+function folderFilterChanged(){
+  /* If the "All documents" radio was changed, un-tick all folder checkboxes
+     so the state is internally consistent. */
+  var all=document.querySelector('input[name="folderFilterMode"][value="all"]');
+  if(all&&all.checked){
+    document.querySelectorAll('.folder-filter-cb').forEach(function(cb){cb.checked=false;});
+    /* All docs ticked */
+    document.querySelectorAll('#docFilterDocs input[type="checkbox"]').forEach(function(cb){cb.checked=true;});
+    return;
+  }
+  /* A folder checkbox was ticked — flip the radio off so the user sees the
+     state transition. The radio is only a visual placeholder once any folder
+     is ticked; we re-arm it if everything becomes unticked. */
+  var anyTicked=false;
+  document.querySelectorAll('.folder-filter-cb').forEach(function(cb){if(cb.checked)anyTicked=true;});
+  if(!anyTicked){
+    if(all)all.checked=true;
+    document.querySelectorAll('#docFilterDocs input[type="checkbox"]').forEach(function(cb){cb.checked=true;});
+    return;
+  }else{
+    if(all)all.checked=false;
+  }
+  var names=resolveIncludeDocNames();
+  if(names===null){
+    document.querySelectorAll('#docFilterDocs input[type="checkbox"]').forEach(function(cb){cb.checked=true;});
+    return;
+  }
+  var wanted={};names.forEach(function(n){wanted[n]=true;});
+  document.querySelectorAll('#docFilterDocs input[type="checkbox"]').forEach(function(cb){
+    cb.checked=!!wanted[cb.value];
+  });
+}
+
 /* v3.4: Document filter — exclude documents by name or type from tool runs */
 function docFilterHtml(){
   if(!documents||!documents.length)return '';
@@ -115,7 +222,7 @@ function promptTool(t){
   pendingTool=t;
   var cfg=toolDefs[t];
   document.getElementById('toolModalTitle').textContent=cfg.title;
-  document.getElementById('toolModalBody').innerHTML=cfg.body()+docFilterHtml();
+  document.getElementById('toolModalBody').innerHTML=cfg.body()+folderFilterHtml()+docFilterHtml();
   document.getElementById('toolModal').style.display='flex';
 }
 function getActiveMessagesArea(){
@@ -145,6 +252,9 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   /* v3.4: Collect document exclusions from filter */
   var excludeDocNames=getExcludedDocNames();
   var excludeDocTypes=getExcludedDocTypes();
+  /* v5.0: Resolve folder filter selection → list of document names to include.
+     Returns null when "All documents" is selected, meaning no include filter. */
+  var includeDocNames=resolveIncludeDocNames();
   closeModal('toolModal');
   var toolName=pendingTool;
   var toolLabel=toolDefs[toolName]?toolDefs[toolName].title:toolName;
@@ -159,6 +269,8 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   var typing=document.createElement('div');typing.className='msg msg-assistant msg-tool';typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';msgsArea.appendChild(typing);msgsArea.scrollTop=msgsArea.scrollHeight;
   try{
     var body={tool:toolName,matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',jurisdiction:jurisdiction,anchorDocNames:anchorDocNames,instructions:instructions,excludeDocNames:excludeDocNames,excludeDocTypes:excludeDocTypes};
+    /* v5.0: only send includeDocNames when the folder filter is narrowing */
+    if(includeDocNames&&includeDocNames.length>0)body.includeDocNames=includeDocNames;
     if(chronologyDateRange)body.chronologyDateRange=chronologyDateRange;
     if(chronologyEntities)body.chronologyEntities=chronologyEntities;
     if(chronologyCorrespondenceFilter)body.chronologyCorrespondenceFilter=true;
@@ -502,6 +614,9 @@ async function runIssueBriefing(selectedIssues,extraInstructions){
   try{
     var excludeDocNames=[];
     try{excludeDocNames=getExcludedDocNames();}catch(e){}
+    /* v5.0: resolve folder filter → include names. Returns null in "All" mode. */
+    var includeDocNames=null;
+    try{includeDocNames=resolveIncludeDocNames();}catch(e){}
 
     var body={
       tool:toolName,
@@ -516,6 +631,7 @@ async function runIssueBriefing(selectedIssues,extraInstructions){
       selectedIssues:selectedIssues,
       issuesText:issueBriefingSourceText.slice(0,15000)
     };
+    if(includeDocNames&&includeDocNames.length>0)body.includeDocNames=includeDocNames;
 
     var d=await api('/api/tools','POST',body);
     if(!d||!d.jobId)throw new Error('No jobId returned');

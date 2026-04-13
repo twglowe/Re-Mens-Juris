@@ -82,43 +82,97 @@ function openTool(t){
    "include" set, then any per-doc boxes the user unticks further narrow it.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Renders the folder filter section. Always shows "All documents" at the top,
-   then "Unassigned" (if any unclassified docs exist), then each folder.
-   Returns '' if the matter has neither folders nor unassigned documents —
-   which effectively never happens once any document exists, because every
-   document is at least in one of those buckets. */
+/* Renders the folder filter section.
+   v5.0a fix: original implementation used a <details open> wrapper with nested
+   <label><input> checkboxes. On Safari inside the tool modal, clicks on the
+   nested checkboxes were being swallowed (likely by the <details> click
+   handling). Rebuilt as plain <div>s with click-on-row that manually toggles
+   the checkbox state and then invokes folderFilterChanged(). No labels, no
+   details, no summary — eliminates the entire class of click-capture issues. */
 function folderFilterHtml(){
   if(!documents||!documents.length)return '';
   var folders=(typeof currentFolders!=='undefined'&&currentFolders)?currentFolders:[];
-  /* Count unassigned documents */
   var unassignedCount=0;
   documents.forEach(function(d){if(!d.folder_ids||!d.folder_ids.length)unassignedCount++;});
-  /* If there are no folders at all AND nothing to filter by, skip */
   if(!folders.length&&unassignedCount===documents.length)return '';
-  var html='<details class="folder-filter-details" open style="margin-top:.85rem;border:1.5px solid var(--blue);border-radius:6px;padding:.4rem .6rem;background:var(--blue-pale)">'
-    +'<summary style="font-size:.78rem;font-weight:700;color:var(--blue);cursor:pointer;letter-spacing:.04em;text-transform:uppercase">Folder Filter <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-mid)">(focus the tool on specific folders)</span></summary>'
-    +'<div style="margin-top:.5rem">'
-    +'<label class="anchor-item" style="font-size:.82rem;font-weight:700;border-bottom:1px dashed var(--border);padding-bottom:.3rem;margin-bottom:.3rem"><input type="radio" name="folderFilterMode" value="all" checked onchange="folderFilterChanged()"> All documents <span style="color:var(--text-faint);font-size:.72rem;font-weight:500">('+documents.length+')</span></label>'
-    +'<label class="anchor-item" style="font-size:.82rem"><input type="checkbox" class="folder-filter-cb" value="__unassigned" data-ff="unassigned" onchange="folderFilterChanged()"'+(unassignedCount?'':' disabled')+'> Unassigned <span style="color:var(--text-faint);font-size:.72rem">('+unassignedCount+')</span></label>';
+  var rowCss='display:flex;align-items:center;gap:.55rem;padding:.35rem .4rem;font-size:.85rem;cursor:pointer;border-radius:4px;user-select:none';
+  var boxCss='width:15px;height:15px;border:1.5px solid var(--blue);border-radius:3px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:900;color:var(--blue);background:var(--white)';
+  var html='<div class="folder-filter-wrap" style="margin-top:.85rem;border:1.5px solid var(--blue);border-radius:6px;padding:.55rem .7rem;background:var(--blue-pale)">'
+    +'<div style="font-size:.78rem;font-weight:700;color:var(--blue);letter-spacing:.04em;text-transform:uppercase;margin-bottom:.45rem">Folder Filter <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-mid)">(focus the tool on specific folders)</span></div>'
+    +'<div id="folderFilterBody">'
+    +'<div class="ff-row ff-all on" data-ff-mode="all" onclick="ffSelectAll()" style="'+rowCss+';font-weight:700;border-bottom:1px dashed var(--border);padding-bottom:.45rem;margin-bottom:.35rem">'
+      +'<span class="ff-box" style="'+boxCss+'">\u25CF</span>'
+      +'<span style="flex:1">All documents <span style="color:var(--text-faint);font-size:.72rem;font-weight:500">('+documents.length+')</span></span>'
+      +'</div>';
+  /* Unassigned bucket — only clickable if any unassigned docs exist */
+  var unassignedClick=unassignedCount?'onclick="ffToggle(this)"':'';
+  var unassignedOpacity=unassignedCount?'':';opacity:.45;cursor:not-allowed';
+  html+='<div class="ff-row" data-ff-type="unassigned" data-ff-value="__unassigned" '+unassignedClick+' style="'+rowCss+unassignedOpacity+'">'
+    +'<span class="ff-box" style="'+boxCss+'"></span>'
+    +'<span style="flex:1">Unassigned <span style="color:var(--text-faint);font-size:.72rem">('+unassignedCount+')</span></span>'
+    +'</div>';
   folders.forEach(function(f){
-    html+='<label class="anchor-item" style="font-size:.82rem"><input type="checkbox" class="folder-filter-cb" value="'+esc(f.id)+'" data-ff="folder" onchange="folderFilterChanged()"> '+esc(f.name)+' <span style="color:var(--text-faint);font-size:.72rem">('+(f.document_count||0)+')</span></label>';
+    html+='<div class="ff-row" data-ff-type="folder" data-ff-value="'+esc(f.id)+'" onclick="ffToggle(this)" style="'+rowCss+'">'
+      +'<span class="ff-box" style="'+boxCss+'"></span>'
+      +'<span style="flex:1">'+esc(f.name)+' <span style="color:var(--text-faint);font-size:.72rem">('+(f.document_count||0)+')</span></span>'
+      +'</div>';
   });
-  html+='</div></details>';
+  html+='</div></div>';
   return html;
 }
 
+/* Toggle a folder-filter row. Called from the row's onclick. Manipulates
+   the classList and box glyph, then syncs the per-doc list below. */
+function ffToggle(row){
+  var on=row.classList.toggle('on');
+  var box=row.querySelector('.ff-box');
+  if(box)box.textContent=on?'\u2713':'';
+  /* Clear the "All" row when any folder/unassigned is toggled on */
+  var allRow=document.querySelector('.ff-row.ff-all');
+  if(on&&allRow){
+    allRow.classList.remove('on');
+    var allBox=allRow.querySelector('.ff-box');
+    if(allBox)allBox.textContent='';
+  }
+  /* If nothing is now ticked, re-arm "All" */
+  var anyOn=document.querySelectorAll('#folderFilterBody .ff-row.on:not(.ff-all)').length>0;
+  if(!anyOn&&allRow){
+    allRow.classList.add('on');
+    var ab=allRow.querySelector('.ff-box');
+    if(ab)ab.textContent='\u25CF';
+  }
+  folderFilterChanged();
+}
+
+/* Re-arm the "All documents" row and clear every other folder-filter row. */
+function ffSelectAll(){
+  var allRow=document.querySelector('.ff-row.ff-all');
+  if(allRow){
+    allRow.classList.add('on');
+    var ab=allRow.querySelector('.ff-box');
+    if(ab)ab.textContent='\u25CF';
+  }
+  document.querySelectorAll('#folderFilterBody .ff-row:not(.ff-all)').forEach(function(r){
+    r.classList.remove('on');
+    var b=r.querySelector('.ff-box');
+    if(b)b.textContent='';
+  });
+  folderFilterChanged();
+}
+
 /* Read folder filter state. Returns:
-     { mode: 'all' }  — the "All documents" radio is selected
+     { mode: 'all' }  — the "All documents" row is the only one on
      { mode: 'subset', folderIds: [...], includeUnassigned: bool }
-   If subset mode but nothing is ticked, behaves like 'all'. */
+   If subset mode but nothing is ticked, behaves like 'all'.
+   v5.0a: Reads from .ff-row elements with .on class, not <input>. */
 function getFolderFilterState(){
-  var all=document.querySelector('input[name="folderFilterMode"][value="all"]');
-  if(all&&all.checked)return {mode:'all'};
+  var allRow=document.querySelector('.ff-row.ff-all');
+  if(allRow&&allRow.classList.contains('on'))return {mode:'all'};
   var folderIds=[];var includeUnassigned=false;
-  document.querySelectorAll('.folder-filter-cb').forEach(function(cb){
-    if(!cb.checked)return;
-    if(cb.getAttribute('data-ff')==='unassigned')includeUnassigned=true;
-    else folderIds.push(cb.value);
+  document.querySelectorAll('#folderFilterBody .ff-row.on').forEach(function(r){
+    var type=r.getAttribute('data-ff-type');
+    if(type==='unassigned')includeUnassigned=true;
+    else if(type==='folder')folderIds.push(r.getAttribute('data-ff-value'));
   });
   if(!folderIds.length&&!includeUnassigned)return {mode:'all'};
   return {mode:'subset',folderIds:folderIds,includeUnassigned:includeUnassigned};
@@ -145,33 +199,12 @@ function resolveIncludeDocNames(){
   return names;
 }
 
-/* When the folder filter changes, sync the per-document checkbox list: tick
-   docs that are in the include set, untick the rest. This lets the user then
-   un-tick individual stragglers in the per-doc list below. */
+/* Sync the per-document checkbox list with the current folder filter state.
+   Called from ffToggle and ffSelectAll after they update row state. */
 function folderFilterChanged(){
-  /* If the "All documents" radio was changed, un-tick all folder checkboxes
-     so the state is internally consistent. */
-  var all=document.querySelector('input[name="folderFilterMode"][value="all"]');
-  if(all&&all.checked){
-    document.querySelectorAll('.folder-filter-cb').forEach(function(cb){cb.checked=false;});
-    /* All docs ticked */
-    document.querySelectorAll('#docFilterDocs input[type="checkbox"]').forEach(function(cb){cb.checked=true;});
-    return;
-  }
-  /* A folder checkbox was ticked — flip the radio off so the user sees the
-     state transition. The radio is only a visual placeholder once any folder
-     is ticked; we re-arm it if everything becomes unticked. */
-  var anyTicked=false;
-  document.querySelectorAll('.folder-filter-cb').forEach(function(cb){if(cb.checked)anyTicked=true;});
-  if(!anyTicked){
-    if(all)all.checked=true;
-    document.querySelectorAll('#docFilterDocs input[type="checkbox"]').forEach(function(cb){cb.checked=true;});
-    return;
-  }else{
-    if(all)all.checked=false;
-  }
   var names=resolveIncludeDocNames();
   if(names===null){
+    /* All documents mode — tick everything in the per-doc list */
     document.querySelectorAll('#docFilterDocs input[type="checkbox"]').forEach(function(cb){cb.checked=true;});
     return;
   }

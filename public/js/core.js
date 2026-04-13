@@ -465,8 +465,12 @@ function renderDocs(){
       chipsHtml='<span class="folder-classify-btn" onclick="event.stopPropagation();openDocumentEditModal(\''+doc.id+'\')" title="Assign to a folder" style="display:inline-block;font-size:.66rem;font-weight:600;padding:.08rem .4rem;margin-top:.12rem;border-radius:10px;background:var(--off-white);color:var(--text-faint);border:1px dashed var(--border-strong);cursor:pointer">+ classify</span>';
     }
     var descHtml=doc.description?'<div class="doc-desc" style="font-size:.66rem;color:var(--text-light);margin-top:.06rem;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(doc.description)+'">'+esc(doc.description)+'</div>':'';
-    var indent=inFolderId?'padding-left:1.35rem;':'';
-    return '<div class="doc-item" draggable="true"'
+    var indent=inFolderId?'margin-left:1.35rem;':'';
+    /* v5.1a: Safari has a long-standing bug where draggable=true on a
+       display:flex container drops all dragover/drop events silently.
+       Workaround: put draggable on an outer plain-block wrapper. The inner
+       .doc-item keeps its existing flex layout unchanged. */
+    return '<div class="doc-item-wrap" draggable="true"'
       +' data-doc-id="'+doc.id+'"'
       +' data-in-folder="'+(inFolderId||'')+'"'
       +' ondragstart="docDragStart(event,\''+doc.id+'\',\''+(inFolderId||'')+'\')"'
@@ -474,7 +478,8 @@ function renderDocs(){
       +' ontouchstart="docTouchStart(event,\''+doc.id+'\')"'
       +' ontouchend="docTouchEnd(event)"'
       +' ontouchmove="docTouchEnd(event)"'
-      +' style="'+indent+'">'
+      +' style="display:block;cursor:grab;'+indent+'">'
+      +'<div class="doc-item">'
       +'<span class="doc-icon">'+(icons[doc.doc_type]||'📄')+'</span><div class="doc-info">'
       +'<div class="doc-name" title="'+esc(doc.name)+'">'+esc(doc.name)+'</div>'
       +'<div class="doc-meta">'+esc(doc.doc_type)+(doc.chunk_count?' · '+doc.chunk_count+' passages':'')+'</div>'
@@ -482,6 +487,7 @@ function renderDocs(){
       +'<div class="doc-chips">'+chipsHtml+'</div>'
       +'</div>'
       +'<button onclick="event.stopPropagation();deleteDoc(\''+doc.id+'\',\''+esc(doc.name).replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.1rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Remove">×</button>'
+      +'</div>'
       +'</div>';
   }
   /* Render folder rows */
@@ -490,29 +496,43 @@ function renderDocs(){
     var open=!!foldersOpen[f.id];
     var kids=byFolder[f.id]||[];
     var glyph=open?'▼':'▶';
+    /* v5.1a: Safari requires ondragenter (with preventDefault) as well as
+       ondragover on drop targets. Without ondragenter Safari accepts
+       dragover but silently drops drop events.
+       Also: the toggle click is now on an INNER wrapper, so dropping a
+       document on the folder row does NOT fire the folder toggle
+       underneath. */
     html+='<div class="folder-row" data-folder-id="'+f.id+'"'
+      +' ondragenter="folderDragOver(event,\''+f.id+'\')"'
       +' ondragover="folderDragOver(event,\''+f.id+'\')"'
       +' ondragleave="folderDragLeave(event)"'
       +' ondrop="folderDrop(event,\''+f.id+'\')"'
-      +' style="display:flex;align-items:center;gap:.35rem;padding:.45rem .4rem;margin-top:.2rem;border-radius:5px;background:var(--off-white);border:1px solid var(--border);cursor:pointer;font-weight:600;font-size:.82rem;color:var(--text-dark)"'
-      +' onclick="toggleFolderOpen(\''+f.id+'\')">'
+      +' style="display:flex;align-items:center;gap:.35rem;padding:.45rem .4rem;margin-top:.2rem;border-radius:5px;background:var(--off-white);border:1px solid var(--border);font-weight:600;font-size:.82rem;color:var(--text-dark)">'
+      +'<div onclick="toggleFolderOpen(\''+f.id+'\')" style="display:flex;align-items:center;gap:.35rem;flex:1;cursor:pointer;min-width:0">'
       +'<span style="font-size:.7rem;width:.85rem;display:inline-block;text-align:center;color:var(--text-faint)">'+glyph+'</span>'
       +'<span style="font-size:.95rem">📁</span>'
       +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(f.name)+'</span>'
       +'<span style="font-size:.68rem;color:var(--text-faint);font-weight:500">('+kids.length+')</span>'
+      +'</div>'
       +'<button onclick="event.stopPropagation();confirmAndDeleteFolder(\''+f.id+'\',\''+esc(f.name).replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.05rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Delete folder">×</button>'
       +'</div>';
     if(open){
       if(kids.length===0){
-        html+='<div style="padding:.4rem 0 .4rem 1.35rem;font-size:.72rem;color:var(--text-faint);font-style:italic">Empty folder. Drag documents here to classify them.</div>';
+        html+='<div class="folder-empty-drop"'
+          +' ondragenter="folderDragOver(event,\''+f.id+'\')"'
+          +' ondragover="folderDragOver(event,\''+f.id+'\')"'
+          +' ondragleave="folderDragLeave(event)"'
+          +' ondrop="folderDrop(event,\''+f.id+'\')"'
+          +' style="padding:.4rem 0 .4rem 1.35rem;font-size:.72rem;color:var(--text-faint);font-style:italic">Empty folder. Drag documents here to classify them.</div>';
       }else{
         html+=kids.map(function(d){return renderDocRow(d,f.id);}).join('');
       }
     }
   });
-  /* Uncategorised section */
+  /* Uncategorised section — with ondragenter on the drop target */
   if(uncategorised.length>0){
     html+='<div class="uncat-header"'
+      +' ondragenter="folderDragOver(event,\'\')"'
       +' ondragover="folderDragOver(event,\'\')"'
       +' ondragleave="folderDragLeave(event)"'
       +' ondrop="folderDrop(event,\'\')"'
@@ -545,36 +565,52 @@ async function updateDocFolders(docId,newIds){
 /* v5.1: Drag-and-drop handlers for documents and folders.
    Dragstart carries the docId and the folder the drag originated from
    (empty string = Uncategorised). Drop target is a folder id
-   (empty string = Uncategorised header). */
+   (empty string = Uncategorised header).
+   v5.1a: Console-log every dnd event for post-deploy diagnosis. If anything
+   misbehaves, open devtools Console, try a drag, and check which log lines
+   appear. dragstart missing → Safari is rejecting the flex container.
+   dragstart but no dragover → target has no ondragenter. dragover but no
+   drop → dropEffect mismatch. */
 function docDragStart(ev,docId,fromFolderId){
+  console.log('v5.1a dragstart: doc='+docId+' from='+(fromFolderId||'(uncategorised)'));
   try{
     ev.dataTransfer.setData('text/plain',JSON.stringify({docId:docId,from:fromFolderId||''}));
     ev.dataTransfer.effectAllowed='move';
-  }catch(e){/* ignore */}
+  }catch(e){console.log('v5.1a dragstart setData failed:',e);}
 }
 function folderDragOver(ev,folderId){
   ev.preventDefault();
   try{ev.dataTransfer.dropEffect='move';}catch(e){}
-  ev.currentTarget.style.outline='2px solid var(--blue)';
-  ev.currentTarget.style.outlineOffset='-2px';
+  /* currentTarget is the folder-row wrapper — outline it blue */
+  if(ev.currentTarget&&ev.currentTarget.style){
+    ev.currentTarget.style.outline='2px solid var(--blue)';
+    ev.currentTarget.style.outlineOffset='-2px';
+  }
 }
 function folderDragLeave(ev){
-  ev.currentTarget.style.outline='';
-  ev.currentTarget.style.outlineOffset='';
+  if(ev.currentTarget&&ev.currentTarget.style){
+    ev.currentTarget.style.outline='';
+    ev.currentTarget.style.outlineOffset='';
+  }
 }
 function folderDrop(ev,targetFolderId){
   ev.preventDefault();
-  ev.currentTarget.style.outline='';
-  ev.currentTarget.style.outlineOffset='';
+  ev.stopPropagation();
+  if(ev.currentTarget&&ev.currentTarget.style){
+    ev.currentTarget.style.outline='';
+    ev.currentTarget.style.outlineOffset='';
+  }
   var raw='';
   try{raw=ev.dataTransfer.getData('text/plain');}catch(e){}
-  if(!raw)return;
-  var data;try{data=JSON.parse(raw);}catch(e){return;}
-  if(!data||!data.docId)return;
+  console.log('v5.1a drop: target='+(targetFolderId||'(uncategorised)')+' raw='+raw);
+  if(!raw){console.log('v5.1a drop: no dataTransfer payload');return;}
+  var data;try{data=JSON.parse(raw);}catch(e){console.log('v5.1a drop: parse failed');return;}
+  if(!data||!data.docId){console.log('v5.1a drop: no docId');return;}
   var doc=documents.find(function(d){return d.id===data.docId;});
-  if(!doc)return;
+  if(!doc){console.log('v5.1a drop: doc not in memory');return;}
   var current=(doc.folder_ids||[]).slice();
   var from=data.from||'';
+  console.log('v5.1a drop: doc='+data.docId+' from='+(from||'(uncat)')+' to='+(targetFolderId||'(uncat)')+' current='+JSON.stringify(current));
   /* Case: drop onto Uncategorised — remove only the source folder (§spec). */
   if(!targetFolderId){
     if(from){
@@ -589,6 +625,7 @@ function folderDrop(ev,targetFolderId){
   if(from&&from!==targetFolderId){
     current=current.filter(function(x){return x!==from;});
   }
+  console.log('v5.1a drop: PATCH folder_ids='+JSON.stringify(current));
   updateDocFolders(doc.id,current);
 }
 

@@ -36,7 +36,7 @@ export default async function handler(req, res) {
           citationSource, citationTargets,
           chronologyDateRange, chronologyEntities, chronologyCorrespondenceFilter,
           caseTypeId, docTypeId, subcatId, libraryContext,
-          excludeDocNames, excludeDocTypes } = req.body;
+          excludeDocNames, excludeDocTypes, includeDocNames } = req.body;
 
   if (!tool || !matterId) return res.status(400).json({ error: "tool and matterId required" });
 
@@ -67,6 +67,10 @@ export default async function handler(req, res) {
     libraryContext: libraryContext || null,
     excludeDocNames: excludeDocNames || [],
     excludeDocTypes: excludeDocTypes || [],
+    /* v5.0: folder filter. Frontend resolves folder selection → list of doc
+       names and passes them here. Worker reads p.includeDocNames and filters
+       chunks to only those documents. Empty/missing = no include filter. */
+    includeDocNames: includeDocNames || [],
   };
 
   /* Create job row */

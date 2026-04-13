@@ -14,6 +14,10 @@ var docEditCurrentId=null;
 /* v5.1: Hierarchical folder view. foldersOpen maps folderId -> true when open.
    Reset on every matter switch — all folders start closed per session. */
 var foldersOpen={};
+/* v5.1c: Sentinel ID for the virtual "Unassigned" folder. Never sent to the
+   backend; used only in foldersOpen tracking and as the inFolderId passed
+   to renderDocRow when rendering Unassigned children. */
+var UNASSIGNED_ID='__unassigned__';
 /* v5.1: Context menu state — docId of the row the menu was opened on, and
    mode ('root' | 'moveTo' | 'addTo') for the single-level replace-contents flow. */
 var ctxMenuDocId=null;
@@ -465,7 +469,9 @@ function renderDocs(){
       chipsHtml='<span class="folder-classify-btn" onclick="event.stopPropagation();openDocumentEditModal(\''+doc.id+'\')" title="Assign to a folder" style="display:inline-block;font-size:.66rem;font-weight:600;padding:.08rem .4rem;margin-top:.12rem;border-radius:10px;background:var(--off-white);color:var(--text-faint);border:1px dashed var(--border-strong);cursor:pointer">+ classify</span>';
     }
     var descHtml=doc.description?'<div class="doc-desc" style="font-size:.66rem;color:var(--text-light);margin-top:.06rem;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(doc.description)+'">'+esc(doc.description)+'</div>':'';
-    var indent=inFolderId?'margin-left:1.35rem;':'';
+    /* v5.1c: docs live INSIDE a boxed container when their folder is open,
+       so no left indent on the wrapper itself \u2014 the box provides the
+       visual containment. */
     /* v5.1a/b: Safari has a long-standing bug where draggable=true on a
        display:flex container drops all dragover/drop events silently.
        Workaround: put draggable on an outer plain-block wrapper.
@@ -475,6 +481,12 @@ function renderDocs(){
        drag. position:relative is added because some Safari versions block
        dragstart on elements inside an overflow:auto container unless the
        draggable element has its own positioning context. */
+    /* v5.1c: Move button label varies by where the doc lives. Inside a
+       real folder it offers Move and Copy options; inside Unassigned it
+       offers a flat list of folders to move into. The button calls
+       openMoveToMenu which inspects inFolderId to pick the right menu
+       shape. UNASSIGNED_ID is the sentinel for the virtual folder. */
+    var moveTitle=(inFolderId&&inFolderId!==UNASSIGNED_ID)?'Move or copy to another folder':'Move to a folder';
     return '<div class="doc-item-wrap" draggable="true"'
       +' data-doc-id="'+doc.id+'"'
       +' data-in-folder="'+(inFolderId||'')+'"'
@@ -483,7 +495,7 @@ function renderDocs(){
       +' ontouchstart="docTouchStart(event,\''+doc.id+'\')"'
       +' ontouchend="docTouchEnd(event)"'
       +' ontouchmove="docTouchEnd(event)"'
-      +' style="display:block;cursor:grab;position:relative;-webkit-user-drag:element;'+indent+'">'
+      +' style="display:block;cursor:grab;position:relative;-webkit-user-drag:element">'
       +'<div class="doc-item">'
       +'<span class="doc-icon">'+(icons[doc.doc_type]||'📄')+'</span><div class="doc-info">'
       +'<div class="doc-name" title="'+esc(doc.name)+'">'+esc(doc.name)+'</div>'
@@ -491,66 +503,85 @@ function renderDocs(){
       +descHtml
       +'<div class="doc-chips">'+chipsHtml+'</div>'
       +'</div>'
+      +'<button onclick="event.stopPropagation();openMoveToMenu(event,\''+doc.id+'\',\''+(inFolderId||'')+'\')" title="'+moveTitle+'" style="background:var(--off-white);border:1px solid var(--border);color:var(--text-mid);cursor:pointer;font-size:.66rem;padding:.18rem .42rem;flex-shrink:0;font-weight:700;border-radius:4px;margin-right:.22rem;white-space:nowrap">Move \u25be</button>'
       +'<button onclick="event.stopPropagation();deleteDoc(\''+doc.id+'\',\''+esc(doc.name).replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.1rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Remove">×</button>'
       +'</div>'
       +'</div>';
   }
-  /* Render folder rows */
+
+  /* v5.1c: Render a single folder (header + boxed children if open).
+     Used for both real folders and the virtual Unassigned folder. The
+     `isUnassigned` flag suppresses the delete button and changes the
+     drop semantics (drop on Unassigned removes from source folder only).
+     `folderId` for Unassigned is the UNASSIGNED_ID sentinel. */
+  function renderFolderBlock(folderId,folderName,kids,isUnassigned){
+    var open=!!foldersOpen[folderId];
+    var glyph=open?'\u25BC':'\u25B6';
+    /* The drop handler uses the empty string as the "drop on Unassigned"
+       signal in folderDrop \u2014 keep that protocol for backward compat. */
+    var dropArg=isUnassigned?'':folderId;
+    var out='';
+    /* When open, wrap the whole thing in a brown-bordered box. When closed,
+       render only the header row standalone. */
+    if(open){
+      out+='<div class="folder-box" style="margin-top:.4rem;border:2px solid #8b6f47;border-radius:8px;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(139,111,71,.2)">';
+    }
+    /* Folder header row \u2014 brown */
+    out+='<div class="folder-row" data-folder-id="'+folderId+'"'
+      +' ondragenter="folderDragOver(event,\''+dropArg+'\')"'
+      +' ondragover="folderDragOver(event,\''+dropArg+'\')"'
+      +' ondragleave="folderDragLeave(event)"'
+      +' ondrop="folderDrop(event,\''+dropArg+'\')"'
+      +' style="display:flex;align-items:center;gap:.45rem;padding:.65rem .55rem;'
+      +(open?'':'margin-top:.35rem;border-radius:7px;')
+      +'background:#8b6f47;border:none;color:#fff;font-weight:700;font-size:.88rem;'
+      +(open?'':'box-shadow:0 1px 3px rgba(139,111,71,.25);')
+      +'">'
+      +'<div onclick="toggleFolderOpen(\''+folderId+'\')" style="display:flex;align-items:center;gap:.45rem;flex:1;cursor:pointer;min-width:0">'
+      +'<span style="font-size:.78rem;width:.9rem;display:inline-block;text-align:center;color:rgba(255,255,255,.85)">'+glyph+'</span>'
+      +'<span style="font-size:1.4rem;line-height:1">\uD83D\uDCC1</span>'
+      +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff">'+esc(folderName)+'</span>'
+      +'<span style="font-size:.72rem;color:rgba(255,255,255,.8);font-weight:600">('+kids.length+')</span>'
+      +'</div>';
+    /* Real folders get a delete button. Unassigned does not. */
+    if(!isUnassigned){
+      out+='<button onclick="event.stopPropagation();confirmAndDeleteFolder(\''+folderId+'\',\''+esc(folderName).replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:rgba(255,255,255,.85);cursor:pointer;font-size:1.15rem;padding:0 5px;flex-shrink:0;font-weight:700" title="Delete folder">\u00D7</button>';
+    }
+    out+='</div>';
+    /* When open, render the boxed children area below the header */
+    if(open){
+      out+='<div class="folder-children" style="padding:.5rem .5rem .55rem .5rem;background:#fff"'
+        +' ondragenter="folderDragOver(event,\''+dropArg+'\')"'
+        +' ondragover="folderDragOver(event,\''+dropArg+'\')"'
+        +' ondragleave="folderDragLeave(event)"'
+        +' ondrop="folderDrop(event,\''+dropArg+'\')">';
+      if(kids.length===0){
+        out+='<div style="padding:.5rem .25rem;font-size:.74rem;color:var(--text-faint);font-style:italic;text-align:center">'
+          +(isUnassigned?'No unassigned documents.':'Empty folder. Drag documents here to classify them.')
+          +'</div>';
+      }else{
+        /* Pass the inFolderId so renderDocRow knows whether to offer
+           Move-only or Move+Copy in the menu. For Unassigned children we
+           pass UNASSIGNED_ID, which renderDocRow uses to pick the simple
+           menu shape. */
+        var inId=isUnassigned?UNASSIGNED_ID:folderId;
+        out+=kids.map(function(d){return renderDocRow(d,inId);}).join('');
+      }
+      out+='</div>';
+      out+='</div>';
+    }
+    return out;
+  }
+
+  /* Render real folders, then Unassigned pinned to the bottom */
   var html=header;
   sortedFolders.forEach(function(f){
-    var open=!!foldersOpen[f.id];
-    var kids=byFolder[f.id]||[];
-    var glyph=open?'▼':'▶';
-    /* v5.1a: Safari requires ondragenter (with preventDefault) as well as
-       ondragover on drop targets. Without ondragenter Safari accepts
-       dragover but silently drops drop events.
-       Also: the toggle click is now on an INNER wrapper, so dropping a
-       document on the folder row does NOT fire the folder toggle
-       underneath.
-       v5.1b: Folder rows are now brown to match the New folder button and
-       to give them clear visual hierarchy over the pale-blue doc rows. */
-    html+='<div class="folder-row" data-folder-id="'+f.id+'"'
-      +' ondragenter="folderDragOver(event,\''+f.id+'\')"'
-      +' ondragover="folderDragOver(event,\''+f.id+'\')"'
-      +' ondragleave="folderDragLeave(event)"'
-      +' ondrop="folderDrop(event,\''+f.id+'\')"'
-      +' style="display:flex;align-items:center;gap:.45rem;padding:.65rem .55rem;margin-top:.35rem;border-radius:7px;background:#8b6f47;border:none;color:#fff;font-weight:700;font-size:.88rem;box-shadow:0 1px 3px rgba(139,111,71,.25)">'
-      +'<div onclick="toggleFolderOpen(\''+f.id+'\')" style="display:flex;align-items:center;gap:.45rem;flex:1;cursor:pointer;min-width:0">'
-      +'<span style="font-size:.78rem;width:.9rem;display:inline-block;text-align:center;color:rgba(255,255,255,.85)">'+glyph+'</span>'
-      +'<span style="font-size:1.4rem;line-height:1">📁</span>'
-      +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff">'+esc(f.name)+'</span>'
-      +'<span style="font-size:.72rem;color:rgba(255,255,255,.8);font-weight:600">('+kids.length+')</span>'
-      +'</div>'
-      +'<button onclick="event.stopPropagation();confirmAndDeleteFolder(\''+f.id+'\',\''+esc(f.name).replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:rgba(255,255,255,.85);cursor:pointer;font-size:1.15rem;padding:0 5px;flex-shrink:0;font-weight:700" title="Delete folder">×</button>'
-      +'</div>';
-    if(open){
-      if(kids.length===0){
-        html+='<div class="folder-empty-drop"'
-          +' ondragenter="folderDragOver(event,\''+f.id+'\')"'
-          +' ondragover="folderDragOver(event,\''+f.id+'\')"'
-          +' ondragleave="folderDragLeave(event)"'
-          +' ondrop="folderDrop(event,\''+f.id+'\')"'
-          +' style="padding:.4rem 0 .4rem 1.35rem;font-size:.72rem;color:var(--text-faint);font-style:italic">Empty folder. Drag documents here to classify them.</div>';
-      }else{
-        html+=kids.map(function(d){return renderDocRow(d,f.id);}).join('');
-      }
-    }
+    html+=renderFolderBlock(f.id,f.name,byFolder[f.id]||[],false);
   });
-  /* Uncategorised section — with ondragenter on the drop target */
-  if(uncategorised.length>0){
-    html+='<div class="uncat-header"'
-      +' ondragenter="folderDragOver(event,\'\')"'
-      +' ondragover="folderDragOver(event,\'\')"'
-      +' ondragleave="folderDragLeave(event)"'
-      +' ondrop="folderDrop(event,\'\')"'
-      +' style="display:flex;align-items:center;gap:.35rem;padding:.4rem .4rem;margin-top:.5rem;border-top:1px solid var(--border);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint)">'
-      +'<span>Uncategorised</span>'
-      +'<span style="font-weight:500">('+uncategorised.length+')</span>'
-      +'</div>';
-    html+=uncategorised.map(function(d){return renderDocRow(d,'');}).join('');
-  }else if(sortedFolders.length===0){
-    /* No folders AND no uncategorised — empty state already handled above */
-  }
+  /* v5.1c: Unassigned is now a virtual folder pinned to the bottom of the
+     list. Always shown, even when empty (so the user has a visible drop
+     target for unassigning a doc by dragging it out of a real folder). */
+  html+=renderFolderBlock(UNASSIGNED_ID,'Unassigned',uncategorised,true);
   list.innerHTML=html;
 }
 
@@ -618,7 +649,7 @@ function folderDrop(ev,targetFolderId){
   var current=(doc.folder_ids||[]).slice();
   var from=data.from||'';
   console.log('v5.1a drop: doc='+data.docId+' from='+(from||'(uncat)')+' to='+(targetFolderId||'(uncat)')+' current='+JSON.stringify(current));
-  /* Case: drop onto Uncategorised — remove only the source folder (§spec). */
+  /* Case: drop onto Uncategorised — remove only the source folder (\u00a7spec). */
   if(!targetFolderId){
     if(from){
       current=current.filter(function(x){return x!==from;});
@@ -626,14 +657,147 @@ function folderDrop(ev,targetFolderId){
     }
     return;
   }
-  /* Drop onto a folder */
+  /* Drop onto a real folder */
   if(current.indexOf(targetFolderId)!==-1&&from===targetFolderId)return; /* no-op */
-  if(current.indexOf(targetFolderId)===-1)current.push(targetFolderId);
-  if(from&&from!==targetFolderId){
-    current=current.filter(function(x){return x!==from;});
+  /* v5.1c: Real-folder-to-real-folder drop \u2014 prompt Move or Copy.
+     "Real-folder-to-real" means BOTH source and target are real folder ids.
+     Source from Unassigned (empty from) skips the prompt and just adds
+     the target folder, since there's nothing to "copy from" in Unassigned. */
+  if(from&&targetFolderId&&from!==targetFolderId){
+    showMoveCopyPopup(ev,doc.id,from,targetFolderId);
+    return;
   }
+  /* From Unassigned to a real folder: just add the target. */
+  if(current.indexOf(targetFolderId)===-1)current.push(targetFolderId);
   console.log('v5.1a drop: PATCH folder_ids='+JSON.stringify(current));
   updateDocFolders(doc.id,current);
+}
+
+/* v5.1c: Atomic helpers for move and copy. Both go through updateDocFolders
+   (same PATCH endpoint) but compute the new folder_ids array differently. */
+function doMoveDoc(docId,fromFolderId,toFolderId){
+  var doc=documents.find(function(d){return d.id===docId;});
+  if(!doc){showToast('Document not found');return;}
+  var current=(doc.folder_ids||[]).slice();
+  if(fromFolderId&&fromFolderId!==UNASSIGNED_ID){
+    current=current.filter(function(x){return x!==fromFolderId;});
+  }
+  if(toFolderId&&current.indexOf(toFolderId)===-1)current.push(toFolderId);
+  console.log('v5.1c doMoveDoc: doc='+docId+' from='+fromFolderId+' to='+toFolderId+' new='+JSON.stringify(current));
+  updateDocFolders(docId,current);
+}
+function doCopyDoc(docId,toFolderId){
+  var doc=documents.find(function(d){return d.id===docId;});
+  if(!doc){showToast('Document not found');return;}
+  var current=(doc.folder_ids||[]).slice();
+  if(toFolderId&&current.indexOf(toFolderId)===-1)current.push(toFolderId);
+  console.log('v5.1c doCopyDoc: doc='+docId+' to='+toFolderId+' new='+JSON.stringify(current));
+  updateDocFolders(docId,current);
+}
+
+/* v5.1c: Show a small Move | Copy | Cancel popup positioned near the drop
+   point. Used only when the user drops a doc from one real folder onto
+   another real folder. Reuses the docContextMenu div as the host. */
+function showMoveCopyPopup(ev,docId,fromFolderId,toFolderId){
+  var menu=document.getElementById('docContextMenu');
+  if(!menu){
+    /* Fallback: just move silently if the popup host is missing */
+    doMoveDoc(docId,fromFolderId,toFolderId);
+    return;
+  }
+  var fromName=(currentFolders.find(function(f){return f.id===fromFolderId;})||{}).name||'(folder)';
+  var toName=(currentFolders.find(function(f){return f.id===toFolderId;})||{}).name||'(folder)';
+  var item='padding:.55rem .85rem;cursor:pointer;white-space:nowrap';
+  var hover=' onmouseover="this.style.background=\'var(--blue-faint)\'" onmouseout="this.style.background=\'\'"';
+  menu.innerHTML='<div style="padding:.45rem .85rem;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);font-weight:700;border-bottom:1px solid var(--border);max-width:280px;overflow:hidden;text-overflow:ellipsis">'+esc(fromName)+' \u2192 '+esc(toName)+'</div>'
+    +'<div style="'+item+';font-weight:600"'+hover+' onclick="moveCopyPopupPick(\'move\',\''+docId+'\',\''+fromFolderId+'\',\''+toFolderId+'\')">\u2192 Move</div>'
+    +'<div style="'+item+';font-weight:600"'+hover+' onclick="moveCopyPopupPick(\'copy\',\''+docId+'\',\''+fromFolderId+'\',\''+toFolderId+'\')">+ Copy (keeps in '+esc(fromName)+')</div>'
+    +'<div style="height:1px;background:var(--border);margin:.2rem 0"></div>'
+    +'<div style="'+item+';color:var(--text-faint)"'+hover+' onclick="hideCtxMenu()">Cancel</div>';
+  /* Position near the drop point, kept on-screen */
+  var x=(ev&&ev.clientX)||100,y=(ev&&ev.clientY)||100;
+  var vw=window.innerWidth,vh=window.innerHeight;
+  var mw=300,mh=180;
+  if(x+mw>vw)x=vw-mw-8;
+  if(y+mh>vh)y=vh-mh-8;
+  if(x<8)x=8;if(y<8)y=8;
+  menu.style.left=x+'px';
+  menu.style.top=y+'px';
+  menu.style.display='';
+  /* Track this as a context menu so click-outside dismisses it */
+  ctxMenuDocId=docId;
+  setTimeout(function(){document.addEventListener('click',ctxMenuOutsideClick,true);},10);
+}
+function moveCopyPopupPick(action,docId,fromFolderId,toFolderId){
+  hideCtxMenu();
+  if(action==='move')doMoveDoc(docId,fromFolderId,toFolderId);
+  else if(action==='copy')doCopyDoc(docId,toFolderId);
+}
+
+/* v5.1c: Move \u25be button entry point. Builds a flat folder menu (Unassigned
+   source) or a Move+Copy menu (real-folder source). Reuses the docContextMenu
+   host. The inFolderId arg is the folder the doc is currently being rendered
+   inside \u2014 used to decide menu shape and as the "from" for moves. */
+function openMoveToMenu(ev,docId,inFolderId){
+  if(ev&&ev.preventDefault)ev.preventDefault();
+  if(ev&&ev.stopPropagation)ev.stopPropagation();
+  ctxMenuDocId=docId;
+  var menu=document.getElementById('docContextMenu');
+  if(!menu)return;
+  var doc=documents.find(function(d){return d.id===docId;});
+  if(!doc)return;
+  var isFromUnassigned=(!inFolderId||inFolderId===UNASSIGNED_ID);
+  var item='padding:.5rem .85rem;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px';
+  var hover=' onmouseover="this.style.background=\'var(--blue-faint)\'" onmouseout="this.style.background=\'\'"';
+  var folders=currentFolders.slice().sort(function(a,b){return a.name.toLowerCase().localeCompare(b.name.toLowerCase());});
+  var html='';
+  if(isFromUnassigned){
+    /* Unassigned source: flat list, move-only. No copy because there's
+       nothing to keep the doc in. Tapping a folder moves the doc into it. */
+    html='<div style="padding:.45rem .85rem;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);font-weight:700;border-bottom:1px solid var(--border)">Move to folder</div>';
+    if(folders.length===0){
+      html+='<div style="padding:.5rem .85rem;color:var(--text-faint);font-style:italic">No folders yet. Create one first.</div>';
+    }else{
+      html+=folders.map(function(f){
+        return '<div style="'+item+'"'+hover+' onclick="moveToMenuPick(\'move\',\''+docId+'\',\'\',\''+f.id+'\')">\uD83D\uDCC1 '+esc(f.name)+'</div>';
+      }).join('');
+    }
+  }else{
+    /* Real-folder source: each folder shown twice (Move and Copy). The
+       folder the doc is currently in is excluded from the Move list (no
+       point) but included in the Copy list as a no-op (filtered out at
+       PATCH time). */
+    var fromName=(currentFolders.find(function(f){return f.id===inFolderId;})||{}).name||'';
+    html='<div style="padding:.45rem .85rem;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);font-weight:700;border-bottom:1px solid var(--border);max-width:300px;overflow:hidden;text-overflow:ellipsis">From '+esc(fromName)+'</div>';
+    if(folders.length<=1){
+      html+='<div style="padding:.5rem .85rem;color:var(--text-faint);font-style:italic">No other folders. Create one first.</div>';
+    }else{
+      folders.forEach(function(f){
+        if(f.id===inFolderId)return; /* skip the source folder */
+        html+='<div style="'+item+';font-weight:600"'+hover+' onclick="moveToMenuPick(\'move\',\''+docId+'\',\''+inFolderId+'\',\''+f.id+'\')">\u2192 Move to '+esc(f.name)+'</div>';
+        html+='<div style="'+item+'"'+hover+' onclick="moveToMenuPick(\'copy\',\''+docId+'\',\''+inFolderId+'\',\''+f.id+'\')">+ Copy to '+esc(f.name)+'</div>';
+      });
+    }
+  }
+  html+='<div style="height:1px;background:var(--border);margin:.2rem 0"></div>'
+    +'<div style="'+item+';color:var(--text-faint)"'+hover+' onclick="hideCtxMenu()">Cancel</div>';
+  menu.innerHTML=html;
+  /* Position near the button click point */
+  var x=(ev&&ev.clientX)||100,y=(ev&&ev.clientY)||100;
+  var vw=window.innerWidth,vh=window.innerHeight;
+  var mw=320,mh=Math.min(420,40+folders.length*40);
+  if(x+mw>vw)x=vw-mw-8;
+  if(y+mh>vh)y=vh-mh-8;
+  if(x<8)x=8;if(y<8)y=8;
+  menu.style.left=x+'px';
+  menu.style.top=y+'px';
+  menu.style.display='';
+  setTimeout(function(){document.addEventListener('click',ctxMenuOutsideClick,true);},10);
+}
+function moveToMenuPick(action,docId,fromFolderId,toFolderId){
+  hideCtxMenu();
+  if(action==='move')doMoveDoc(docId,fromFolderId,toFolderId);
+  else if(action==='copy')doCopyDoc(docId,toFolderId);
 }
 
 /* v5.1: Context menu (desktop right-click + iPad long-press).

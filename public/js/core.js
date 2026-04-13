@@ -11,6 +11,15 @@ var uploadSelectedFolderIds=[];
 /* v5.0: Folder IDs being edited in the per-document edit modal. */
 var docEditSelectedFolderIds=[];
 var docEditCurrentId=null;
+/* v5.1: Hierarchical folder view. foldersOpen maps folderId -> true when open.
+   Reset on every matter switch — all folders start closed per session. */
+var foldersOpen={};
+/* v5.1: Context menu state — docId of the row the menu was opened on, and
+   mode ('root' | 'moveTo' | 'addTo') for the single-level replace-contents flow. */
+var ctxMenuDocId=null;
+var ctxMenuMode='root';
+/* v5.1: Long-press timer handle for iPad (touchstart -> 500ms -> show menu) */
+var longPressTimer=null;
 var libraryData={caseTypes:[],subcats:[],docTypes:[],precedents:[],sections:[]};
 var selectedPrecedentId=null;
 var draftHeading={court:'',caseNo:'',party1:'',party1Role:'',party2:'',party2Role:'',docTitle:''};
@@ -176,6 +185,8 @@ async function selectMatter(id){
   openTabs.slice().forEach(function(t){if(t!=='chat')closeTabSilent(t);});
   switchTab('chat');
   clearMessages();
+  /* v5.1: all folders start closed on every matter switch */
+  foldersOpen={};
   await loadDocuments(id);
   await loadFolders(id);
   await loadHistory(id);
@@ -395,40 +406,442 @@ async function loadDocuments(matterId){try{var d=await api('/api/documents?matte
 /* v5.0: Render docs with folder chips and a "+ classify" affordance for
    unassigned docs. Clicking a chip OR the "+ classify" opens the per-document
    edit modal where the user can change folder assignments and edit the
-   description. Also shows a "Manage folders" button above the list. */
+   description. Also shows a "Manage folders" button above the list.
+   v5.1: HIERARCHICAL VIEW. Documents are grouped into expandable folder rows
+   (closed by default). A document in N folders appears as N separate child
+   rows. Uncategorised documents appear in a section at the bottom. Drag-and-
+   drop moves documents between folders; long-press/right-click opens a
+   context menu for move/add/edit/delete. */
 function renderDocs(){
   var list=document.getElementById('docsList');
-  if(!currentMatter){list.innerHTML='<div class="docs-empty-msg">Select a matter to see documents.</div>';return;}
-  var header='<div class="docs-header-row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;gap:.4rem">'
-    +'<button class="btn-dl" onclick="openManageFoldersModal()" style="font-size:.74rem;padding:.28rem .55rem" title="Rename or delete folders">🗂 Manage folders</button>'
-    +(currentFolders.length?'<span style="font-size:.7rem;color:var(--text-faint);font-weight:500">'+currentFolders.length+' folder'+(currentFolders.length!==1?'s':'')+'</span>':'')
+  var newFolderBtnRow=document.getElementById('newFolderButtonRow');
+  if(!currentMatter){
+    list.innerHTML='<div class="docs-empty-msg">Select a matter to see documents.</div>';
+    if(newFolderBtnRow)newFolderBtnRow.style.display='none';
+    return;
+  }
+  if(newFolderBtnRow)newFolderBtnRow.style.display='';
+  /* Small secondary "Manage folders" link and folder count, right-aligned. */
+  var header='<div class="docs-header-row" style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:.35rem;gap:.5rem">'
+    +(currentFolders.length?'<span style="font-size:.68rem;color:var(--text-faint);font-weight:500">'+currentFolders.length+' folder'+(currentFolders.length!==1?'s':'')+'</span>':'')
+    +'<button class="btn-dl" onclick="openManageFoldersModal()" style="font-size:.7rem;padding:.22rem .5rem;background:var(--off-white);color:var(--text-mid);font-weight:600" title="Rename or delete folders">🗂 Manage</button>'
     +'</div>';
-  if(!documents.length){list.innerHTML=header+'<div class="docs-empty-msg">No documents yet.<br>Upload PDFs above.</div>';return;}
+  if(!documents.length&&!currentFolders.length){
+    list.innerHTML=header+'<div class="docs-empty-msg">No documents yet.<br>Upload PDFs above.</div>';
+    return;
+  }
   var icons={'Pleading':'📋','Skeleton Argument':'📝','Witness Statement':'👤','Exhibit':'📎','Case Law':'⚖️','Statute / Regulation':'📖','Correspondence':'✉️','Expert Report':'🔬','Trial Bundle':'📦','Other':'📄'};
-  /* Build a quick lookup from folder id → folder name */
-  var folderById={};currentFolders.forEach(function(f){folderById[f.id]=f;});
-  list.innerHTML=header+documents.map(function(doc){
+  /* Build folder lookup and document groupings */
+  var folderById={};
+  currentFolders.forEach(function(f){folderById[f.id]=f;});
+  /* Group documents by folder id. A doc in 2 folders lands in 2 bins. */
+  var byFolder={};
+  currentFolders.forEach(function(f){byFolder[f.id]=[];});
+  var uncategorised=[];
+  documents.forEach(function(doc){
+    var fids=doc.folder_ids||[];
+    if(fids.length===0){uncategorised.push(doc);return;}
+    fids.forEach(function(fid){
+      if(byFolder[fid])byFolder[fid].push(doc);
+    });
+  });
+  /* Sort folders alphabetically by name for stable display */
+  var sortedFolders=currentFolders.slice().sort(function(a,b){
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+  });
+  /* Render a single document row. inFolderId is the folder whose child row
+     this is ('' if rendered under Uncategorised). Used by drag-to-move to
+     know which folder to remove from. */
+  function renderDocRow(doc,inFolderId){
     var folderIds=doc.folder_ids||[];
     var chipsHtml='';
     if(folderIds.length){
       chipsHtml=folderIds.map(function(fid){
         var f=folderById[fid];
         if(!f)return '';
-        return '<span class="folder-chip" onclick="event.stopPropagation();openDocumentEditModal(\''+doc.id+'\')" title="Click to edit classification" style="display:inline-block;font-size:.68rem;font-weight:600;padding:.1rem .45rem;margin:.15rem .2rem 0 0;border-radius:10px;background:var(--blue-pale);color:var(--blue);border:1px solid var(--border);cursor:pointer">'+esc(f.name)+'</span>';
+        return '<span class="folder-chip" onclick="event.stopPropagation();openDocumentEditModal(\''+doc.id+'\')" title="Click to edit classification" style="display:inline-block;font-size:.66rem;font-weight:600;padding:.08rem .4rem;margin:.12rem .18rem 0 0;border-radius:10px;background:var(--blue-pale);color:var(--blue);border:1px solid var(--border);cursor:pointer">'+esc(f.name)+'</span>';
       }).join('');
     }else{
-      chipsHtml='<span class="folder-classify-btn" onclick="event.stopPropagation();openDocumentEditModal(\''+doc.id+'\')" title="Assign to a folder" style="display:inline-block;font-size:.68rem;font-weight:600;padding:.1rem .45rem;margin-top:.15rem;border-radius:10px;background:var(--off-white);color:var(--text-faint);border:1px dashed var(--border-strong);cursor:pointer">+ classify</span>';
+      chipsHtml='<span class="folder-classify-btn" onclick="event.stopPropagation();openDocumentEditModal(\''+doc.id+'\')" title="Assign to a folder" style="display:inline-block;font-size:.66rem;font-weight:600;padding:.08rem .4rem;margin-top:.12rem;border-radius:10px;background:var(--off-white);color:var(--text-faint);border:1px dashed var(--border-strong);cursor:pointer">+ classify</span>';
     }
-    var descHtml=doc.description?'<div class="doc-desc" style="font-size:.68rem;color:var(--text-light);margin-top:.08rem;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(doc.description)+'">'+esc(doc.description)+'</div>':'';
-    return '<div class="doc-item"><span class="doc-icon">'+(icons[doc.doc_type]||'📄')+'</span><div class="doc-info">'
+    var descHtml=doc.description?'<div class="doc-desc" style="font-size:.66rem;color:var(--text-light);margin-top:.06rem;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(doc.description)+'">'+esc(doc.description)+'</div>':'';
+    var indent=inFolderId?'padding-left:1.35rem;':'';
+    return '<div class="doc-item" draggable="true"'
+      +' data-doc-id="'+doc.id+'"'
+      +' data-in-folder="'+(inFolderId||'')+'"'
+      +' ondragstart="docDragStart(event,\''+doc.id+'\',\''+(inFolderId||'')+'\')"'
+      +' oncontextmenu="return showDocContextMenu(event,\''+doc.id+'\')"'
+      +' ontouchstart="docTouchStart(event,\''+doc.id+'\')"'
+      +' ontouchend="docTouchEnd(event)"'
+      +' ontouchmove="docTouchEnd(event)"'
+      +' style="'+indent+'">'
+      +'<span class="doc-icon">'+(icons[doc.doc_type]||'📄')+'</span><div class="doc-info">'
       +'<div class="doc-name" title="'+esc(doc.name)+'">'+esc(doc.name)+'</div>'
       +'<div class="doc-meta">'+esc(doc.doc_type)+(doc.chunk_count?' · '+doc.chunk_count+' passages':'')+'</div>'
       +descHtml
       +'<div class="doc-chips">'+chipsHtml+'</div>'
       +'</div>'
-      +'<button onclick="deleteDoc(\''+doc.id+'\',\''+esc(doc.name)+'\')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.1rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Remove">×</button>'
+      +'<button onclick="event.stopPropagation();deleteDoc(\''+doc.id+'\',\''+esc(doc.name).replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.1rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Remove">×</button>'
       +'</div>';
-  }).join('');
+  }
+  /* Render folder rows */
+  var html=header;
+  sortedFolders.forEach(function(f){
+    var open=!!foldersOpen[f.id];
+    var kids=byFolder[f.id]||[];
+    var glyph=open?'▼':'▶';
+    html+='<div class="folder-row" data-folder-id="'+f.id+'"'
+      +' ondragover="folderDragOver(event,\''+f.id+'\')"'
+      +' ondragleave="folderDragLeave(event)"'
+      +' ondrop="folderDrop(event,\''+f.id+'\')"'
+      +' style="display:flex;align-items:center;gap:.35rem;padding:.45rem .4rem;margin-top:.2rem;border-radius:5px;background:var(--off-white);border:1px solid var(--border);cursor:pointer;font-weight:600;font-size:.82rem;color:var(--text-dark)"'
+      +' onclick="toggleFolderOpen(\''+f.id+'\')">'
+      +'<span style="font-size:.7rem;width:.85rem;display:inline-block;text-align:center;color:var(--text-faint)">'+glyph+'</span>'
+      +'<span style="font-size:.95rem">📁</span>'
+      +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(f.name)+'</span>'
+      +'<span style="font-size:.68rem;color:var(--text-faint);font-weight:500">('+kids.length+')</span>'
+      +'<button onclick="event.stopPropagation();confirmAndDeleteFolder(\''+f.id+'\',\''+esc(f.name).replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.05rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Delete folder">×</button>'
+      +'</div>';
+    if(open){
+      if(kids.length===0){
+        html+='<div style="padding:.4rem 0 .4rem 1.35rem;font-size:.72rem;color:var(--text-faint);font-style:italic">Empty folder. Drag documents here to classify them.</div>';
+      }else{
+        html+=kids.map(function(d){return renderDocRow(d,f.id);}).join('');
+      }
+    }
+  });
+  /* Uncategorised section */
+  if(uncategorised.length>0){
+    html+='<div class="uncat-header"'
+      +' ondragover="folderDragOver(event,\'\')"'
+      +' ondragleave="folderDragLeave(event)"'
+      +' ondrop="folderDrop(event,\'\')"'
+      +' style="display:flex;align-items:center;gap:.35rem;padding:.4rem .4rem;margin-top:.5rem;border-top:1px solid var(--border);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint)">'
+      +'<span>Uncategorised</span>'
+      +'<span style="font-weight:500">('+uncategorised.length+')</span>'
+      +'</div>';
+    html+=uncategorised.map(function(d){return renderDocRow(d,'');}).join('');
+  }else if(sortedFolders.length===0){
+    /* No folders AND no uncategorised — empty state already handled above */
+  }
+  list.innerHTML=html;
+}
+
+/* v5.1: Toggle a folder row open/closed (no network). */
+function toggleFolderOpen(folderId){
+  foldersOpen[folderId]=!foldersOpen[folderId];
+  renderDocs();
+}
+
+/* v5.1: PATCH a document's folder_ids. Used by drag-drop and context menu. */
+async function updateDocFolders(docId,newIds){
+  try{
+    await api('/api/documents?id='+docId,'PATCH',{folder_ids:newIds});
+    await loadDocuments(currentMatter.id);
+    await loadFolders(currentMatter.id);
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+/* v5.1: Drag-and-drop handlers for documents and folders.
+   Dragstart carries the docId and the folder the drag originated from
+   (empty string = Uncategorised). Drop target is a folder id
+   (empty string = Uncategorised header). */
+function docDragStart(ev,docId,fromFolderId){
+  try{
+    ev.dataTransfer.setData('text/plain',JSON.stringify({docId:docId,from:fromFolderId||''}));
+    ev.dataTransfer.effectAllowed='move';
+  }catch(e){/* ignore */}
+}
+function folderDragOver(ev,folderId){
+  ev.preventDefault();
+  try{ev.dataTransfer.dropEffect='move';}catch(e){}
+  ev.currentTarget.style.outline='2px solid var(--blue)';
+  ev.currentTarget.style.outlineOffset='-2px';
+}
+function folderDragLeave(ev){
+  ev.currentTarget.style.outline='';
+  ev.currentTarget.style.outlineOffset='';
+}
+function folderDrop(ev,targetFolderId){
+  ev.preventDefault();
+  ev.currentTarget.style.outline='';
+  ev.currentTarget.style.outlineOffset='';
+  var raw='';
+  try{raw=ev.dataTransfer.getData('text/plain');}catch(e){}
+  if(!raw)return;
+  var data;try{data=JSON.parse(raw);}catch(e){return;}
+  if(!data||!data.docId)return;
+  var doc=documents.find(function(d){return d.id===data.docId;});
+  if(!doc)return;
+  var current=(doc.folder_ids||[]).slice();
+  var from=data.from||'';
+  /* Case: drop onto Uncategorised — remove only the source folder (§spec). */
+  if(!targetFolderId){
+    if(from){
+      current=current.filter(function(x){return x!==from;});
+      updateDocFolders(doc.id,current);
+    }
+    return;
+  }
+  /* Drop onto a folder */
+  if(current.indexOf(targetFolderId)!==-1&&from===targetFolderId)return; /* no-op */
+  if(current.indexOf(targetFolderId)===-1)current.push(targetFolderId);
+  if(from&&from!==targetFolderId){
+    current=current.filter(function(x){return x!==from;});
+  }
+  updateDocFolders(doc.id,current);
+}
+
+/* v5.1: Context menu (desktop right-click + iPad long-press).
+   Single-level replace-contents flow: root menu -> pick action -> if the
+   action is "Move to..." or "Also add to..." the same menu's contents are
+   replaced with a list of folders to pick from. Cancel/click-outside
+   dismisses. */
+function showDocContextMenu(ev,docId){
+  if(ev&&ev.preventDefault)ev.preventDefault();
+  ctxMenuDocId=docId;
+  ctxMenuMode='root';
+  var menu=document.getElementById('docContextMenu');
+  if(!menu)return false;
+  renderCtxMenuRoot();
+  var x=(ev&&ev.clientX)||0,y=(ev&&ev.clientY)||0;
+  if(ev&&ev.touches&&ev.touches[0]){x=ev.touches[0].clientX;y=ev.touches[0].clientY;}
+  else if(ev&&ev.changedTouches&&ev.changedTouches[0]){x=ev.changedTouches[0].clientX;y=ev.changedTouches[0].clientY;}
+  /* Keep menu on-screen */
+  var vw=window.innerWidth,vh=window.innerHeight;
+  var mw=220,mh=220;
+  if(x+mw>vw)x=vw-mw-8;
+  if(y+mh>vh)y=vh-mh-8;
+  if(x<8)x=8;if(y<8)y=8;
+  menu.style.left=x+'px';
+  menu.style.top=y+'px';
+  menu.style.display='';
+  /* Dismiss on next outside click */
+  setTimeout(function(){document.addEventListener('click',ctxMenuOutsideClick,true);},10);
+  return false;
+}
+function ctxMenuOutsideClick(ev){
+  var menu=document.getElementById('docContextMenu');
+  if(menu&&!menu.contains(ev.target)){
+    hideCtxMenu();
+  }
+}
+function hideCtxMenu(){
+  var menu=document.getElementById('docContextMenu');
+  if(menu)menu.style.display='none';
+  document.removeEventListener('click',ctxMenuOutsideClick,true);
+  ctxMenuDocId=null;
+  ctxMenuMode='root';
+}
+function renderCtxMenuRoot(){
+  var menu=document.getElementById('docContextMenu');
+  if(!menu)return;
+  var item='padding:.5rem .85rem;cursor:pointer;white-space:nowrap';
+  var hover=' onmouseover="this.style.background=\'var(--blue-faint)\'" onmouseout="this.style.background=\'\'"';
+  menu.innerHTML='<div style="'+item+'"'+hover+' onclick="ctxMenuPick(\'moveTo\')">Move to folder…</div>'
+    +'<div style="'+item+'"'+hover+' onclick="ctxMenuPick(\'addTo\')">Also add to…</div>'
+    +'<div style="'+item+'"'+hover+' onclick="ctxMenuEdit()">Edit…</div>'
+    +'<div style="height:1px;background:var(--border);margin:.2rem 0"></div>'
+    +'<div style="'+item+';color:var(--error)"'+hover+' onclick="ctxMenuDelete()">Delete</div>'
+    +'<div style="height:1px;background:var(--border);margin:.2rem 0"></div>'
+    +'<div style="'+item+';color:var(--text-faint)"'+hover+' onclick="hideCtxMenu()">Cancel</div>';
+}
+function ctxMenuPick(mode){
+  ctxMenuMode=mode;
+  var doc=documents.find(function(d){return d.id===ctxMenuDocId;});
+  if(!doc){hideCtxMenu();return;}
+  var current=doc.folder_ids||[];
+  var candidates;
+  if(mode==='moveTo'){
+    /* All folders are valid targets for "move to", including the one it's
+       already in (moving to the same folder is a no-op but harmless). */
+    candidates=currentFolders.slice();
+  }else{
+    /* "Also add to" only offers folders the doc isn't already in. */
+    candidates=currentFolders.filter(function(f){return current.indexOf(f.id)===-1;});
+  }
+  /* Always offer Uncategorised as a target for "moveTo" (makes it unclassified) */
+  var menu=document.getElementById('docContextMenu');
+  var item='padding:.5rem .85rem;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px';
+  var hover=' onmouseover="this.style.background=\'var(--blue-faint)\'" onmouseout="this.style.background=\'\'"';
+  var title=mode==='moveTo'?'Move to…':'Also add to…';
+  var html='<div style="padding:.4rem .85rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);font-weight:700">'+title+'</div>';
+  if(candidates.length===0){
+    html+='<div style="padding:.5rem .85rem;color:var(--text-faint);font-style:italic">No folders available</div>';
+  }else{
+    candidates.sort(function(a,b){return a.name.toLowerCase().localeCompare(b.name.toLowerCase());});
+    html+=candidates.map(function(f){
+      return '<div style="'+item+'"'+hover+' onclick="ctxMenuTargetFolder(\''+f.id+'\')">📁 '+esc(f.name)+'</div>';
+    }).join('');
+  }
+  if(mode==='moveTo'){
+    html+='<div style="height:1px;background:var(--border);margin:.2rem 0"></div>'
+      +'<div style="'+item+'"'+hover+' onclick="ctxMenuTargetFolder(\'\')">Uncategorised</div>';
+  }
+  html+='<div style="height:1px;background:var(--border);margin:.2rem 0"></div>'
+    +'<div style="'+item+';color:var(--text-faint)"'+hover+' onclick="hideCtxMenu()">Cancel</div>';
+  menu.innerHTML=html;
+}
+function ctxMenuTargetFolder(folderId){
+  var doc=documents.find(function(d){return d.id===ctxMenuDocId;});
+  if(!doc){hideCtxMenu();return;}
+  var current=(doc.folder_ids||[]).slice();
+  if(ctxMenuMode==='moveTo'){
+    if(!folderId){current=[];}
+    else{current=[folderId];}
+  }else if(ctxMenuMode==='addTo'){
+    if(folderId&&current.indexOf(folderId)===-1)current.push(folderId);
+  }
+  hideCtxMenu();
+  updateDocFolders(doc.id,current);
+}
+function ctxMenuEdit(){
+  var id=ctxMenuDocId;
+  hideCtxMenu();
+  if(id)openDocumentEditModal(id);
+}
+function ctxMenuDelete(){
+  var id=ctxMenuDocId;
+  var doc=documents.find(function(d){return d.id===id;});
+  hideCtxMenu();
+  if(doc)deleteDoc(doc.id,doc.name);
+}
+/* v5.1: iPad long-press (500ms) triggers the same context menu as right-click.
+   Uses touch events; any movement or touchend before 500ms cancels the timer. */
+function docTouchStart(ev,docId){
+  if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null;}
+  var t=ev.touches&&ev.touches[0];
+  var fakeEv={clientX:(t?t.clientX:0),clientY:(t?t.clientY:0),preventDefault:function(){}};
+  longPressTimer=setTimeout(function(){
+    longPressTimer=null;
+    showDocContextMenu(fakeEv,docId);
+  },500);
+}
+function docTouchEnd(ev){
+  if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null;}
+}
+
+/* v5.1: Main-list "New folder" button handlers. Mirrors the upload-picker
+   inline input flow but mounts into its own DOM nodes so both can coexist. */
+async function showNewFolderInputMain(){
+  var row=document.getElementById('newFolderMainInputRow');
+  if(!row)return;
+  row.style.display='';
+  var input=document.getElementById('newFolderMainNameInput');
+  if(input){input.value='';setTimeout(function(){input.focus();},40);}
+  /* Populate the shared suggestions datalist (same as upload-picker uses) */
+  try{
+    var d=await api('/api/folders?action=defaults');
+    var defaults=(d&&d.defaults)||[];
+    var existing={};currentFolders.forEach(function(f){existing[f.name.toLowerCase()]=true;});
+    var listEl=document.getElementById('newFolderSuggestions');
+    if(listEl){
+      listEl.innerHTML=defaults.filter(function(n){return !existing[String(n).toLowerCase()];}).map(function(n){return '<option value="'+esc(n)+'">';}).join('');
+    }
+  }catch(e){/* defaults are optional — silent */}
+}
+function hideNewFolderInputMain(){
+  var row=document.getElementById('newFolderMainInputRow');
+  if(row)row.style.display='none';
+}
+async function createFolderFromMainInput(){
+  var input=document.getElementById('newFolderMainNameInput');
+  if(!input)return;
+  var name=input.value.trim();
+  if(!name){showToast('Folder name required');return;}
+  if(!currentMatter){showToast('Select a matter first');return;}
+  var lower=name.toLowerCase();
+  for(var i=0;i<currentFolders.length;i++){
+    if(currentFolders[i].name.toLowerCase()===lower){
+      showToast('Folder "'+name+'" already exists');
+      return;
+    }
+  }
+  try{
+    var d=await api('/api/folders','POST',{matter_id:currentMatter.id,name:name});
+    if(d&&d.folder){
+      currentFolders.push(d.folder);
+      /* Open the new folder in the hierarchical view */
+      foldersOpen[d.folder.id]=true;
+      hideNewFolderInputMain();
+      renderUploadFolderPicker();
+      renderDocs();
+      showToast('Folder "'+name+'" created');
+    }
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+/* v5.1: Unified delete-folder flow used by both the main-list × button and
+   the manage-folders modal. Three-way choice if the folder has documents. */
+async function confirmAndDeleteFolder(folderId,folderName){
+  var f=currentFolders.find(function(x){return x.id===folderId;});
+  if(!f){showToast('Folder not found');return;}
+  var count=f.document_count||0;
+  /* Recount from in-memory documents in case document_count is stale */
+  var docsInFolder=documents.filter(function(d){return (d.folder_ids||[]).indexOf(folderId)!==-1;});
+  count=docsInFolder.length;
+  if(count===0){
+    if(!confirm('Delete folder "'+folderName+'"?'))return;
+    await doDeleteFolderOnly(folderId,folderName);
+    return;
+  }
+  /* Folder has documents. Three-way prompt via two confirms — keeps this
+     on native browser dialogs which is consistent with the rest of ELJ. */
+  var msg='Folder "'+folderName+'" contains '+count+' document'+(count!==1?'s':'')+'.\n\n'
+    +'Press OK to delete the folder ONLY (documents become uncategorised, but are kept).\n\n'
+    +'Press Cancel to get the option to delete the documents as well.';
+  if(confirm(msg)){
+    await doDeleteFolderOnly(folderId,folderName);
+    return;
+  }
+  /* User cancelled the "folder only" option — now offer the destructive path */
+  var soloCount=docsInFolder.filter(function(d){return (d.folder_ids||[]).length===1;}).length;
+  var sharedCount=count-soloCount;
+  var destructiveMsg='DESTRUCTIVE ACTION\n\n'
+    +'Delete folder "'+folderName+'" AND '+soloCount+' document'+(soloCount!==1?'s':'')+' whose only folder this is?';
+  if(sharedCount>0){
+    destructiveMsg+='\n\n('+sharedCount+' document'+(sharedCount!==1?'s':'')+' also belong to other folders and will NOT be deleted — just unassigned from this folder.)';
+  }
+  destructiveMsg+='\n\nThis cannot be undone.';
+  if(!confirm(destructiveMsg))return;
+  /* Second confirm for irreversibility */
+  if(!confirm('Really delete '+soloCount+' document'+(soloCount!==1?'s':'')+'? Last chance to cancel.'))return;
+  await doDeleteFolderAndDocs(folderId,folderName,docsInFolder);
+}
+async function doDeleteFolderOnly(folderId,folderName){
+  try{
+    await api('/api/folders?id='+folderId,'DELETE');
+    currentFolders=currentFolders.filter(function(x){return x.id!==folderId;});
+    uploadSelectedFolderIds=uploadSelectedFolderIds.filter(function(id){return id!==folderId;});
+    docEditSelectedFolderIds=docEditSelectedFolderIds.filter(function(id){return id!==folderId;});
+    delete foldersOpen[folderId];
+    await loadDocuments(currentMatter.id);
+    renderManageFoldersList();
+    renderUploadFolderPicker();
+    showToast('Folder deleted');
+  }catch(e){showToast('Error: '+e.message);}
+}
+async function doDeleteFolderAndDocs(folderId,folderName,docsInFolder){
+  var soloDocs=docsInFolder.filter(function(d){return (d.folder_ids||[]).length===1;});
+  var failed=0;
+  for(var i=0;i<soloDocs.length;i++){
+    try{
+      await api('/api/documents?id='+soloDocs[i].id,'DELETE');
+    }catch(e){failed++;console.error('Delete doc failed:',soloDocs[i].name,e);}
+  }
+  try{
+    await api('/api/folders?id='+folderId,'DELETE');
+  }catch(e){showToast('Folder delete failed: '+e.message);}
+  currentFolders=currentFolders.filter(function(x){return x.id!==folderId;});
+  uploadSelectedFolderIds=uploadSelectedFolderIds.filter(function(id){return id!==folderId;});
+  docEditSelectedFolderIds=docEditSelectedFolderIds.filter(function(id){return id!==folderId;});
+  delete foldersOpen[folderId];
+  await loadDocuments(currentMatter.id);
+  await loadMatters();
+  renderManageFoldersList();
+  renderUploadFolderPicker();
+  if(failed>0)showToast('Deleted with '+failed+' error'+(failed!==1?'s':''));
+  else showToast('Folder and '+soloDocs.length+' document'+(soloDocs.length!==1?'s':'')+' deleted');
 }
 async function deleteDoc(id,name){if(!confirm('Remove "'+name+'"?'))return;try{await api('/api/documents?id='+id,'DELETE');await loadDocuments(currentMatter.id);await loadMatters();showToast('Document removed');}catch(e){showToast('Error: '+e.message);}}
 
@@ -526,7 +939,6 @@ function renderUploadFolderPicker(){
     +'<div id="newFolderInputRow" style="display:none;margin-bottom:.5rem">'
     +'<div style="display:flex;gap:.3rem;align-items:center">'
     +'<input type="text" id="newFolderNameInput" list="newFolderSuggestions" placeholder="Folder name…" style="flex:1;padding:.35rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-size:.82rem;background:var(--white)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();createFolderInline();}else if(event.key===\'Escape\'){event.preventDefault();hideNewFolderInput();}">'
-    +'<datalist id="newFolderSuggestions"></datalist>'
     +'<button class="btn-dl" onclick="createFolderInline()" style="font-size:.72rem;padding:.28rem .55rem">Add</button>'
     +'<button class="btn-dl" onclick="hideNewFolderInput()" style="font-size:.72rem;padding:.28rem .55rem;background:var(--off-white);color:var(--text-faint)">Cancel</button>'
     +'</div>'
@@ -694,23 +1106,9 @@ async function renameFolderFromModal(folderId){
 }
 
 async function deleteFolderFromModal(folderId,folderName){
-  var f=currentFolders.find(function(x){return x.id===folderId;});
-  var count=f?(f.document_count||0):0;
-  var msg='Delete folder "'+folderName+'"?';
-  if(count>0)msg+='\n\n'+count+' document'+(count!==1?'s':'')+' currently assigned to this folder will be un-classified (the documents themselves will NOT be deleted).';
-  if(!confirm(msg))return;
-  try{
-    await api('/api/folders?id='+folderId,'DELETE');
-    /* Remove from in-memory state and clean selections */
-    currentFolders=currentFolders.filter(function(x){return x.id!==folderId;});
-    uploadSelectedFolderIds=uploadSelectedFolderIds.filter(function(id){return id!==folderId;});
-    docEditSelectedFolderIds=docEditSelectedFolderIds.filter(function(id){return id!==folderId;});
-    renderManageFoldersList();
-    renderUploadFolderPicker();
-    /* Reload documents so folder_ids on each doc reflect the delete */
-    await loadDocuments(currentMatter.id);
-    showToast('Folder deleted');
-  }catch(e){showToast('Error: '+e.message);}
+  /* v5.1: Delegate to the unified confirm-and-delete helper so the main-list
+     × button and the Manage Folders modal have identical semantics. */
+  await confirmAndDeleteFolder(folderId,folderName);
 }
 
 /* ── CHAT ─────────────────────────────────────────────────────────────────── */

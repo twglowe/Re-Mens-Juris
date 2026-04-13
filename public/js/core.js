@@ -466,10 +466,15 @@ function renderDocs(){
     }
     var descHtml=doc.description?'<div class="doc-desc" style="font-size:.66rem;color:var(--text-light);margin-top:.06rem;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(doc.description)+'">'+esc(doc.description)+'</div>':'';
     var indent=inFolderId?'margin-left:1.35rem;':'';
-    /* v5.1a: Safari has a long-standing bug where draggable=true on a
+    /* v5.1a/b: Safari has a long-standing bug where draggable=true on a
        display:flex container drops all dragover/drop events silently.
-       Workaround: put draggable on an outer plain-block wrapper. The inner
-       .doc-item keeps its existing flex layout unchanged. */
+       Workaround: put draggable on an outer plain-block wrapper.
+       v5.1b: ALSO add -webkit-user-drag:element. Without this, Safari
+       defaults to "auto" which silently refuses to start a drag on a
+       generic <div>. With "element" Safari unambiguously initiates the
+       drag. position:relative is added because some Safari versions block
+       dragstart on elements inside an overflow:auto container unless the
+       draggable element has its own positioning context. */
     return '<div class="doc-item-wrap" draggable="true"'
       +' data-doc-id="'+doc.id+'"'
       +' data-in-folder="'+(inFolderId||'')+'"'
@@ -478,7 +483,7 @@ function renderDocs(){
       +' ontouchstart="docTouchStart(event,\''+doc.id+'\')"'
       +' ontouchend="docTouchEnd(event)"'
       +' ontouchmove="docTouchEnd(event)"'
-      +' style="display:block;cursor:grab;'+indent+'">'
+      +' style="display:block;cursor:grab;position:relative;-webkit-user-drag:element;'+indent+'">'
       +'<div class="doc-item">'
       +'<span class="doc-icon">'+(icons[doc.doc_type]||'📄')+'</span><div class="doc-info">'
       +'<div class="doc-name" title="'+esc(doc.name)+'">'+esc(doc.name)+'</div>'
@@ -501,20 +506,22 @@ function renderDocs(){
        dragover but silently drops drop events.
        Also: the toggle click is now on an INNER wrapper, so dropping a
        document on the folder row does NOT fire the folder toggle
-       underneath. */
+       underneath.
+       v5.1b: Folder rows are now brown to match the New folder button and
+       to give them clear visual hierarchy over the pale-blue doc rows. */
     html+='<div class="folder-row" data-folder-id="'+f.id+'"'
       +' ondragenter="folderDragOver(event,\''+f.id+'\')"'
       +' ondragover="folderDragOver(event,\''+f.id+'\')"'
       +' ondragleave="folderDragLeave(event)"'
       +' ondrop="folderDrop(event,\''+f.id+'\')"'
-      +' style="display:flex;align-items:center;gap:.35rem;padding:.45rem .4rem;margin-top:.2rem;border-radius:5px;background:var(--off-white);border:1px solid var(--border);font-weight:600;font-size:.82rem;color:var(--text-dark)">'
-      +'<div onclick="toggleFolderOpen(\''+f.id+'\')" style="display:flex;align-items:center;gap:.35rem;flex:1;cursor:pointer;min-width:0">'
-      +'<span style="font-size:.7rem;width:.85rem;display:inline-block;text-align:center;color:var(--text-faint)">'+glyph+'</span>'
-      +'<span style="font-size:.95rem">📁</span>'
-      +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(f.name)+'</span>'
-      +'<span style="font-size:.68rem;color:var(--text-faint);font-weight:500">('+kids.length+')</span>'
+      +' style="display:flex;align-items:center;gap:.45rem;padding:.65rem .55rem;margin-top:.35rem;border-radius:7px;background:#8b6f47;border:none;color:#fff;font-weight:700;font-size:.88rem;box-shadow:0 1px 3px rgba(139,111,71,.25)">'
+      +'<div onclick="toggleFolderOpen(\''+f.id+'\')" style="display:flex;align-items:center;gap:.45rem;flex:1;cursor:pointer;min-width:0">'
+      +'<span style="font-size:.78rem;width:.9rem;display:inline-block;text-align:center;color:rgba(255,255,255,.85)">'+glyph+'</span>'
+      +'<span style="font-size:1.4rem;line-height:1">📁</span>'
+      +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff">'+esc(f.name)+'</span>'
+      +'<span style="font-size:.72rem;color:rgba(255,255,255,.8);font-weight:600">('+kids.length+')</span>'
       +'</div>'
-      +'<button onclick="event.stopPropagation();confirmAndDeleteFolder(\''+f.id+'\',\''+esc(f.name).replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.05rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Delete folder">×</button>'
+      +'<button onclick="event.stopPropagation();confirmAndDeleteFolder(\''+f.id+'\',\''+esc(f.name).replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:rgba(255,255,255,.85);cursor:pointer;font-size:1.15rem;padding:0 5px;flex-shrink:0;font-weight:700" title="Delete folder">×</button>'
       +'</div>';
     if(open){
       if(kids.length===0){
@@ -1441,4 +1448,38 @@ document.addEventListener('keydown',function(e){
 function showToast(msg){var old=document.querySelector('.toast');if(old)old.remove();var t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove();},3200);}
 function clearMessages(){document.getElementById('messagesArea').innerHTML='';}
 function sysMsg(text){var area=document.getElementById('messagesArea');var el=document.createElement('div');el.style.cssText='text-align:center;font-size:.78rem;font-weight:500;color:var(--text-faint);padding:.45rem;font-style:italic;';el.innerHTML=renderMd(text);area.appendChild(el);area.scrollTop=area.scrollHeight;}
+
+/* v5.1b: Document-level event delegation for drag-and-drop and diagnostic
+   probes. The inline ondragstart= attributes on .doc-item-wrap should fire
+   first; this delegated listener is a backup in case Safari is silently
+   ignoring inline handlers on dynamically-injected HTML (which it sometimes
+   does for elements inside scroll containers). The mousedown probe logs
+   whenever a click hits a doc-item-wrap, so we can tell whether the drag
+   never starts because mousedown isn't reaching the wrapper or because
+   dragstart isn't firing despite mousedown working. */
+document.addEventListener('mousedown',function(ev){
+  var wrap=ev.target&&ev.target.closest&&ev.target.closest('.doc-item-wrap');
+  if(wrap){
+    console.log('v5.1b mousedown on doc-item-wrap: doc='+(wrap.getAttribute('data-doc-id')||'?')+' draggable='+wrap.getAttribute('draggable'));
+  }
+},true);
+document.addEventListener('dragstart',function(ev){
+  var wrap=ev.target&&ev.target.closest&&ev.target.closest('.doc-item-wrap');
+  if(!wrap)return;
+  console.log('v5.1b delegated dragstart fired for doc='+(wrap.getAttribute('data-doc-id')||'?'));
+  /* If inline handler already populated dataTransfer, this is a no-op cosmetic
+     log. If inline handler didn't fire, populate dataTransfer here. */
+  try{
+    var existing=ev.dataTransfer.getData('text/plain');
+    if(!existing){
+      console.log('v5.1b delegated: inline handler did NOT populate dataTransfer, doing it now');
+      var docId=wrap.getAttribute('data-doc-id')||'';
+      var fromFolder=wrap.getAttribute('data-in-folder')||'';
+      ev.dataTransfer.setData('text/plain',JSON.stringify({docId:docId,from:fromFolder}));
+      ev.dataTransfer.effectAllowed='move';
+    }else{
+      console.log('v5.1b delegated: inline handler already set dataTransfer');
+    }
+  }catch(e){console.log('v5.1b delegated dataTransfer error:',e);}
+},true);
 /* init() is called at the end of the last loaded script file (diagram.js) */

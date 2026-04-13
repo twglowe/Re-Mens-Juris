@@ -913,6 +913,20 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <button class="chip chip-add" onclick="addFocusChip()">+ Add</button>
         </div>
       </div>
+      <!-- v5.1: Prominent brown "New folder" button with inline input -->
+      <div id="newFolderButtonRow" style="display:none;margin-bottom:.4rem">
+        <button id="newFolderMainBtn" onclick="showNewFolderInputMain()" style="width:100%;padding:.5rem .75rem;background:#8b6f47;color:#fff;border:none;border-radius:6px;font-size:.86rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.4rem">
+          <span style="font-size:1.05rem">📁</span>
+          <span>New folder</span>
+        </button>
+        <div id="newFolderMainInputRow" style="display:none;margin-top:.35rem">
+          <div style="display:flex;gap:.3rem;align-items:center">
+            <input type="text" id="newFolderMainNameInput" list="newFolderSuggestions" placeholder="Folder name…" style="flex:1;padding:.35rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-size:.84rem;background:var(--white)" onkeydown="if(event.key==='Enter'){event.preventDefault();createFolderFromMainInput();}else if(event.key==='Escape'){event.preventDefault();hideNewFolderInputMain();}">
+            <button class="btn-dl" onclick="createFolderFromMainInput()" style="font-size:.74rem;padding:.3rem .6rem">Add</button>
+            <button class="btn-dl" onclick="hideNewFolderInputMain()" style="font-size:.74rem;padding:.3rem .6rem;background:var(--off-white);color:var(--text-faint)">Cancel</button>
+          </div>
+        </div>
+      </div>
       <div class="docs-scroll"><div id="docsList"></div></div>
     </div>
   </div>
@@ -1142,6 +1156,13 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 </div>
 
 <div class="toast" style="display:none"></div>
+<!-- v5.1: Document context menu (desktop right-click + iPad long-press) -->
+<div id="docContextMenu" style="display:none;position:fixed;background:var(--white);border:1.5px solid var(--border);border-radius:6px;box-shadow:0 4px 18px rgba(0,0,0,.18);padding:.3rem 0;min-width:200px;z-index:9999;font-size:.85rem"></div>
+<!-- v5.1: Shared folder-name suggestions datalist. Populated by both the
+     upload-picker inline input (renderUploadFolderPicker) and the main-list
+     "New folder" button (showNewFolderInputMain). Lives at top-level so it
+     exists from page load, before any picker has been rendered. -->
+<datalist id="newFolderSuggestions"></datalist>
 <script src="/js/core.js"></script>
 <script src="/js/tools.js"></script>
 <script src="/js/library.js"></script>

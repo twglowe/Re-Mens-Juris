@@ -1,5 +1,30 @@
 import { createClient } from "@supabase/supabase-js";
 
+/* ── v5.2: Batched upload support ─────────────────────────────────────────
+   Very large PDFs (3 GB+ hearing bundles) extract to more text than fits
+   in a single POST body. Vercel's gateway rejects requests with body >
+   ~4.5 MB with FUNCTION_PAYLOAD_TOO_LARGE before the handler runs. The
+   client-side text extraction succeeds but the upload POST fails.
+
+   Fix: accept batched uploads. The client splits pageTexts into chunks
+   capped at ~2 MB of JSON per POST and sends them sequentially. New
+   optional body fields:
+     - batchIndex   (0-based index of this batch)
+     - batchTotal   (total number of batches for this document)
+     - documentId   (set on batch 1..N-1, referencing the document created
+                     by batch 0)
+   If all three are absent the handler behaves exactly as before — the
+   single-POST happy path is fully backward compatible.
+
+   Flow:
+     - batch 0 (or single-POST): create document row, insert chunks,
+       finalise counts only if single-POST; otherwise return documentId
+       so the client can use it for subsequent batches
+     - batch 1..N-1: look up existing document, verify it belongs to the
+       same matter, compute next chunk_index, insert chunks; on the last
+       batch update chunk_count and matter document_count
+   ─────────────────────────────────────────────────────────────────────── */
+
 /* ── v5.1d: pdf-parse import REMOVED ──────────────────────────────────────
    The previous version of this file had `import pdfParse from
    "pdf-parse/lib/pdf-parse.js"` at the top. On Vercel this started failing
@@ -155,14 +180,23 @@ export default async function handler(req, res) {
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
   /* v5.0: folderIds is an optional array of folder UUIDs to assign this
-     document to on upload. Empty / missing = uncategorised. */
-  const { matterId, fileName, fileData, textContent, pageTexts, docType, party, docIssues, folderIds } = req.body;
+     document to on upload. Empty / missing = uncategorised.
+     v5.2: batchIndex, batchTotal, documentId are optional fields for
+     batched uploads of very large files. If batchIndex is missing or 0
+     AND documentId is missing, this is a fresh upload: create the
+     document row, insert chunks, update counts (if single-batch).
+     If batchIndex > 0 AND documentId is provided, this is an append
+     batch for an existing document: verify permission, insert chunks
+     with chunk_index continuing from the current max, and if this is
+     the last batch, update chunk_count and matter document_count. */
+  const {
+    matterId, fileName, fileData, textContent, pageTexts,
+    docType, party, docIssues, folderIds,
+    batchIndex, batchTotal, documentId,
+  } = req.body;
   if (!matterId || !fileName) return res.status(400).json({ error: "Missing fields" });
 
-  /* v5.1d: fileData path is no longer supported. The client extracts text
-     from PDFs and .docx files locally (pdf.js and mammoth.js) and POSTs
-     pageTexts. If any stale client still tries the fileData path, return a
-     clear error rather than crash. */
+  /* v5.1d: fileData path is no longer supported. */
   if (fileData && !pageTexts && !textContent) {
     return res.status(400).json({
       error: "Server-side PDF extraction is no longer supported. Please reload the app and try again — the new client extracts text locally before upload."
@@ -174,6 +208,13 @@ export default async function handler(req, res) {
 
   const allowed = await canEdit(supabase, user.id, matterId);
   if (!allowed) return res.status(403).json({ error: "No edit permission" });
+
+  /* v5.2: Determine upload mode. */
+  const isBatched = typeof batchTotal === "number" && batchTotal > 1;
+  const bIdx = typeof batchIndex === "number" ? batchIndex : 0;
+  const bTotal = typeof batchTotal === "number" ? batchTotal : 1;
+  const isAppendBatch = isBatched && bIdx > 0 && typeof documentId === "string" && documentId.length > 0;
+  const isFirstBatch = !isAppendBatch; /* first batch OR single-POST happy path */
 
   try {
     let extractedText = "";
@@ -194,6 +235,100 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No readable text found. This document may be a scanned image — please OCR it first at ilovepdf.com, or check that the .docx file is not empty." });
     }
 
+    /* ── Append-batch path ────────────────────────────────────────────── */
+    if (isAppendBatch) {
+      /* Verify the document exists and belongs to this matter. This also
+         prevents cross-matter abuse where a client could send a random
+         documentId and try to append chunks to someone else's document. */
+      const { data: existingDoc, error: eErr } = await supabase
+        .from("documents")
+        .select("id, matter_id, char_count")
+        .eq("id", documentId)
+        .single();
+      if (eErr || !existingDoc) {
+        return res.status(404).json({ error: "Document not found for append" });
+      }
+      if (existingDoc.matter_id !== matterId) {
+        return res.status(403).json({ error: "Document does not belong to this matter" });
+      }
+
+      /* Find the current max chunk_index for this document so we can
+         continue numbering from there. */
+      const { data: maxRows, error: mErr } = await supabase
+        .from("chunks")
+        .select("chunk_index")
+        .eq("document_id", documentId)
+        .order("chunk_index", { ascending: false })
+        .limit(1);
+      if (mErr) throw mErr;
+      const baseIndex = (maxRows && maxRows.length > 0 ? (maxRows[0].chunk_index || 0) + 1 : 0);
+
+      /* Chunk this batch's text. Same chunker as first-batch path. */
+      let chunkRows;
+      if (pages) {
+        const pageChunks = chunkTextWithPages(pages);
+        chunkRows = pageChunks.map((c, i) => ({
+          matter_id: matterId, document_id: documentId, document_name: fileName,
+          doc_type: docType || "Other", party: party || null,
+          doc_issues: docIssues || null, chunk_index: baseIndex + i,
+          content: c.text, page_number: c.page,
+        }));
+      } else {
+        const plainChunks = chunkText(extractedText);
+        chunkRows = plainChunks.map((text, i) => ({
+          matter_id: matterId, document_id: documentId, document_name: fileName,
+          doc_type: docType || "Other", party: party || null,
+          doc_issues: docIssues || null, chunk_index: baseIndex + i,
+          content: text, page_number: null,
+        }));
+      }
+
+      /* Insert in sub-batches of 50 (same pattern as first-batch path) */
+      for (let i = 0; i < chunkRows.length; i += 50) {
+        const { error } = await supabase.from("chunks").insert(chunkRows.slice(i, i + 50));
+        if (error) throw error;
+      }
+
+      /* Update char_count to accumulate the running total across batches */
+      await supabase.from("documents")
+        .update({ char_count: (existingDoc.char_count || 0) + extractedText.length })
+        .eq("id", documentId);
+
+      /* If this is the last batch, finalise: update chunk_count and
+         refresh the matter's document_count. */
+      if (bIdx === bTotal - 1) {
+        const { count: finalChunkCount } = await supabase
+          .from("chunks")
+          .select("*", { count: "exact", head: true })
+          .eq("document_id", documentId);
+        await supabase.from("documents")
+          .update({ chunk_count: finalChunkCount || 0 })
+          .eq("id", documentId);
+        const { count: matterDocCount } = await supabase
+          .from("documents")
+          .select("*", { count: "exact", head: true })
+          .eq("matter_id", matterId);
+        await supabase.from("matters")
+          .update({ document_count: matterDocCount || 0 })
+          .eq("id", matterId);
+        return res.status(200).json({
+          success: true, documentId: documentId,
+          chunks: chunkRows.length, characters: extractedText.length,
+          pageAware: !!pages,
+          batchIndex: bIdx, batchTotal: bTotal, complete: true,
+        });
+      }
+
+      /* Not the last batch — return progress but don't update counts yet */
+      return res.status(200).json({
+        success: true, documentId: documentId,
+        chunks: chunkRows.length, characters: extractedText.length,
+        pageAware: !!pages,
+        batchIndex: bIdx, batchTotal: bTotal, complete: false,
+      });
+    }
+
+    /* ── First-batch path (also covers single-POST happy path) ──────── */
     const { data: doc, error: docError } = await supabase.from("documents")
       .insert({
         matter_id: matterId, name: fileName,
@@ -251,6 +386,22 @@ export default async function handler(req, res) {
       if (error) throw error;
     }
 
+    /* v5.2: If this is the first of a multi-batch upload, skip the final
+       chunk_count update — wait until the last batch finalises. If it's
+       a single-POST upload, finalise now (existing behaviour). */
+    if (isBatched) {
+      /* First batch of many — char_count is already stored from the insert
+         above; chunk_count will be finalised on the last batch. Return
+         the documentId so the client can use it in subsequent batches. */
+      return res.status(200).json({
+        success: true, documentId: doc.id,
+        chunks: chunkRows.length, characters: extractedText.length,
+        pageAware: !!pages,
+        batchIndex: bIdx, batchTotal: bTotal, complete: false,
+      });
+    }
+
+    /* Single-POST happy path: finalise chunk_count and matter document_count */
     await supabase.from("documents").update({ chunk_count: chunkRows.length }).eq("id", doc.id);
     const { count } = await supabase.from("documents").select("*", { count: "exact", head: true }).eq("matter_id", matterId);
     await supabase.from("matters").update({ document_count: count || 0 }).eq("id", matterId);

@@ -1,5 +1,23 @@
 import { createClient } from "@supabase/supabase-js";
 
+/* ── v5.2b: Force Vercel rebuild ──────────────────────────────────────────
+   v5.2 shipped with batched-upload server-side code, but Vercel's build
+   system appears to have pinned the Lambda for api/upload.js to a pre-v5.2
+   bundle. Runtime testing with debug logging confirmed: on batched uploads,
+   every batch creates a new document row, the server response never
+   includes complete/batchIndex/batchTotal fields, and the response shape
+   matches the pre-v5.2 single-POST path exactly. This means the Lambda is
+   still v5.1d even though the file on GitHub and the static assets on the
+   CDN are v5.2a.
+
+   Fix: push a meaningful change to this file (this header update plus a
+   log line below) so Vercel's build diff detector cannot dedupe it and
+   is forced to rebuild the Lambda from the current source.
+
+   The actual batching logic is unchanged from v5.2 \u2014 this is purely
+   a rebuild trigger.
+   ─────────────────────────────────────────────────────────────────────── */
+
 /* ── v5.2: Batched upload support ─────────────────────────────────────────
    Very large PDFs (3 GB+ hearing bundles) extract to more text than fits
    in a single POST body. Vercel's gateway rejects requests with body >
@@ -209,6 +227,11 @@ export default async function handler(req, res) {
   const allowed = await canEdit(supabase, user.id, matterId);
   if (!allowed) return res.status(403).json({ error: "No edit permission" });
 
+  /* v5.2b: Log marker so Vercel function logs prove which version is
+     actually running. If you're debugging a batched upload, tail the
+     Vercel logs and look for this line. */
+  console.log("v5.2b upload handler: batchIndex=" + batchIndex + " batchTotal=" + batchTotal + " documentId=" + (documentId ? documentId.slice(0, 8) + "..." : "none"));
+
   /* v5.2: Determine upload mode. */
   const isBatched = typeof batchTotal === "number" && batchTotal > 1;
   const bIdx = typeof batchIndex === "number" ? batchIndex : 0;
@@ -316,6 +339,7 @@ export default async function handler(req, res) {
           chunks: chunkRows.length, characters: extractedText.length,
           pageAware: !!pages,
           batchIndex: bIdx, batchTotal: bTotal, complete: true,
+          serverVersion: "v5.2b",
         });
       }
 
@@ -325,6 +349,7 @@ export default async function handler(req, res) {
         chunks: chunkRows.length, characters: extractedText.length,
         pageAware: !!pages,
         batchIndex: bIdx, batchTotal: bTotal, complete: false,
+        serverVersion: "v5.2b",
       });
     }
 
@@ -398,6 +423,7 @@ export default async function handler(req, res) {
         chunks: chunkRows.length, characters: extractedText.length,
         pageAware: !!pages,
         batchIndex: bIdx, batchTotal: bTotal, complete: false,
+        serverVersion: "v5.2b",
       });
     }
 
@@ -409,7 +435,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true, documentId: doc.id,
       chunks: chunkRows.length, characters: extractedText.length,
-      pageAware: !!pages
+      pageAware: !!pages,
+      serverVersion: "v5.2b",
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Upload failed" });

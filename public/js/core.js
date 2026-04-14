@@ -18,6 +18,11 @@ var foldersOpen={};
    backend; used only in foldersOpen tracking and as the inFolderId passed
    to renderDocRow when rendering Unassigned children. */
 var UNASSIGNED_ID='__unassigned__';
+/* v5.2: State for resuming a failed batched upload. When a batched upload
+   fails part-way through, the batches already uploaded are preserved in
+   the database and the remaining state is stashed here so the user can
+   retry. Cleared on successful completion or when the user dismisses. */
+var pendingUploadRetry=null;
 /* v5.1: Context menu state — docId of the row the menu was opened on, and
    mode ('root' | 'moveTo' | 'addTo') for the single-level replace-contents flow. */
 var ctxMenuDocId=null;
@@ -1062,9 +1067,15 @@ uploadZone.addEventListener('dragleave',function(){uploadZone.classList.remove('
 uploadZone.addEventListener('drop',function(e){e.preventDefault();uploadZone.classList.remove('drag-over');if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(e.dataTransfer.files).filter(function(f){var n=f.name.toLowerCase();return n.endsWith('.pdf')||n.endsWith('.docx');}));});
 fileInput.addEventListener('change',function(){if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(fileInput.files));fileInput.value='';});
 
-/* v4.5: Dispatch by extension, reject legacy .doc, support .docx via mammoth */
+/* v4.5: Dispatch by extension, reject legacy .doc, support .docx via mammoth
+   v5.2: Route each file through uploadFileBatched so very large files
+   (3 GB hearing bundles extracting to >4.5 MB of text) can be split into
+   multiple POSTs that each fit under Vercel's gateway limit. */
 async function uploadFiles(files){
   if(!files.length||!currentMatter)return;
+  /* Clear any previous retry state — a fresh upload session replaces it */
+  pendingUploadRetry=null;
+  clearUploadRetryUI();
   var docType=document.getElementById('docTypeSelect').value;
   var prog=document.getElementById('uploadProg'),errEl=document.getElementById('uploadErr');
   errEl.classList.remove('on');
@@ -1080,10 +1091,15 @@ async function uploadFiles(files){
       var pages=isDocx?await extractDocxText(file):await extractPdfText(file);
       var fullText=pages.map(function(p){return p.text;}).join('\n\n');
       if(!fullText||fullText.trim().length<50){errEl.textContent='No readable text in '+file.name+'. '+(isPdf?'Try OCR at ilovepdf.com first.':'The document may be empty or corrupted.');errEl.classList.add('on');continue;}
-      var unitLabel=isDocx?'block(s)':'page(s)';
-      prog.textContent='Uploading: '+file.name+' ('+Math.round(fullText.length/1024)+'KB text, '+pages.length+' '+unitLabel+')…';
-      var d=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:file.name,pageTexts:pages,docType:docType,folderIds:uploadSelectedFolderIds.slice()});
-      if(d)showToast('\u2713 '+file.name+' — '+d.chunks+' passages indexed'+(d.pageAware?' (page-aware)':''));
+      /* Hand off to the batched uploader. It handles both the single-POST
+         happy path and the multi-POST large-file path transparently. */
+      var ok=await uploadFileBatched(file,pages,docType,uploadSelectedFolderIds.slice(),fullText,isDocx);
+      if(!ok){
+        /* Failure state is already set by uploadFileBatched. Stop the
+           outer loop so the user can retry before continuing with the
+           rest of the batch. */
+        break;
+      }
     }catch(e){errEl.textContent='Failed: '+file.name+' — '+e.message;errEl.classList.add('on');}
   }
   prog.classList.remove('on');await loadDocuments(currentMatter.id);await loadMatters();
@@ -1091,6 +1107,197 @@ async function uploadFiles(files){
      folder picker (document counts may have changed). */
   uploadSelectedFolderIds=[];
   await loadFolders(currentMatter.id);
+}
+
+/* v5.2: Batched upload for a single file. Packs pageTexts into batches
+   capped at ~2 MB of JSON per POST, then sends them sequentially. The
+   first batch creates the document row; subsequent batches append
+   chunks to the same documentId. Returns true on full success, false
+   on failure (in which case pendingUploadRetry is populated and the
+   retry UI is shown). */
+async function uploadFileBatched(file,pages,docType,folderIds,fullText,isDocx){
+  var errEl=document.getElementById('uploadErr');
+  var prog=document.getElementById('uploadProg');
+  /* v5.2a: Reduced from 2 MB to 1 MB after v5.2 still hit 413s on real
+     dense hearing bundles. JSON encoding expands bytes due to
+     backslash-escaping and Unicode, and Vercel's gateway limit is 4.5 MB
+     on the body. 1 MB of raw text typically produces ~1.2-2.5 MB of
+     actual JSON body, leaving >2 MB of safety margin. */
+  var BATCH_TARGET_BYTES=1*1024*1024;
+  var batches=packPagesIntoBatches(pages,BATCH_TARGET_BYTES);
+  var unitLabel=isDocx?'block(s)':'page(s)';
+  var totalKB=Math.round(fullText.length/1024);
+  /* Single-batch happy path — matches old behaviour exactly, no batch
+     fields sent to the server. */
+  if(batches.length===1){
+    var singleBody={matterId:currentMatter.id,fileName:file.name,pageTexts:pages,docType:docType,folderIds:folderIds};
+    var singleBodyKB=Math.round(JSON.stringify(singleBody).length/1024);
+    console.log('v5.2a single-batch upload: '+pages.length+' pages, body='+singleBodyKB+'KB');
+    prog.textContent='Uploading: '+file.name+' ('+totalKB+'KB text, '+pages.length+' '+unitLabel+')…';
+    try{
+      var d=await api('/api/upload','POST',singleBody);
+      if(d)showToast('\u2713 '+file.name+' — '+d.chunks+' passages indexed'+(d.pageAware?' (page-aware)':''));
+      return true;
+    }catch(e){
+      console.log('v5.2a single-batch FAILED: body was '+singleBodyKB+'KB, error='+e.message);
+      errEl.textContent='Failed: '+file.name+' \u2014 '+e.message+' (body '+singleBodyKB+'KB)';
+      errEl.classList.add('on');
+      return false;
+    }
+  }
+  /* Multi-batch path. Send batches sequentially, updating progress. */
+  return await runBatchedUploadFromIndex(file,pages,docType,folderIds,batches,0,null,unitLabel,totalKB);
+}
+
+/* v5.2: Execute a batched upload starting at fromBatchIndex. Used both
+   for fresh uploads (fromBatchIndex=0, documentId=null) and for retries
+   (fromBatchIndex=N, documentId=<existing>).
+   v5.2a: logs the actual JSON body size before each POST so that any
+   future 413 can be diagnosed from the Console output without guessing. */
+async function runBatchedUploadFromIndex(file,pages,docType,folderIds,batches,fromBatchIndex,documentId,unitLabel,totalKB){
+  var errEl=document.getElementById('uploadErr');
+  var prog=document.getElementById('uploadProg');
+  var totalBatches=batches.length;
+  for(var bi=fromBatchIndex;bi<totalBatches;bi++){
+    var batchPages=batches[bi];
+    var body={
+      matterId:currentMatter.id,
+      fileName:file.name,
+      pageTexts:batchPages,
+      docType:docType,
+      folderIds:folderIds,
+      batchIndex:bi,
+      batchTotal:totalBatches,
+    };
+    if(bi>0&&documentId)body.documentId=documentId;
+    var bodyJson=JSON.stringify(body);
+    var bodyKB=Math.round(bodyJson.length/1024);
+    console.log('v5.2a batch '+(bi+1)+'/'+totalBatches+': '+batchPages.length+' pages, body='+bodyKB+'KB');
+    prog.textContent='Uploading: '+file.name+' (batch '+(bi+1)+' of '+totalBatches+', '+bodyKB+'KB, '+totalKB+'KB total)…';
+    prog.classList.add('on');
+    try{
+      var d=await api('/api/upload','POST',body);
+      /* First batch response carries the documentId; stash it for the rest. */
+      if(bi===0&&d&&d.documentId){documentId=d.documentId;}
+      /* Last batch complete — full success. */
+      if(bi===totalBatches-1&&d&&d.complete){
+        showToast('\u2713 '+file.name+' \u2014 uploaded in '+totalBatches+' batches');
+        pendingUploadRetry=null;
+        clearUploadRetryUI();
+        return true;
+      }
+    }catch(e){
+      console.log('v5.2a batch '+(bi+1)+' FAILED: body was '+bodyKB+'KB, error='+e.message);
+      /* Store what we need to resume and show the retry button. */
+      pendingUploadRetry={
+        file:file,
+        pages:pages,
+        docType:docType,
+        folderIds:folderIds,
+        batches:batches,
+        fromBatchIndex:bi,
+        documentId:documentId,
+        unitLabel:unitLabel,
+        totalKB:totalKB,
+        error:e.message,
+      };
+      errEl.innerHTML='Failed on batch '+(bi+1)+' of '+totalBatches+' ('+bodyKB+'KB): '+esc(e.message)
+        +' <button onclick="retryPendingUpload()" style="margin-left:.5rem;padding:.2rem .6rem;background:var(--blue);color:#fff;border:none;border-radius:4px;font-size:.78rem;font-weight:700;cursor:pointer">Retry from batch '+(bi+1)+'</button>'
+        +' <button onclick="dismissPendingUpload()" style="margin-left:.25rem;padding:.2rem .6rem;background:var(--off-white);color:var(--text-faint);border:1px solid var(--border);border-radius:4px;font-size:.78rem;font-weight:600;cursor:pointer">Dismiss</button>';
+      errEl.classList.add('on');
+      prog.classList.remove('on');
+      return false;
+    }
+  }
+  /* Shouldn't reach here \u2014 the last-batch branch returns on success. */
+  return true;
+}
+
+/* v5.2: Pack pages into batches each below targetBytes of JSON.
+   v5.2a: Rewritten to MEASURE real JSON size (JSON.stringify) rather than
+   estimate raw character count. JSON encoding expands bytes due to
+   backslash-escaping of quotes, backslashes, and Unicode, plus the
+   {"page":N,"text":"..."} overhead. A naive character-count estimate
+   can under-report by 2x on dense text. Also splits individual pages
+   that exceed targetBytes by slicing their text; preserves the page
+   number so page-aware chunking still works on the server. */
+function packPagesIntoBatches(pages,targetBytes){
+  /* Step 1: split any individual page whose JSON representation exceeds
+     targetBytes into smaller slices with the same page number. */
+  var splitPages=[];
+  for(var i=0;i<pages.length;i++){
+    var pg=pages[i];
+    var asJson=JSON.stringify(pg);
+    if(asJson.length<=targetBytes){
+      splitPages.push(pg);
+      continue;
+    }
+    /* Page is too big on its own. Slice the text. We need each slice's
+       JSON form to fit under targetBytes. Leave 200 bytes of headroom
+       for the {"page":N,"text":""} wrapper overhead. */
+    var maxChars=targetBytes-200;
+    var text=pg.text||'';
+    var start=0;
+    while(start<text.length){
+      var slice=text.slice(start,start+maxChars);
+      /* Re-check the actual JSON size of the slice; if escaping blew it
+         up past targetBytes, halve the slice and retry. Very rare. */
+      while(JSON.stringify({page:pg.page,text:slice}).length>targetBytes&&slice.length>100){
+        slice=slice.slice(0,Math.floor(slice.length*0.8));
+      }
+      splitPages.push({page:pg.page,text:slice});
+      start+=slice.length;
+    }
+  }
+  /* Step 2: greedy-pack splitPages into batches by measuring the JSON
+     size of the batch-so-far plus the candidate page. */
+  var batches=[];
+  var current=[];
+  for(var j=0;j<splitPages.length;j++){
+    var candidate=splitPages[j];
+    if(current.length===0){
+      current.push(candidate);
+      continue;
+    }
+    /* Would adding this page push the batch over targetBytes? */
+    var withCandidate=JSON.stringify(current.concat([candidate]));
+    if(withCandidate.length>targetBytes){
+      batches.push(current);
+      current=[candidate];
+    }else{
+      current.push(candidate);
+    }
+  }
+  if(current.length>0)batches.push(current);
+  return batches;
+}
+
+/* v5.2: Retry handler for the button shown in the upload error area. */
+async function retryPendingUpload(){
+  if(!pendingUploadRetry)return;
+  var r=pendingUploadRetry;
+  var errEl=document.getElementById('uploadErr');
+  errEl.classList.remove('on');
+  errEl.innerHTML='';
+  var ok=await runBatchedUploadFromIndex(r.file,r.pages,r.docType,r.folderIds,r.batches,r.fromBatchIndex,r.documentId,r.unitLabel,r.totalKB);
+  if(ok){
+    /* Refresh the document list so the user sees the completed upload */
+    await loadDocuments(currentMatter.id);
+    await loadMatters();
+    await loadFolders(currentMatter.id);
+  }
+}
+
+/* v5.2: Clear the retry state and hide the retry button. Leaves any
+   partially-uploaded document in place \u2014 the user can delete it from
+   the document list if they want to abandon it. */
+function dismissPendingUpload(){
+  pendingUploadRetry=null;
+  clearUploadRetryUI();
+}
+function clearUploadRetryUI(){
+  var errEl=document.getElementById('uploadErr');
+  if(errEl){errEl.classList.remove('on');errEl.innerHTML='';}
 }
 /* v3.2: Extract text per page for page-aware chunking */
 async function extractPdfText(file){

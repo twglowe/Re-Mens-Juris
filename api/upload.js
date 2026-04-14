@@ -1,9 +1,33 @@
 import { createClient } from "@supabase/supabase-js";
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
+
+/* ── v5.1d: pdf-parse import REMOVED ──────────────────────────────────────
+   The previous version of this file had `import pdfParse from
+   "pdf-parse/lib/pdf-parse.js"` at the top. On Vercel this started failing
+   at MODULE LOAD TIME with "Cannot find module 'pdf-parse/lib/pdf-parse.js'"
+   — the package either disappeared from package.json, was moved to
+   devDependencies, or changed its internal layout. The module-load failure
+   crashed the function before any handler code ran, returning
+   FUNCTION_INVOCATION_FAILED for EVERY upload (PDF and .docx alike).
+
+   Fix: remove the import entirely. The pdfParse() call was only used by
+   the legacy `fileData` branch — a base64 PDF upload path from ELJ v1/v2
+   where the server did the PDF text extraction itself. The current client
+   hasn't used that path since v3.2: both PDF (via pdf.js) and .docx (via
+   mammoth.js via v4.5) extract text client-side and POST `pageTexts`.
+   The `fileData` branch is dead code. It's been replaced with a clear
+   400 response so any stale client that still hits it gets a useful error
+   instead of a cryptic crash.
+   ─────────────────────────────────────────────────────────────────────── */
 
 export const config = { maxDuration: 300, api: { bodyParser: { sizeLimit: "50mb" } } };
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+/* v4.2j lesson: freshClient() per handler invocation, never module-scope.
+   The v5.0 backend files use this pattern; upload.js was one of the
+   originals still on module-scope. Converting to per-invocation keeps
+   this file consistent with folders.js / documents.js / worker.js. */
+function freshClient() {
+  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+}
 
 /* ── v4.3c: TEXT SANITISATION ────────────────────────────────────────────
    PostgreSQL (via PostgREST) rejects strings containing certain Unicode
@@ -25,14 +49,14 @@ function sanitiseText(s) {
   return cleaned;
 }
 
-async function getUser(req) {
+async function getUser(req, supabase) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
   const { data: { user }, error } = await supabase.auth.getUser(token);
   return error ? null : user;
 }
 
-async function canEdit(userId, matterId) {
+async function canEdit(supabase, userId, matterId) {
   const { data: own } = await supabase.from("matters").select("id").eq("id", matterId).eq("owner_id", userId).single();
   if (own) return true;
   const { data: share } = await supabase.from("matter_shares").select("permission").eq("matter_id", matterId).eq("user_id", userId).single();
@@ -40,10 +64,11 @@ async function canEdit(userId, matterId) {
 }
 
 /* ── PAGE-AWARE CHUNKING ──────────────────────────────────────────────────
-   Input: array of { page, text } objects (one per PDF page)
-   Output: array of { text, page } objects where page is the starting page number
-   Each chunk records which page it begins on. If a chunk spans pages,
-   the page number is the page where the chunk starts.
+   Input: array of { page, text } objects (one per PDF page, or one per
+   Word paragraph-block via mammoth.js)
+   Output: array of { text, page } objects where page is the starting page
+   number. Each chunk records which page it begins on. If a chunk spans
+   pages, the page number is the page where the chunk starts.
    ──────────────────────────────────────────────────────────────────────── */
 function chunkTextWithPages(pages, chunkSize = 1200, overlap = 150) {
   const chunks = [];
@@ -125,14 +150,29 @@ function chunkText(text, chunkSize = 1200, overlap = 150) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  const user = await getUser(req);
+  const supabase = freshClient();
+  const user = await getUser(req, supabase);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
+
   /* v5.0: folderIds is an optional array of folder UUIDs to assign this
      document to on upload. Empty / missing = uncategorised. */
   const { matterId, fileName, fileData, textContent, pageTexts, docType, party, docIssues, folderIds } = req.body;
   if (!matterId || !fileName) return res.status(400).json({ error: "Missing fields" });
-  if (!fileData && !textContent && !pageTexts) return res.status(400).json({ error: "No file data or text content provided" });
-  const allowed = await canEdit(user.id, matterId);
+
+  /* v5.1d: fileData path is no longer supported. The client extracts text
+     from PDFs and .docx files locally (pdf.js and mammoth.js) and POSTs
+     pageTexts. If any stale client still tries the fileData path, return a
+     clear error rather than crash. */
+  if (fileData && !pageTexts && !textContent) {
+    return res.status(400).json({
+      error: "Server-side PDF extraction is no longer supported. Please reload the app and try again — the new client extracts text locally before upload."
+    });
+  }
+  if (!textContent && !pageTexts) {
+    return res.status(400).json({ error: "No text content provided" });
+  }
+
+  const allowed = await canEdit(supabase, user.id, matterId);
   if (!allowed) return res.status(403).json({ error: "No edit permission" });
 
   try {
@@ -148,19 +188,10 @@ export default async function handler(req, res) {
       // v3.0 path: Client sent single text string — no page info
       // v4.3c: Sanitise before insertion
       extractedText = sanitiseText(textContent);
-    } else if (fileData) {
-      // Legacy path: base64 PDF, extract server-side
-      const buffer = Buffer.from(fileData, "base64");
-      try {
-        const parsed = await pdfParse(buffer);
-        extractedText = sanitiseText(parsed.text || "");
-      } catch (e) {
-        return res.status(400).json({ error: "Could not read this PDF. It may be password-protected or a scanned image. Please use ilovepdf.com to OCR it first." });
-      }
     }
 
     if (!extractedText || extractedText.trim().length < 50) {
-      return res.status(400).json({ error: "No readable text found. This PDF may be a scanned image — please OCR it first at ilovepdf.com." });
+      return res.status(400).json({ error: "No readable text found. This document may be a scanned image — please OCR it first at ilovepdf.com, or check that the .docx file is not empty." });
     }
 
     const { data: doc, error: docError } = await supabase.from("documents")

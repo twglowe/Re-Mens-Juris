@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 /* v5.3: serverVersion marker per the v5.2b Lambda-pinning lesson. Every
    response stamps this so the client (and a console-side curl) can verify
    which version of this Lambda is actually live. */
-const SERVER_VERSION = "v5.4";
+const SERVER_VERSION = "v5.4a";
 
 /* v4.2j lesson: fresh client per invocation in any function running after a
    schema migration — module-scope clients cache the PostgREST schema. */
@@ -93,6 +93,29 @@ export default async function handler(req, res) {
         const desc = String(body.description || "");
         const { error } = await supabase.from("documents").update({ description: desc }).eq("id", id);
         if (error) throw error;
+      }
+
+      /* v5.4a: rename document. Cascades to chunks.document_name so
+         source-passage lookups by name keep working. Both updates run
+         sequentially — if the chunks update fails after the document
+         update succeeded, the document row is rolled back to the old name. */
+      if (body.name !== undefined) {
+        const newName = String(body.name || "").trim();
+        if (!newName) return res.status(400).json({ error: "Filename cannot be empty" });
+        /* Get the old name first so we can roll back on cascade failure */
+        const { data: existing, error: exErr } = await supabase.from("documents").select("name").eq("id", id).single();
+        if (exErr) throw exErr;
+        const oldName = existing.name;
+        if (newName !== oldName) {
+          const { error: nErr } = await supabase.from("documents").update({ name: newName }).eq("id", id);
+          if (nErr) throw nErr;
+          const { error: cErr } = await supabase.from("chunks").update({ document_name: newName }).eq("document_id", id);
+          if (cErr) {
+            /* Best-effort rollback of the documents row */
+            await supabase.from("documents").update({ name: oldName }).eq("id", id);
+            throw cErr;
+          }
+        }
       }
 
       /* v5.3: update doc_type if provided. */

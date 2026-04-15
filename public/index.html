@@ -910,18 +910,8 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
       </div>
       <div class="upload-progress" id="uploadProg"></div>
       <div class="upload-err" id="uploadErr"></div>
-      <div class="focus-section">
-        <div class="focus-label">Focus Areas</div>
-        <div class="chips" id="focusChips">
-          <span class="chip" data-v="Liability">Liability <button class="chip-del" onclick="this.parentElement.remove()">×</button></span>
-          <span class="chip" data-v="Quantum">Quantum <button class="chip-del" onclick="this.parentElement.remove()">×</button></span>
-          <span class="chip" data-v="Jurisdiction">Jurisdiction <button class="chip-del" onclick="this.parentElement.remove()">×</button></span>
-          <span class="chip" data-v="Limitation">Limitation <button class="chip-del" onclick="this.parentElement.remove()">×</button></span>
-          <span class="chip" data-v="Evidence">Evidence <button class="chip-del" onclick="this.parentElement.remove()">×</button></span>
-          <span class="chip" data-v="Procedure">Procedure <button class="chip-del" onclick="this.parentElement.remove()">×</button></span>
-          <button class="chip chip-add" onclick="addFocusChip()">+ Add</button>
-        </div>
-      </div>
+      <!-- v5.4a: Focus Areas section removed. Per-document doc type and
+           Notes (in the edit modal) cover the same purpose more precisely. -->
       <!-- v5.1: Prominent brown "New folder" button with inline input -->
       <div id="newFolderButtonRow" style="display:none;margin-bottom:.5rem">
         <button id="newFolderMainBtn" onclick="showNewFolderInputMain()" style="width:100%;padding:.85rem 1rem;background:#8b6f47;color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.55rem;box-shadow:0 2px 6px rgba(139,111,71,.25);letter-spacing:.01em">
@@ -1149,9 +1139,8 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <div class="overlay" id="documentEditModal" role="dialog" aria-modal="true" aria-label="Edit Document" style="display:none">
   <div class="modal" style="max-width:540px;width:95%">
     <h3>📄 Edit Document</h3>
-    <div style="padding:.5rem .7rem;background:var(--blue-faint);border:1px solid var(--border);border-radius:6px;margin-bottom:.7rem">
-      <div style="font-size:.9rem;font-weight:700;color:var(--text-dark);word-break:break-word" id="docEditName"></div>
-    </div>
+    <label class="f-label" for="docEditName">Filename</label>
+    <input id="docEditName" type="text" style="width:100%;padding:.5rem .65rem;border:1.5px solid var(--border);border-radius:6px;font-family:'Source Sans 3',sans-serif;font-size:.92rem;font-weight:600;background:var(--white);color:var(--text-dark);margin-bottom:.7rem">
     <label class="f-label" for="docEditType">Document type</label>
     <select id="docEditType" style="width:100%;padding:.5rem .65rem;border:1.5px solid var(--border);border-radius:6px;font-family:'Source Sans 3',sans-serif;font-size:.88rem;background:var(--white);color:var(--text-dark);font-weight:600">
       <option>Pleading</option><option>Skeleton Argument</option><option>Witness Statement</option>
@@ -1177,9 +1166,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js"></script>
-<script src="/js/tools.js"></script>
-<script src="/js/library.js"></script>
-<script src="/js/drafting.js"></script>
-<script src="/js/diagram.js"></script>
+<script src="/js/core.js?v=5.4a"></script>
+<script src="/js/tools.js?v=5.4a"></script>
+<script src="/js/library.js?v=5.4a"></script>
+<script src="/js/drafting.js?v=5.4a"></script>
+<script src="/js/diagram.js?v=5.4a"></script>
 </body></html>

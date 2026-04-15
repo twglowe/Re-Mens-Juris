@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 /* v5.3: serverVersion marker per the v5.2b Lambda-pinning lesson. Every
    response stamps this so the client (and a console-side curl) can verify
    which version of this Lambda is actually live. */
-const SERVER_VERSION = "v5.3";
+const SERVER_VERSION = "v5.4";
 
 /* v4.2j lesson: fresh client per invocation in any function running after a
    schema migration — module-scope clients cache the PostgREST schema. */
@@ -38,7 +38,6 @@ export default async function handler(req, res) {
       const { access } = await canAccessMatter(supabase, user.id, matter_id);
       if (!access) return res.status(403).json({ error: "Access denied" });
 
-      // If doc_name provided, return chunks for source passage panel
       if (doc_name) {
         const { data, error } = await supabase.from("chunks")
           .select("content, chunk_index")
@@ -51,8 +50,8 @@ export default async function handler(req, res) {
       }
 
       /* v5.0: return document list including description and folder_ids.
-         Two queries — documents, then document_folders for those documents —
-         then merge in JS. */
+         v5.4: SELECT * naturally pulls the new file_size and doc_date
+         columns once the migration has run. */
       const { data: docs, error: docsErr } = await supabase.from("documents")
         .select("*").eq("matter_id", matter_id)
         .order("created_at", { ascending: false });
@@ -79,8 +78,7 @@ export default async function handler(req, res) {
     }
 
     /* v5.0: PATCH /api/documents?id=... — edit description and/or folder set.
-       Body: { description?: string, folder_ids?: string[] }
-       folder_ids replaces the document's folder set entirely (idempotent). */
+       v5.3: also accepts doc_type. */
     if (req.method === "PATCH") {
       const { id } = req.query;
       if (!id) return res.status(400).json({ error: "id required" });
@@ -91,16 +89,13 @@ export default async function handler(req, res) {
       const { canEdit } = await canAccessMatter(supabase, user.id, doc.matter_id);
       if (!canEdit) return res.status(403).json({ error: "No edit permission" });
 
-      /* Update description if provided */
       if (body.description !== undefined) {
         const desc = String(body.description || "");
         const { error } = await supabase.from("documents").update({ description: desc }).eq("id", id);
         if (error) throw error;
       }
 
-      /* v5.3: update doc_type if provided. Whitelisted against the same
-         set of values the frontend offers. Free-text legacy values are
-         allowed through unchanged so an existing odd value can be kept. */
+      /* v5.3: update doc_type if provided. */
       if (body.doc_type !== undefined) {
         const dt = String(body.doc_type || "").trim();
         if (dt) {
@@ -109,9 +104,7 @@ export default async function handler(req, res) {
         }
       }
 
-      /* Replace folder set if provided */
       if (Array.isArray(body.folder_ids)) {
-        /* Validate all folder ids belong to the same matter */
         if (body.folder_ids.length > 0) {
           const { data: validFolders, error: vfErr } = await supabase
             .from("folders")
@@ -150,7 +143,6 @@ export default async function handler(req, res) {
       const { canEdit } = await canAccessMatter(supabase, user.id, doc.matter_id);
       if (!canEdit) return res.status(403).json({ error: "You do not have edit permission" });
       await supabase.from("chunks").delete().eq("document_id", id);
-      /* document_folders join rows cascade automatically via FK ON DELETE CASCADE */
       await supabase.from("documents").delete().eq("id", id);
       const { count } = await supabase.from("documents").select("*", { count: "exact", head: true }).eq("matter_id", doc.matter_id);
       await supabase.from("matters").update({ document_count: count || 0 }).eq("id", doc.matter_id);

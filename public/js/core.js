@@ -1517,7 +1517,8 @@ function openDocumentEditModal(docId){
   if(!doc){showToast('Document not found');return;}
   docEditCurrentId=docId;
   docEditSelectedFolderIds=(doc.folder_ids||[]).slice();
-  document.getElementById('docEditName').textContent=doc.name;
+  /* v5.4a: filename is editable. Use .value because docEditName is now an input. */
+  document.getElementById('docEditName').value=doc.name;
   /* v5.3: docEditType is a <select>. Append the doc's stored value as an
      extra option if it's not in the standard list, so legacy free-text
      values are preserved on display. */
@@ -1556,12 +1557,16 @@ function toggleDocEditFolder(folderId){
 
 async function saveDocumentEdit(){
   if(!docEditCurrentId){closeModal('documentEditModal');return;}
+  /* v5.4a: read filename from input. Trim and validate it's not empty
+     before sending — empty filename would break source-passage lookups. */
+  var name=(document.getElementById('docEditName').value||'').trim();
+  if(!name){showToast('Filename cannot be empty');return;}
   var desc=document.getElementById('docEditDescription').value;
   var docType=document.getElementById('docEditType').value;
   var btn=document.getElementById('docEditSaveBtn');
   if(btn)btn.disabled=true;
   try{
-    await api('/api/documents?id='+docEditCurrentId,'PATCH',{description:desc,doc_type:docType,folder_ids:docEditSelectedFolderIds.slice()});
+    await api('/api/documents?id='+docEditCurrentId,'PATCH',{name:name,description:desc,doc_type:docType,folder_ids:docEditSelectedFolderIds.slice()});
     closeModal('documentEditModal');
     docEditCurrentId=null;
     docEditSelectedFolderIds=[];

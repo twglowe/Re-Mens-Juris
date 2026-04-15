@@ -1,5 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 
+/* v5.3: serverVersion marker per the v5.2b Lambda-pinning lesson. Every
+   response stamps this so the client (and a console-side curl) can verify
+   which version of this Lambda is actually live. */
+const SERVER_VERSION = "v5.3";
+
 /* v4.2j lesson: fresh client per invocation in any function running after a
    schema migration — module-scope clients cache the PostgREST schema. */
 function freshClient() {
@@ -22,6 +27,7 @@ async function canAccessMatter(supabase, userId, matterId) {
 }
 
 export default async function handler(req, res) {
+  console.log("documents " + SERVER_VERSION + " handler: " + req.method + " " + (req.query?.id || req.query?.matter_id || ""));
   const supabase = freshClient();
   const user = await getUser(req, supabase);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
@@ -69,7 +75,7 @@ export default async function handler(req, res) {
       const enriched = (docs || []).map(function (d) {
         return Object.assign({}, d, { folder_ids: folderMap[d.id] || [] });
       });
-      return res.status(200).json({ documents: enriched });
+      return res.status(200).json({ documents: enriched, serverVersion: SERVER_VERSION });
     }
 
     /* v5.0: PATCH /api/documents?id=... — edit description and/or folder set.
@@ -90,6 +96,17 @@ export default async function handler(req, res) {
         const desc = String(body.description || "");
         const { error } = await supabase.from("documents").update({ description: desc }).eq("id", id);
         if (error) throw error;
+      }
+
+      /* v5.3: update doc_type if provided. Whitelisted against the same
+         set of values the frontend offers. Free-text legacy values are
+         allowed through unchanged so an existing odd value can be kept. */
+      if (body.doc_type !== undefined) {
+        const dt = String(body.doc_type || "").trim();
+        if (dt) {
+          const { error: dtErr } = await supabase.from("documents").update({ doc_type: dt }).eq("id", id);
+          if (dtErr) throw dtErr;
+        }
       }
 
       /* Replace folder set if provided */
@@ -123,7 +140,7 @@ export default async function handler(req, res) {
         }
       }
 
-      return res.status(200).json({ success: true });
+      return res.status(200).json({ success: true, serverVersion: SERVER_VERSION });
     }
 
     if (req.method === "DELETE") {
@@ -137,7 +154,7 @@ export default async function handler(req, res) {
       await supabase.from("documents").delete().eq("id", id);
       const { count } = await supabase.from("documents").select("*", { count: "exact", head: true }).eq("matter_id", doc.matter_id);
       await supabase.from("matters").update({ document_count: count || 0 }).eq("id", doc.matter_id);
-      return res.status(200).json({ success: true });
+      return res.status(200).json({ success: true, serverVersion: SERVER_VERSION });
     }
 
     return res.status(405).json({ error: "Method not allowed" });

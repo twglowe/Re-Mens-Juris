@@ -473,24 +473,12 @@ function renderDocs(){
     }else{
       chipsHtml='<span class="folder-classify-btn" onclick="event.stopPropagation();openDocumentEditModal(\''+doc.id+'\')" title="Assign to a folder" style="display:inline-block;font-size:.66rem;font-weight:600;padding:.08rem .4rem;margin-top:.12rem;border-radius:10px;background:var(--off-white);color:var(--text-faint);border:1px dashed var(--border-strong);cursor:pointer">+ classify</span>';
     }
-    var descHtml=doc.description?'<div class="doc-desc" style="font-size:.66rem;color:var(--text-light);margin-top:.06rem;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(doc.description)+'">'+esc(doc.description)+'</div>':'';
-    /* v5.1c: docs live INSIDE a boxed container when their folder is open,
-       so no left indent on the wrapper itself \u2014 the box provides the
-       visual containment. */
-    /* v5.1a/b: Safari has a long-standing bug where draggable=true on a
-       display:flex container drops all dragover/drop events silently.
-       Workaround: put draggable on an outer plain-block wrapper.
-       v5.1b: ALSO add -webkit-user-drag:element. Without this, Safari
-       defaults to "auto" which silently refuses to start a drag on a
-       generic <div>. With "element" Safari unambiguously initiates the
-       drag. position:relative is added because some Safari versions block
-       dragstart on elements inside an overflow:auto container unless the
-       draggable element has its own positioning context. */
-    /* v5.1c: Move button label varies by where the doc lives. Inside a
-       real folder it offers Move and Copy options; inside Unassigned it
-       offers a flat list of folders to move into. The button calls
-       openMoveToMenu which inspects inFolderId to pick the right menu
-       shape. UNASSIGNED_ID is the sentinel for the virtual folder. */
+    /* v5.3: filename is the dominant element. Description (notes) is no
+       longer rendered inline in the row — it's reachable via the edit
+       modal which opens when the user clicks anywhere on the .doc-info
+       area. The row's title attribute carries the notes as a tooltip
+       fallback for desktop hover. */
+    var titleAttr=doc.description?esc(doc.name)+'\n\n'+esc(doc.description):esc(doc.name);
     var moveTitle=(inFolderId&&inFolderId!==UNASSIGNED_ID)?'Move or copy to another folder':'Move to a folder';
     return '<div class="doc-item-wrap" draggable="true"'
       +' data-doc-id="'+doc.id+'"'
@@ -502,10 +490,10 @@ function renderDocs(){
       +' ontouchmove="docTouchEnd(event)"'
       +' style="display:block;cursor:grab;position:relative;-webkit-user-drag:element">'
       +'<div class="doc-item">'
-      +'<span class="doc-icon">'+(icons[doc.doc_type]||'📄')+'</span><div class="doc-info">'
-      +'<div class="doc-name" title="'+esc(doc.name)+'">'+esc(doc.name)+'</div>'
-      +'<div class="doc-meta">'+esc(doc.doc_type)+(doc.chunk_count?' · '+doc.chunk_count+' passages':'')+'</div>'
-      +descHtml
+      +'<span class="doc-icon">'+(icons[doc.doc_type]||'📄')+'</span>'
+      +'<div class="doc-info" onclick="openDocumentEditModal(\''+doc.id+'\')" title="'+titleAttr+'">'
+      +'<div class="doc-name">'+esc(doc.name)+'</div>'
+      +'<div class="doc-meta">'+esc(doc.doc_type||'')+(doc.chunk_count?' · '+doc.chunk_count+' passages':'')+'</div>'
       +'<div class="doc-chips">'+chipsHtml+'</div>'
       +'</div>'
       +'<button onclick="event.stopPropagation();openMoveToMenu(event,\''+doc.id+'\',\''+(inFolderId||'')+'\')" title="'+moveTitle+'" style="background:var(--off-white);border:1px solid var(--border);color:var(--text-mid);cursor:pointer;font-size:.66rem;padding:.18rem .42rem;flex-shrink:0;font-weight:700;border-radius:4px;margin-right:.22rem;white-space:nowrap">Move \u25be</button>'
@@ -1073,6 +1061,19 @@ fileInput.addEventListener('change',function(){if(!currentMatter){showToast('Sel
    multiple POSTs that each fit under Vercel's gateway limit. */
 async function uploadFiles(files){
   if(!files.length||!currentMatter)return;
+  /* v5.3: warn the user if any incoming file shares a name with an existing
+     document in this matter. Lets them cancel rather than silently creating
+     a second document row with the same filename. */
+  var existingNames={};
+  for(var en=0;en<documents.length;en++){existingNames[documents[en].name]=true;}
+  var dupes=[];
+  for(var df=0;df<files.length;df++){if(existingNames[files[df].name])dupes.push(files[df].name);}
+  if(dupes.length){
+    var msg=(dupes.length===1?'A document with this name already exists in this matter:':'These documents already exist in this matter:')
+      +'\n\n  • '+dupes.join('\n  • ')
+      +'\n\nUpload anyway? This will create duplicate document rows.';
+    if(!confirm(msg))return;
+  }
   /* Clear any previous retry state — a fresh upload session replaces it */
   pendingUploadRetry=null;
   clearUploadRetryUI();
@@ -1427,7 +1428,18 @@ function openDocumentEditModal(docId){
   docEditCurrentId=docId;
   docEditSelectedFolderIds=(doc.folder_ids||[]).slice();
   document.getElementById('docEditName').textContent=doc.name;
-  document.getElementById('docEditType').textContent=doc.doc_type||'';
+  /* v5.3: docEditType is now a <select>. If the doc's stored doc_type
+     isn't one of the standard options (e.g. legacy free-text), append
+     it as an extra option so the user sees their current value and can
+     keep or change it. */
+  var sel=document.getElementById('docEditType');
+  var current=doc.doc_type||'';
+  var found=false;
+  for(var i=0;i<sel.options.length;i++){
+    if(sel.options[i].value===current||sel.options[i].text===current){found=true;break;}
+  }
+  if(!found&&current){var opt=document.createElement('option');opt.text=current;opt.value=current;sel.appendChild(opt);}
+  sel.value=current;
   document.getElementById('docEditDescription').value=doc.description||'';
   renderDocEditFolderChips();
   openModal('documentEditModal');
@@ -1456,10 +1468,11 @@ function toggleDocEditFolder(folderId){
 async function saveDocumentEdit(){
   if(!docEditCurrentId){closeModal('documentEditModal');return;}
   var desc=document.getElementById('docEditDescription').value;
+  var docType=document.getElementById('docEditType').value;
   var btn=document.getElementById('docEditSaveBtn');
   if(btn)btn.disabled=true;
   try{
-    await api('/api/documents?id='+docEditCurrentId,'PATCH',{description:desc,folder_ids:docEditSelectedFolderIds.slice()});
+    await api('/api/documents?id='+docEditCurrentId,'PATCH',{description:desc,doc_type:docType,folder_ids:docEditSelectedFolderIds.slice()});
     closeModal('documentEditModal');
     docEditCurrentId=null;
     docEditSelectedFolderIds=[];

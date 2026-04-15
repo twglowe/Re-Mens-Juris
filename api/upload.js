@@ -1,5 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 
+/* v5.4: serverVersion marker. Bumped from v5.2b to v5.4 — adds file_size
+   and doc_date columns to the documents insert. The bump itself also
+   serves as a Vercel rebuild trigger per the v5.2b lesson. */
+const SERVER_VERSION = "v5.4";
+
 /* ── v5.2b: Force Vercel rebuild ──────────────────────────────────────────
    v5.2 shipped with batched-upload server-side code, but Vercel's build
    system appears to have pinned the Lambda for api/upload.js to a pre-v5.2
@@ -211,6 +216,7 @@ export default async function handler(req, res) {
     matterId, fileName, fileData, textContent, pageTexts,
     docType, party, docIssues, folderIds,
     batchIndex, batchTotal, documentId,
+    fileSize, docDate,
   } = req.body;
   if (!matterId || !fileName) return res.status(400).json({ error: "Missing fields" });
 
@@ -230,7 +236,7 @@ export default async function handler(req, res) {
   /* v5.2b: Log marker so Vercel function logs prove which version is
      actually running. If you're debugging a batched upload, tail the
      Vercel logs and look for this line. */
-  console.log("v5.2b upload handler: batchIndex=" + batchIndex + " batchTotal=" + batchTotal + " documentId=" + (documentId ? documentId.slice(0, 8) + "..." : "none"));
+  console.log(SERVER_VERSION + " upload handler: batchIndex=" + batchIndex + " batchTotal=" + batchTotal + " documentId=" + (documentId ? documentId.slice(0, 8) + "..." : "none"));
 
   /* v5.2: Determine upload mode. */
   const isBatched = typeof batchTotal === "number" && batchTotal > 1;
@@ -339,7 +345,7 @@ export default async function handler(req, res) {
           chunks: chunkRows.length, characters: extractedText.length,
           pageAware: !!pages,
           batchIndex: bIdx, batchTotal: bTotal, complete: true,
-          serverVersion: "v5.2b",
+          serverVersion: SERVER_VERSION,
         });
       }
 
@@ -349,16 +355,22 @@ export default async function handler(req, res) {
         chunks: chunkRows.length, characters: extractedText.length,
         pageAware: !!pages,
         batchIndex: bIdx, batchTotal: bTotal, complete: false,
-        serverVersion: "v5.2b",
+        serverVersion: SERVER_VERSION,
       });
     }
 
     /* ── First-batch path (also covers single-POST happy path) ──────── */
+    /* v5.4: file_size (bytes from File.size) and doc_date (PDF metadata
+       ModDate/CreationDate, falling back to file.lastModified) are
+       captured client-side and stored on the document row. Both are
+       NULL-safe so a client that omits them still works. */
     const { data: doc, error: docError } = await supabase.from("documents")
       .insert({
         matter_id: matterId, name: fileName,
         doc_type: docType || "Other", party: party || null,
-        doc_issues: docIssues || null, char_count: extractedText.length, chunk_count: 0
+        doc_issues: docIssues || null, char_count: extractedText.length, chunk_count: 0,
+        file_size: (typeof fileSize === "number" && fileSize > 0) ? fileSize : null,
+        doc_date: docDate || null,
       })
       .select().single();
     if (docError) throw docError;
@@ -423,7 +435,7 @@ export default async function handler(req, res) {
         chunks: chunkRows.length, characters: extractedText.length,
         pageAware: !!pages,
         batchIndex: bIdx, batchTotal: bTotal, complete: false,
-        serverVersion: "v5.2b",
+        serverVersion: SERVER_VERSION,
       });
     }
 
@@ -436,7 +448,7 @@ export default async function handler(req, res) {
       success: true, documentId: doc.id,
       chunks: chunkRows.length, characters: extractedText.length,
       pageAware: !!pages,
-      serverVersion: "v5.2b",
+      serverVersion: SERVER_VERSION,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Upload failed" });

@@ -473,13 +473,23 @@ function renderDocs(){
     }else{
       chipsHtml='<span class="folder-classify-btn" onclick="event.stopPropagation();openDocumentEditModal(\''+doc.id+'\')" title="Assign to a folder" style="display:inline-block;font-size:.66rem;font-weight:600;padding:.08rem .4rem;margin-top:.12rem;border-radius:10px;background:var(--off-white);color:var(--text-faint);border:1px dashed var(--border-strong);cursor:pointer">+ classify</span>';
     }
-    /* v5.3: filename is the dominant element. Description (notes) is no
-       longer rendered inline in the row — it's reachable via the edit
-       modal which opens when the user clicks anywhere on the .doc-info
-       area. The row's title attribute carries the notes as a tooltip
-       fallback for desktop hover. */
+    /* v5.4: build the meta line — date · size · doc_type. Each piece is
+       optional and quietly omitted if not available. doc.doc_date is the
+       PDF metadata or file lastModified captured at upload (v5.4+);
+       falls back to created_at for documents uploaded before v5.4. */
+    var dateStr=formatDocDate(doc.doc_date||doc.created_at);
+    var sizeStr=formatFileSize(doc.file_size);
+    var metaParts=[];
+    if(dateStr)metaParts.push(dateStr);
+    if(sizeStr)metaParts.push(sizeStr);
+    if(doc.doc_type)metaParts.push(esc(doc.doc_type));
+    var metaHtml=metaParts.length?'<div class="doc-meta">'+metaParts.join(' \u00B7 ')+'</div>':'';
+    /* v5.4: title attribute on the clickable area carries the full filename
+       and notes for desktop hover. */
     var titleAttr=doc.description?esc(doc.name)+'\n\n'+esc(doc.description):esc(doc.name);
     var moveTitle=(inFolderId&&inFolderId!==UNASSIGNED_ID)?'Move or copy to another folder':'Move to a folder';
+    /* v5.4: no emoji icon — filename is the dominant element, gets the full
+       row width. Actions (Move, ×) sit on a second row, right-aligned. */
     return '<div class="doc-item-wrap" draggable="true"'
       +' data-doc-id="'+doc.id+'"'
       +' data-in-folder="'+(inFolderId||'')+'"'
@@ -490,16 +500,38 @@ function renderDocs(){
       +' ontouchmove="docTouchEnd(event)"'
       +' style="display:block;cursor:grab;position:relative;-webkit-user-drag:element">'
       +'<div class="doc-item">'
-      +'<span class="doc-icon">'+(icons[doc.doc_type]||'📄')+'</span>'
       +'<div class="doc-info" onclick="openDocumentEditModal(\''+doc.id+'\')" title="'+titleAttr+'">'
       +'<div class="doc-name">'+esc(doc.name)+'</div>'
-      +'<div class="doc-meta">'+esc(doc.doc_type||'')+(doc.chunk_count?' · '+doc.chunk_count+' passages':'')+'</div>'
+      +metaHtml
       +'<div class="doc-chips">'+chipsHtml+'</div>'
       +'</div>'
-      +'<button onclick="event.stopPropagation();openMoveToMenu(event,\''+doc.id+'\',\''+(inFolderId||'')+'\')" title="'+moveTitle+'" style="background:var(--off-white);border:1px solid var(--border);color:var(--text-mid);cursor:pointer;font-size:.66rem;padding:.18rem .42rem;flex-shrink:0;font-weight:700;border-radius:4px;margin-right:.22rem;white-space:nowrap">Move \u25be</button>'
-      +'<button onclick="event.stopPropagation();deleteDoc(\''+doc.id+'\',\''+esc(doc.name).replace(/'/g,"\\'")+'\')" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:1.1rem;padding:0 3px;flex-shrink:0;font-weight:700" title="Remove">×</button>'
+      +'<div class="doc-actions">'
+      +'<button onclick="event.stopPropagation();openMoveToMenu(event,\''+doc.id+'\',\''+(inFolderId||'')+'\')" title="'+moveTitle+'" class="doc-act-btn doc-act-move">Move \u25be</button>'
+      +'<button onclick="event.stopPropagation();deleteDoc(\''+doc.id+'\',\''+esc(doc.name).replace(/'/g,"\\'")+'\')" title="Remove" class="doc-act-btn doc-act-del">\u00D7 Delete</button>'
+      +'</div>'
       +'</div>'
       +'</div>';
+  }
+
+  /* v5.4: format a date for display in the doc-meta line. Accepts an ISO
+     string or null. Returns "14 Apr 2026" style or "" if unparseable. */
+  function formatDocDate(iso){
+    if(!iso)return '';
+    var d=new Date(iso);
+    if(isNaN(d.getTime()))return '';
+    var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return d.getDate()+' '+months[d.getMonth()]+' '+d.getFullYear();
+  }
+
+  /* v5.4: format a byte count for display. Returns "" for null/undefined
+     so existing pre-v5.4 documents (with no file_size) silently omit it
+     rather than showing "0 B" or "—". */
+  function formatFileSize(bytes){
+    if(bytes==null||bytes===0)return '';
+    if(bytes<1024)return bytes+' B';
+    if(bytes<1024*1024)return Math.round(bytes/1024)+' KB';
+    if(bytes<1024*1024*1024)return (bytes/(1024*1024)).toFixed(1)+' MB';
+    return (bytes/(1024*1024*1024)).toFixed(2)+' GB';
   }
 
   /* v5.1c: Render a single folder (header + boxed children if open).
@@ -1061,9 +1093,9 @@ fileInput.addEventListener('change',function(){if(!currentMatter){showToast('Sel
    multiple POSTs that each fit under Vercel's gateway limit. */
 async function uploadFiles(files){
   if(!files.length||!currentMatter)return;
-  /* v5.3: warn the user if any incoming file shares a name with an existing
-     document in this matter. Lets them cancel rather than silently creating
-     a second document row with the same filename. */
+  /* v5.3: warn if any incoming file shares a name with an existing
+     document. Lets the user cancel rather than silently creating a
+     duplicate document row. */
   var existingNames={};
   for(var en=0;en<documents.length;en++){existingNames[documents[en].name]=true;}
   var dupes=[];
@@ -1092,9 +1124,18 @@ async function uploadFiles(files){
       var pages=isDocx?await extractDocxText(file):await extractPdfText(file);
       var fullText=pages.map(function(p){return p.text;}).join('\n\n');
       if(!fullText||fullText.trim().length<50){errEl.textContent='No readable text in '+file.name+'. '+(isPdf?'Try OCR at ilovepdf.com first.':'The document may be empty or corrupted.');errEl.classList.add('on');continue;}
-      /* Hand off to the batched uploader. It handles both the single-POST
-         happy path and the multi-POST large-file path transparently. */
-      var ok=await uploadFileBatched(file,pages,docType,uploadSelectedFolderIds.slice(),fullText,isDocx);
+      /* v5.4: derive doc_date — for PDFs try the embedded metadata first
+         (ModDate preferred, falls back to CreationDate); for everything
+         else use file.lastModified. extractPdfDocDate returns null on
+         any failure so file.lastModified is the universal fallback. */
+      var docDate=null;
+      if(isPdf){
+        try{docDate=await extractPdfDocDate(file);}catch(_){docDate=null;}
+      }
+      if(!docDate&&file.lastModified)docDate=new Date(file.lastModified).toISOString();
+      var fileSize=file.size||0;
+      /* Hand off to the batched uploader. */
+      var ok=await uploadFileBatched(file,pages,docType,uploadSelectedFolderIds.slice(),fullText,isDocx,fileSize,docDate);
       if(!ok){
         /* Failure state is already set by uploadFileBatched. Stop the
            outer loop so the user can retry before continuing with the
@@ -1116,7 +1157,7 @@ async function uploadFiles(files){
    chunks to the same documentId. Returns true on full success, false
    on failure (in which case pendingUploadRetry is populated and the
    retry UI is shown). */
-async function uploadFileBatched(file,pages,docType,folderIds,fullText,isDocx){
+async function uploadFileBatched(file,pages,docType,folderIds,fullText,isDocx,fileSize,docDate){
   var errEl=document.getElementById('uploadErr');
   var prog=document.getElementById('uploadProg');
   /* v5.2a: Reduced from 2 MB to 1 MB after v5.2 still hit 413s on real
@@ -1129,33 +1170,34 @@ async function uploadFileBatched(file,pages,docType,folderIds,fullText,isDocx){
   var unitLabel=isDocx?'block(s)':'page(s)';
   var totalKB=Math.round(fullText.length/1024);
   /* Single-batch happy path — matches old behaviour exactly, no batch
-     fields sent to the server. */
+     fields sent to the server. v5.4: also carries fileSize and docDate. */
   if(batches.length===1){
-    var singleBody={matterId:currentMatter.id,fileName:file.name,pageTexts:pages,docType:docType,folderIds:folderIds};
+    var singleBody={matterId:currentMatter.id,fileName:file.name,pageTexts:pages,docType:docType,folderIds:folderIds,fileSize:fileSize||0,docDate:docDate||null};
     var singleBodyKB=Math.round(JSON.stringify(singleBody).length/1024);
-    console.log('v5.2a single-batch upload: '+pages.length+' pages, body='+singleBodyKB+'KB');
+    console.log('v5.4 single-batch upload: '+pages.length+' pages, body='+singleBodyKB+'KB, size='+(fileSize||0)+' B, date='+(docDate||'(none)'));
     prog.textContent='Uploading: '+file.name+' ('+totalKB+'KB text, '+pages.length+' '+unitLabel+')…';
     try{
       var d=await api('/api/upload','POST',singleBody);
       if(d)showToast('\u2713 '+file.name+' — '+d.chunks+' passages indexed'+(d.pageAware?' (page-aware)':''));
       return true;
     }catch(e){
-      console.log('v5.2a single-batch FAILED: body was '+singleBodyKB+'KB, error='+e.message);
+      console.log('v5.4 single-batch FAILED: body was '+singleBodyKB+'KB, error='+e.message);
       errEl.textContent='Failed: '+file.name+' \u2014 '+e.message+' (body '+singleBodyKB+'KB)';
       errEl.classList.add('on');
       return false;
     }
   }
   /* Multi-batch path. Send batches sequentially, updating progress. */
-  return await runBatchedUploadFromIndex(file,pages,docType,folderIds,batches,0,null,unitLabel,totalKB);
+  return await runBatchedUploadFromIndex(file,pages,docType,folderIds,batches,0,null,unitLabel,totalKB,fileSize,docDate);
 }
 
 /* v5.2: Execute a batched upload starting at fromBatchIndex. Used both
    for fresh uploads (fromBatchIndex=0, documentId=null) and for retries
    (fromBatchIndex=N, documentId=<existing>).
-   v5.2a: logs the actual JSON body size before each POST so that any
-   future 413 can be diagnosed from the Console output without guessing. */
-async function runBatchedUploadFromIndex(file,pages,docType,folderIds,batches,fromBatchIndex,documentId,unitLabel,totalKB){
+   v5.4: now also carries fileSize and docDate. Only the first batch
+   (the one that creates the document row) actually uses them — append
+   batches ignore them server-side. */
+async function runBatchedUploadFromIndex(file,pages,docType,folderIds,batches,fromBatchIndex,documentId,unitLabel,totalKB,fileSize,docDate){
   var errEl=document.getElementById('uploadErr');
   var prog=document.getElementById('uploadProg');
   var totalBatches=batches.length;
@@ -1169,11 +1211,13 @@ async function runBatchedUploadFromIndex(file,pages,docType,folderIds,batches,fr
       folderIds:folderIds,
       batchIndex:bi,
       batchTotal:totalBatches,
+      fileSize:fileSize||0,
+      docDate:docDate||null,
     };
     if(bi>0&&documentId)body.documentId=documentId;
     var bodyJson=JSON.stringify(body);
     var bodyKB=Math.round(bodyJson.length/1024);
-    console.log('v5.2a batch '+(bi+1)+'/'+totalBatches+': '+batchPages.length+' pages, body='+bodyKB+'KB');
+    console.log('v5.4 batch '+(bi+1)+'/'+totalBatches+': '+batchPages.length+' pages, body='+bodyKB+'KB');
     prog.textContent='Uploading: '+file.name+' (batch '+(bi+1)+' of '+totalBatches+', '+bodyKB+'KB, '+totalKB+'KB total)…';
     prog.classList.add('on');
     try{
@@ -1188,7 +1232,7 @@ async function runBatchedUploadFromIndex(file,pages,docType,folderIds,batches,fr
         return true;
       }
     }catch(e){
-      console.log('v5.2a batch '+(bi+1)+' FAILED: body was '+bodyKB+'KB, error='+e.message);
+      console.log('v5.4 batch '+(bi+1)+' FAILED: body was '+bodyKB+'KB, error='+e.message);
       /* Store what we need to resume and show the retry button. */
       pendingUploadRetry={
         file:file,
@@ -1200,6 +1244,8 @@ async function runBatchedUploadFromIndex(file,pages,docType,folderIds,batches,fr
         documentId:documentId,
         unitLabel:unitLabel,
         totalKB:totalKB,
+        fileSize:fileSize,
+        docDate:docDate,
         error:e.message,
       };
       errEl.innerHTML='Failed on batch '+(bi+1)+' of '+totalBatches+' ('+bodyKB+'KB): '+esc(e.message)
@@ -1280,7 +1326,7 @@ async function retryPendingUpload(){
   var errEl=document.getElementById('uploadErr');
   errEl.classList.remove('on');
   errEl.innerHTML='';
-  var ok=await runBatchedUploadFromIndex(r.file,r.pages,r.docType,r.folderIds,r.batches,r.fromBatchIndex,r.documentId,r.unitLabel,r.totalKB);
+  var ok=await runBatchedUploadFromIndex(r.file,r.pages,r.docType,r.folderIds,r.batches,r.fromBatchIndex,r.documentId,r.unitLabel,r.totalKB,r.fileSize,r.docDate);
   if(ok){
     /* Refresh the document list so the user sees the completed upload */
     await loadDocuments(currentMatter.id);
@@ -1310,6 +1356,50 @@ async function extractPdfText(file){
   var pages=[];
   for(var i=1;i<=pdf.numPages;i++){var page=await pdf.getPage(i);var tc=await page.getTextContent();var pageText=tc.items.map(function(item){return item.str;}).join(' ');pages.push({page:i,text:pageText});}
   return pages;
+}
+
+/* v5.4: Extract a meaningful document date from a PDF's embedded metadata.
+   PDFs encode dates in their own format: D:YYYYMMDDHHmmSSOHH'mm' (e.g.
+   D:20240315104500+00'00'). Prefers ModDate (when last revised) over
+   CreationDate (when authored). Returns an ISO 8601 string or null on any
+   failure — caller falls back to file.lastModified. */
+async function extractPdfDocDate(file){
+  var pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
+  if(!pdfjsLib)return null;
+  var buf=await file.arrayBuffer();
+  var pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  var meta=await pdf.getMetadata();
+  if(!meta||!meta.info)return null;
+  var raw=meta.info.ModDate||meta.info.CreationDate;
+  if(!raw)return null;
+  return parsePdfDate(raw);
+}
+
+/* v5.4: Parse a PDF date string (D:YYYYMMDDHHmmSSOHH'mm') into ISO 8601.
+   Tolerates missing fields — minimum is YYYY. Returns null on parse error. */
+function parsePdfDate(s){
+  if(!s)return null;
+  s=String(s);
+  if(s.indexOf('D:')===0)s=s.substring(2);
+  /* Match: YYYY MM? DD? HH? mm? SS? then optional offset */
+  var m=s.match(/^(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?([+\-Z])?(\d{2})?'?(\d{2})?'?$/);
+  if(!m)return null;
+  var year=parseInt(m[1],10);
+  var month=parseInt(m[2]||'01',10)-1;
+  var day=parseInt(m[3]||'01',10);
+  var hour=parseInt(m[4]||'00',10);
+  var min=parseInt(m[5]||'00',10);
+  var sec=parseInt(m[6]||'00',10);
+  var sign=m[7];var offH=parseInt(m[8]||'0',10);var offM=parseInt(m[9]||'0',10);
+  var d;
+  if(sign==='Z'||!sign){
+    d=new Date(Date.UTC(year,month,day,hour,min,sec));
+  }else{
+    var offsetMin=(offH*60+offM)*(sign==='-'?1:-1);
+    d=new Date(Date.UTC(year,month,day,hour,min,sec)+offsetMin*60000);
+  }
+  if(isNaN(d.getTime()))return null;
+  return d.toISOString();
 }
 /* v4.5: Extract raw text from a .docx file via mammoth.js. Returns the same
    [{page,text},...] shape as extractPdfText so callers can treat both uniformly.
@@ -1428,10 +1518,9 @@ function openDocumentEditModal(docId){
   docEditCurrentId=docId;
   docEditSelectedFolderIds=(doc.folder_ids||[]).slice();
   document.getElementById('docEditName').textContent=doc.name;
-  /* v5.3: docEditType is now a <select>. If the doc's stored doc_type
-     isn't one of the standard options (e.g. legacy free-text), append
-     it as an extra option so the user sees their current value and can
-     keep or change it. */
+  /* v5.3: docEditType is a <select>. Append the doc's stored value as an
+     extra option if it's not in the standard list, so legacy free-text
+     values are preserved on display. */
   var sel=document.getElementById('docEditType');
   var current=doc.doc_type||'';
   var found=false;

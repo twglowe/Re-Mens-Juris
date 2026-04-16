@@ -64,7 +64,9 @@ async function documentMatterId(supabase, documentId) {
   return data.matter_id;
 }
 
+const SERVER_VERSION = "v5.5";
 export default async function handler(req, res) {
+  console.log(SERVER_VERSION + " folders handler: " + (req.method || "?") + " " + (req.url || ""));
   const supabase = freshClient();
   const user = await getUser(req, supabase);
   if (!user) return res.status(401).json({ error: "Unauthorized" });

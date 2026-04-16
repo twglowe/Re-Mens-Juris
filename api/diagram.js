@@ -22,7 +22,9 @@ var anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 var INPUT_COST_PER_M = 3.00;
 var OUTPUT_COST_PER_M = 15.00;
 
+const SERVER_VERSION = "v5.5";
 export default async function handler(req, res) {
+  console.log(SERVER_VERSION + " diagram handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   /* Auth check */

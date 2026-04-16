@@ -613,8 +613,13 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
        Claude to stream for >300s on dense legal content with 6 condensed
        summaries as input, blowing the Vercel function ceiling. 10000 tokens is
        still ~30 pages of output, which should comfortably cover any Chronology. */
+    /* v5.5: Heartbeat immediately before final synthesis so the cron-resume
+       240s threshold is not breached during the long Claude call. Without
+       this, the cron fires parallel workers that each produce a separate
+       synthesis result, creating duplicate history rows. */
+    await updateJob(jobId, {});
     var synthCallStart = Date.now();
-    console.log("v4.2k Worker: starting final synthesis call");
+    console.log("v5.5 Worker: starting final synthesis call (heartbeat refreshed)");
     var synthResult = await runTool(systemBase, synthPromptFn(synthInput, batches.length), 10000);
     console.log("v4.2k Worker: final synthesis returned in " + Math.round((Date.now() - synthCallStart) / 1000) + "s, output " + (synthResult.text ? synthResult.text.length : 0) + " chars, " + synthResult.outputTokens + " tokens");
     totalInput += synthResult.inputTokens;
@@ -724,7 +729,9 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
    the function alive as long as the response has not been sent.
    ══════════════════════════════════════════════════════════════════════════ */
 
+const SERVER_VERSION = "v5.5";
 export default async function handler(req, res) {
+  console.log(SERVER_VERSION + " worker handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   var jobId = req.query.jobId;
@@ -1160,7 +1167,16 @@ export default async function handler(req, res) {
       result = headingText + "\n" + result;
     }
 
-    /* Save result */
+    /* Save result.
+       v5.5: Idempotency guard. Multiple workers can reach this point in parallel
+       if the cron-resume fired during a long synthesis call. Re-read the job
+       status: if another worker already set it to "complete", skip the save
+       so we don't create duplicate history rows. */
+    var freshJob = await supabase.from("tool_jobs").select("status").eq("id", jobId).single();
+    if (freshJob.data && freshJob.data.status === "complete") {
+      console.log("v5.5 Worker: job " + jobId + " already complete — skipping duplicate save");
+      return res.status(200).json({ ok: true, status: "already_done" });
+    }
     await logUsage(matterId, userId, tool, inputTokens, outputTokens, cost);
     await saveHistory(matterId, userId, (toolLabels[tool] || tool) + (instructions ? ": " + instructions : ""), result, tool);
     await updateJob(jobId, {

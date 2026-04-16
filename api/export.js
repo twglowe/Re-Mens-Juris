@@ -213,7 +213,9 @@ function buildZip(files) {
   return Buffer.concat([...localHeaders, ...centralHeaders, eocd]);
 }
 
+const SERVER_VERSION = "v5.5";
 export default async function handler(req, res) {
+  console.log(SERVER_VERSION + " export handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   var body = req.body || {};

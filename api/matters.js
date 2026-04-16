@@ -8,7 +8,9 @@ async function getUser(req) {
   return error ? null : user;
 }
 
+const SERVER_VERSION = "v5.5";
 export default async function handler(req, res) {
+  console.log(SERVER_VERSION + " matters handler: " + (req.method || "?") + " " + (req.url || ""));
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 

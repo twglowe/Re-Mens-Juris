@@ -54,6 +54,8 @@ function getOrCreateToolTab(toolName){
   var ws=document.createElement('div');
   ws.className='tool-workspace tab-workspace';ws.dataset.tool=toolName;
   ws.innerHTML='<div class="tool-ready" id="ready-'+toolName+'"><div class="tool-ready-icon">'+cfg.title.split(' ')[0]+'</div><div class="tool-ready-title">'+cfg.title.replace(/^[^\w]*/,'')+'</div><div class="tool-ready-sub">Click Run to analyse all documents in this matter.</div><button class="btn-run-tool" onclick="promptTool(\''+toolName+'\')">Run Analysis</button></div><div class="messages-area tool-msgs" id="msgs-'+toolName+'" style="display:none"></div>';
+  /* v5.5: Reflect lock state on the freshly-created Run button. */
+  if(typeof updateToolButtonStates==='function')updateToolButtonStates();
   document.getElementById('toolWorkspaces').appendChild(ws);
   openTabs.push(toolName);
   switchTab(toolName);
@@ -250,8 +252,48 @@ function getExcludedDocTypes(){
   document.querySelectorAll('#docFilterTypes input[type="checkbox"]').forEach(function(cb){if(!cb.checked)excluded.push(cb.getAttribute('data-doctype'));});
   return excluded;
 }
+/* v5.5: Click-debounce / running-tool lock.
+   Tracks which tools currently have an in-flight job for the current matter.
+   Prevents the user from launching the same tool twice on the same matter
+   (which produced duplicate Claude runs and duplicate history rows).
+   Persisted in sessionStorage so a page refresh preserves the locked state;
+   also re-asserted on resume by resumeInProgressJobs. */
+var runningTools=new Set();
+function _rtKey(){return currentMatter?'rt-'+currentMatter.id:null;}
+function _rtLoad(){
+  runningTools=new Set();
+  var k=_rtKey();if(!k)return;
+  try{var s=sessionStorage.getItem(k);if(s){JSON.parse(s).forEach(function(t){runningTools.add(t);});}}catch(e){}
+}
+function _rtSave(){
+  var k=_rtKey();if(!k)return;
+  try{sessionStorage.setItem(k,JSON.stringify(Array.from(runningTools)));}catch(e){}
+}
+function rtLock(toolName){if(!toolName)return;runningTools.add(toolName);_rtSave();updateToolButtonStates();}
+function rtUnlock(toolName){if(!toolName)return;runningTools.delete(toolName);_rtSave();updateToolButtonStates();}
+function rtIsLocked(toolName){return runningTools.has(toolName);}
+function updateToolButtonStates(){
+  Object.keys(toolDefs||{}).forEach(function(toolName){
+    var ready=document.getElementById('ready-'+toolName);
+    if(!ready)return;
+    var btn=ready.querySelector('.btn-run-tool');
+    if(!btn)return;
+    if(rtIsLocked(toolName)){
+      btn.disabled=true;btn.style.opacity='0.5';btn.style.cursor='not-allowed';
+      btn.textContent='Running\u2026';
+    }else{
+      btn.disabled=false;btn.style.opacity='';btn.style.cursor='';
+      btn.textContent='Run Analysis';
+    }
+  });
+}
+
 function promptTool(t){
   if(!currentMatter){showToast('Select a matter first');return;}
+  if(rtIsLocked(t)){
+    showToast(toolDefs[t].title+' is already running on this matter \u2014 please wait');
+    return;
+  }
   pendingTool=t;
   var cfg=toolDefs[t];
   document.getElementById('toolModalTitle').textContent=cfg.title;
@@ -273,6 +315,14 @@ function showToolResult(toolName){
 /* ── TOOL EXECUTION (v3.4: fire-and-poll background processing) ── */
 document.getElementById('toolRunBtn').addEventListener('click',async function(){
   if(!pendingTool||!currentMatter)return;
+  if(rtIsLocked(pendingTool)){
+    showToast(toolDefs[pendingTool].title+' is already running \u2014 please wait');
+    closeModal('toolModal');
+    return;
+  }
+  /* v5.5: Lock BEFORE any await so a fast double-click can't slip through. */
+  var v55LockedTool=pendingTool;
+  rtLock(v55LockedTool);
   var instructions=document.getElementById('toolInstructions')?document.getElementById('toolInstructions').value.trim():'';
   var anchorDocNames=[];
   if(pendingTool==='inconsistency'){document.querySelectorAll('#anchorList input:checked').forEach(function(cb){anchorDocNames.push(cb.value);});}
@@ -326,6 +376,8 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     typing.remove();progressWrap.classList.remove('on');progressFill.style.width='0%';
     var errEl2=document.createElement('div');errEl2.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
     errEl2.textContent='\u26A0\uFE0F Tool error: '+e.message;msgsArea.appendChild(errEl2);
+    /* v5.5: Job never started \u2014 release the lock. */
+    rtUnlock(v55LockedTool);
   }
 });
 
@@ -360,6 +412,8 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
         clearInterval(pollInterval);if(typing)typing.remove();
         progressFill.style.width='100%';
         setTimeout(function(){progressWrap.classList.remove('on');progressFill.style.width='0%';},800);
+        /* v5.5: Job complete — release the lock. */
+        rtUnlock(toolName);
         if(j.result){
           var isProp=toolName==='proposition';
           var costStr=j.usage&&j.usage.costUsd?' \u00B7 $'+j.usage.costUsd.toFixed(4):'';
@@ -414,6 +468,8 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
         progressWrap.classList.remove('on');progressFill.style.width='0%';
         var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
         errEl.textContent='\u26A0\uFE0F Tool error: '+(j.error||'Unknown error');msgsArea.appendChild(errEl);
+        /* v5.5: Job failed \u2014 release the lock. */
+        rtUnlock(toolName);
         return;
       }
       if(pollCount>360){
@@ -421,6 +477,8 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
         progressWrap.classList.remove('on');progressFill.style.width='0%';
         var toEl=document.createElement('div');toEl.style.cssText='text-align:center;font-size:.78rem;color:var(--warning);padding:.45rem;';
         toEl.textContent='Processing is taking longer than expected. Check History later for results.';msgsArea.appendChild(toEl);
+        /* v5.5: Polling gave up — release the lock. */
+        rtUnlock(toolName);
       }
     }catch(pollErr){console.log('Poll error:',pollErr.message);}
   },10000);
@@ -434,6 +492,11 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
    each tool tab still reflects its own result when its job lands. */
 async function resumeInProgressJobs(matterId){
   if(!matterId)return;
+  /* v5.5: Reload runningTools state for the new matter from sessionStorage,
+     then refresh button visuals. The server check below re-adds any jobs
+     still actually in flight. */
+  _rtLoad();
+  updateToolButtonStates();
   try{
     var resp=await api('/api/jobs?matterId='+matterId);
     if(!resp||!resp.jobs||!resp.jobs.length)return;
@@ -451,6 +514,8 @@ async function resumeInProgressJobs(matterId){
         console.log('v4.4 skipping job '+job.id+' \u2014 unknown tool name:',toolName);
         return;
       }
+      /* v5.5: Re-assert the lock for the resumed tool. */
+      rtLock(toolName);
       var toolLabel=toolDefs[toolName].title;
       getOrCreateToolTab(toolName);
       var msgsArea=showToolResult(toolName);
@@ -628,6 +693,9 @@ document.getElementById('issueBriefingRunBtn').addEventListener('click',function
 
 async function runIssueBriefing(selectedIssues,extraInstructions){
   if(!currentMatter)return;
+  /* v5.5: Lock the issueBriefing slot. */
+  if(rtIsLocked('issueBriefing')){showToast('Issue Briefing is already running — please wait');return;}
+  rtLock('issueBriefing');
   var toolName='issueBriefing';
   var toolLabel='Issue Briefing';
   var instructions=extraInstructions||selectedIssues.join('; ');
@@ -690,6 +758,8 @@ async function runIssueBriefing(selectedIssues,extraInstructions){
           clearInterval(pollInterval);typing.remove();
           progressFill.style.width='100%';
           setTimeout(function(){progressWrap.classList.remove('on');progressFill.style.width='0%';},800);
+          /* v5.5: Job complete (issueBriefing) — release the lock. */
+          rtUnlock(toolName);
           if(j.result){
             var costStr=j.usage&&j.usage.costUsd?' \u00B7 $'+j.usage.costUsd.toFixed(4):'';
             await loadHistory(currentMatter.id);
@@ -726,6 +796,8 @@ async function runIssueBriefing(selectedIssues,extraInstructions){
           progressWrap.classList.remove('on');progressFill.style.width='0%';
           var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
           errEl.textContent='\u26A0\uFE0F Error: '+(j.error||'Unknown error');msgsArea.appendChild(errEl);
+          /* v5.5: Job failed (issueBriefing) \u2014 release the lock. */
+          rtUnlock(toolName);
           return;
         }
         if(pollCount>360){
@@ -733,11 +805,15 @@ async function runIssueBriefing(selectedIssues,extraInstructions){
           progressWrap.classList.remove('on');progressFill.style.width='0%';
           var toEl=document.createElement('div');toEl.style.cssText='text-align:center;font-size:.78rem;color:var(--warning);padding:.45rem;';
           toEl.textContent='Processing is taking longer than expected. Check History later for results.';msgsArea.appendChild(toEl);
+          /* v5.5: Polling gave up (issueBriefing) — release the lock. */
+          rtUnlock(toolName);
         }
       }catch(pollErr){console.log('Poll error:',pollErr.message);}
     },10000);
   }catch(e){
     typing.remove();progressWrap.classList.remove('on');progressFill.style.width='0%';
+    /* v5.5: Job never started \u2014 release the issueBriefing lock. */
+    rtUnlock('issueBriefing');
     var errEl2=document.createElement('div');errEl2.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
     errEl2.textContent='\u26A0\uFE0F Error: '+e.message;msgsArea.appendChild(errEl2);
   }

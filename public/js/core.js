@@ -1232,7 +1232,35 @@ async function runBatchedUploadFromIndex(file,pages,docType,folderIds,batches,fr
         return true;
       }
     }catch(e){
-      console.log('v5.4 batch '+(bi+1)+' FAILED: body was '+bodyKB+'KB, error='+e.message);
+      console.log('v5.5 batch '+(bi+1)+' FAILED: body was '+bodyKB+'KB, error='+e.message);
+      /* v5.5: Final-batch false-positive guard. The final batch does
+         extra server-side work (chunk_count + document_count). If
+         Vercel's 300s timeout fires or a proxy drops the connection,
+         the chunks are already committed in Supabase — only the
+         chunk_count/document_count update is lost. Verify by checking
+         whether the document exists with chunks before declaring
+         failure. Only runs on the FINAL batch and only when we have
+         a documentId from the first batch. */
+      if(bi===totalBatches-1&&documentId){
+        try{
+          var verifyRes=await api('/api/documents?matter_id='+currentMatter.id);
+          var docs=(verifyRes&&verifyRes.documents)||[];
+          var thisDoc=null;
+          for(var di=0;di<docs.length;di++){if(docs[di].id===documentId){thisDoc=docs[di];break;}}
+          if(thisDoc&&thisDoc.chunk_count&&thisDoc.chunk_count>0){
+            console.log('v5.5 final-batch verify: chunks present ('+thisDoc.chunk_count+') — treating as success');
+            showToast('\u2713 '+file.name+' \u2014 uploaded in '+totalBatches+' batches (recovered)');
+            pendingUploadRetry=null;
+            clearUploadRetryUI();
+            await loadDocuments(currentMatter.id);
+            prog.classList.remove('on');
+            return true;
+          }
+          console.log('v5.5 final-batch verify: chunk_count='+(thisDoc?thisDoc.chunk_count:'doc-missing')+' — genuine failure, falling through to error UI');
+        }catch(verifyErr){
+          console.log('v5.5 final-batch verify itself failed: '+verifyErr.message+' — falling through to error UI');
+        }
+      }
       /* Store what we need to resume and show the retry button. */
       pendingUploadRetry={
         file:file,

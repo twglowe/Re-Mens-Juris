@@ -59,7 +59,9 @@ import { createClient } from "@supabase/supabase-js";
 
 export const config = { maxDuration: 10 };
 
+const SERVER_VERSION = "v5.5";
 export default async function handler(req, res) {
+  console.log(SERVER_VERSION + " cron-resume handler: " + (req.method || "?") + " " + (req.url || ""));
   /* Allow GET (Vercel Cron sends GET) and POST (for manual testing) */
   if (req.method !== "GET" && req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });

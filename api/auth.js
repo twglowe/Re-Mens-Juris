@@ -5,7 +5,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
+const SERVER_VERSION = "v5.5";
 export default async function handler(req, res) {
+  console.log(SERVER_VERSION + " auth handler: " + (req.method || "?") + " " + (req.url || ""));
   const { action } = req.query;
 
   try {

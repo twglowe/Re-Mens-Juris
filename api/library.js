@@ -41,7 +41,9 @@ async function extractPdfText(filePath) {
   return response.content?.find(b => b.type === "text")?.text || "";
 }
 
+const SERVER_VERSION = "v5.5";
 export default async function handler(req, res) {
+  console.log(SERVER_VERSION + " library handler: " + (req.method || "?") + " " + (req.url || ""));
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 

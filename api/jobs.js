@@ -30,7 +30,9 @@ async function getUser(req) {
   } catch (e) { return null; }
 }
 
+const SERVER_VERSION = "v5.5";
 export default async function handler(req, res) {
+  console.log(SERVER_VERSION + " jobs handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   const user = await getUser(req);

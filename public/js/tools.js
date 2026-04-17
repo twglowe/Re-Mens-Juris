@@ -338,6 +338,14 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   /* v5.0: Resolve folder filter selection → list of document names to include.
      Returns null when "All documents" is selected, meaning no include filter. */
   var includeDocNames=resolveIncludeDocNames();
+  /* v5.5a: Empty-filter guard. If the folder/document filter resolves to
+     zero documents, warn the user rather than sending an empty prompt to
+     Claude (which returns a useless "no documents provided" template). */
+  if(includeDocNames&&includeDocNames.length===0){
+    showToast('No documents match the current filter \u2014 adjust the folder or document selection and try again');
+    rtUnlock(v55LockedTool);
+    return;
+  }
   closeModal('toolModal');
   var toolName=pendingTool;
   var toolLabel=toolDefs[toolName]?toolDefs[toolName].title:toolName;

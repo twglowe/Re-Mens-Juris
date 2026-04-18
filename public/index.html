@@ -12,7 +12,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --navy:#0f2744;--navy-mid:#1a3a5c;--blue:#1d6fa4;--blue-light:#2689c8;
-  --blue-pale:#e8f4fd;--blue-faint:#f4f9fd;--white:#fff;--off-white:#f2f7fc;
+  --blue-pale:#e8f4fd;--blue-medium:#cfe4f5;--blue-faint:#f4f9fd;--white:#fff;--off-white:#f2f7fc;
   --border:#c5ddf0;--border-strong:#90c0e0;
   --text-dark:#0a1e36;--text-mid:#1e3d5c;--text-light:#4a6a84;--text-faint:#5a7d99;
   --error:#c0392b;--success:#27ae60;--warning:#e67e22;
@@ -74,10 +74,10 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .btn-t{padding:.3rem .72rem;border:1.5px solid var(--border);border-radius:5px;background:transparent;color:var(--text-mid);font-size:.8rem;font-weight:600;cursor:pointer;transition:all .18s;white-space:nowrap}
 .btn-t:hover{background:var(--blue-pale);border-color:var(--blue-light);color:var(--blue)}
 .btn-t.active{background:var(--navy);border-color:var(--navy);color:#fff}
-.tools-bar{padding:.5rem 1.1rem;background:var(--blue-faint);border-bottom:1.5px solid var(--border);display:flex;gap:.4rem;overflow-x:auto;flex-shrink:0;align-items:center}
+.tools-bar{padding:.5rem 1.1rem;background:var(--blue-medium);border-bottom:1.5px solid var(--border);display:flex;flex-wrap:wrap;gap:.4rem;row-gap:.4rem;flex-shrink:0;align-items:center}
 .tools-label{font-size:.72rem;font-weight:700;color:var(--text-light);letter-spacing:.06em;text-transform:uppercase;flex-shrink:0;margin-right:.2rem}
 .tool-btn{padding:.3rem .78rem;border:1.5px solid var(--border-strong);border-radius:20px;background:var(--white);color:var(--text-mid);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .18s;white-space:nowrap;flex-shrink:0}
-.tool-btn:hover{background:var(--blue-pale);border-color:var(--blue-light);color:var(--blue)}
+.tool-btn:hover{background:var(--white);border-color:var(--blue);color:var(--blue);box-shadow:0 0 0 1px var(--blue-light) inset}
 .progress-bar-wrap{margin:.6rem 1.1rem;padding:.6rem .9rem;background:var(--blue-pale);border:1.5px solid var(--border);border-radius:7px;display:none;flex-direction:column;gap:.4rem}
 .progress-bar-wrap.on{display:flex}
 .progress-bar-label{font-size:.8rem;font-weight:600;color:var(--blue)}
@@ -1166,9 +1166,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js?v=5.5a"></script>
-<script src="/js/tools.js?v=5.5a"></script>
-<script src="/js/library.js?v=5.5a"></script>
-<script src="/js/drafting.js?v=5.5a"></script>
-<script src="/js/diagram.js?v=5.5a"></script>
+<script src="/js/core.js?v=5.6b"></script>
+<script src="/js/tools.js?v=5.6b"></script>
+<script src="/js/library.js?v=5.6b"></script>
+<script src="/js/drafting.js?v=5.6b"></script>
+<script src="/js/diagram.js?v=5.6b"></script>
 </body></html>

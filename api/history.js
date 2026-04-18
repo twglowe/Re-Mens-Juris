@@ -1,31 +1,35 @@
 import { createClient } from "@supabase/supabase-js";
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
-async function getUser(req) {
+async function getUser(supabase, req) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
   const { data: { user }, error } = await supabase.auth.getUser(token);
   return error ? null : user;
 }
 
-async function canAccess(userId, matterId) {
+async function canAccess(supabase, userId, matterId) {
   const { data: own } = await supabase.from("matters").select("id").eq("id", matterId).eq("owner_id", userId).single();
   if (own) return true;
   const { data: share } = await supabase.from("matter_shares").select("id").eq("matter_id", matterId).eq("user_id", userId).single();
   return !!share;
 }
 
-const SERVER_VERSION = "v5.5";
+const SERVER_VERSION = "v5.6d";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " history handler: " + (req.method || "?") + " " + (req.url || ""));
-  const user = await getUser(req);
+  /* v5.6d: createClient() moved inside handler — module-scope instantiation
+     caches the PostgREST schema and silently drops any columns added after
+     the function first warmed up. Same bug class that broke /api/analyse. */
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+  const user = await getUser(supabase, req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    // GET — load history for a matter
+    /* GET — load history for a matter (includes followups column). */
     if (req.method === "GET") {
       const { matter_id } = req.query;
-      const access = await canAccess(user.id, matter_id);
+      const access = await canAccess(supabase, user.id, matter_id);
       if (!access) return res.status(403).json({ error: "Access denied" });
       const { data, error } = await supabase.from("conversation_history")
         .select("*").eq("matter_id", matter_id).eq("user_id", user.id)
@@ -34,36 +38,71 @@ export default async function handler(req, res) {
       return res.status(200).json({ history: data || [] });
     }
 
-    // POST — save a message pair, keep max 2 per tool per matter
+    /* POST — save a new main tool run (or chat Q/A). Prune rule: keep last 2
+       rows per tool per matter, BUT only rows with an empty followups array
+       count toward the cap. Rows that have follow-ups are preserved until the
+       user deletes them manually. (v5.6d Option B.) */
     if (req.method === "POST") {
       const { matter_id, question, answer, tool_name } = req.body;
-      const access = await canAccess(user.id, matter_id);
+      const access = await canAccess(supabase, user.id, matter_id);
       if (!access) return res.status(403).json({ error: "Access denied" });
       const { data, error } = await supabase.from("conversation_history")
         .insert({ matter_id, user_id: user.id, question, answer, tool_name: tool_name || null })
         .select("id").single();
       if (error) throw error;
-      // Keep only 2 most recent records per tool per matter
       if (tool_name) {
         const { data: all } = await supabase.from("conversation_history")
-          .select("id, created_at")
+          .select("id, created_at, followups")
           .eq("matter_id", matter_id)
           .eq("user_id", user.id)
           .eq("tool_name", tool_name)
           .order("created_at", { ascending: false });
-        if (all && all.length > 2) {
-          const toDelete = all.slice(2).map(r => r.id);
-          await supabase.from("conversation_history").delete().in("id", toDelete);
+        if (all) {
+          /* Only prune rows that have no follow-ups attached. */
+          const prunable = all.filter(function(r){
+            return !r.followups || r.followups.length === 0;
+          });
+          if (prunable.length > 2) {
+            const toDelete = prunable.slice(2).map(function(r){ return r.id; });
+            await supabase.from("conversation_history").delete().in("id", toDelete);
+          }
         }
       }
       return res.status(201).json({ success: true, id: data?.id || null });
     }
 
-    // DELETE — delete a single history item by id, or all for a matter
+    /* PATCH — append a follow-up Q/A to an existing row's followups array.
+       Body: { id, followup: { question, answer, created_at? } }
+       (id may also come from the query string.) */
+    if (req.method === "PATCH") {
+      const id = req.query.id || (req.body && req.body.id);
+      const followup = req.body && req.body.followup;
+      if (!id) return res.status(400).json({ error: "id required" });
+      if (!followup || typeof followup.question !== "string" || typeof followup.answer !== "string") {
+        return res.status(400).json({ error: "followup.question and followup.answer required" });
+      }
+      /* Ownership check */
+      const { data: row, error: rowErr } = await supabase.from("conversation_history")
+        .select("id, user_id, followups").eq("id", id).single();
+      if (rowErr || !row) return res.status(404).json({ error: "Not found" });
+      if (row.user_id !== user.id) return res.status(403).json({ error: "Forbidden" });
+      const existing = Array.isArray(row.followups) ? row.followups : [];
+      const entry = {
+        question: followup.question,
+        answer: followup.answer,
+        created_at: followup.created_at || new Date().toISOString()
+      };
+      const updated = existing.concat([entry]);
+      const { error: updErr } = await supabase.from("conversation_history")
+        .update({ followups: updated }).eq("id", id);
+      if (updErr) throw updErr;
+      return res.status(200).json({ success: true, followup_count: updated.length });
+    }
+
+    /* DELETE — remove a single row by id, or all rows for a matter. */
     if (req.method === "DELETE") {
       const { id, matter_id } = req.query;
 
-      // Delete single item by id
       if (id) {
         const { data: item } = await supabase.from("conversation_history")
           .select("matter_id, user_id").eq("id", id).single();
@@ -73,7 +112,6 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true });
       }
 
-      // Delete all for a matter
       if (matter_id) {
         await supabase.from("conversation_history")
           .delete().eq("matter_id", matter_id).eq("user_id", user.id);

@@ -400,22 +400,7 @@ function loadHistItem(i){
     if(histOpen)toggleHistory();
     return;
   }
-  if(h.tool_name){
-    getOrCreateToolTab(h.tool_name);
-    var area=showToolResult(h.tool_name);
-    area.innerHTML='';
-    appendMsgTo(area,'assistant',h.answer,'tool',h.question,'',h.tool_name,h.id);
-    /* v5.6d: stash the history id on the workspace so subsequent follow-ups
-       know which row to PATCH. */
-    area.dataset.historyId=h.id;
-    /* v5.6d: replay any saved followups in sequence below the main answer. */
-    var fups=Array.isArray(h.followups)?h.followups:[];
-    for(var fi=0;fi<fups.length;fi++){
-      renderFollowUpBlock(area,h.tool_name,fups[fi].question,fups[fi].answer);
-    }
-    /* v5.6d: rebuild the doc selector + chaining input at the bottom. */
-    if(fups.length>0)buildFollowUpDocSelector(area,h.tool_name);
-  }
+  if(h.tool_name){getOrCreateToolTab(h.tool_name);var area=showToolResult(h.tool_name);area.innerHTML='';appendMsgTo(area,'assistant',h.answer,'tool',h.question,'',h.tool_name,h.id);}
   else{switchTab('chat');clearMessages();appendMsg('user',h.question);appendMsg('assistant',h.answer,'','','',null,h.id);}
   if(histOpen)toggleHistory();
 }
@@ -423,43 +408,6 @@ function toggleHistory(){histOpen=!histOpen;document.getElementById('histPanel')
 async function saveHistory(q,a,toolName){
   if(!currentMatter)return null;
   try{var d=await api('/api/history','POST',{matter_id:currentMatter.id,question:q,answer:a,tool_name:toolName||null});await loadHistory(currentMatter.id);return d&&d.id?d.id:null;}catch(e){return null;}
-}
-/* v5.6d: append a follow-up Q/A to the followups[] array on an existing
-   history row, via PATCH /api/history?id=<id>. Returns the new followup
-   count, or null on error. */
-async function saveToolFollowUp(historyId,question,answer){
-  if(!historyId)return null;
-  try{
-    var d=await api('/api/history?id='+encodeURIComponent(historyId),'PATCH',{id:historyId,followup:{question:question,answer:answer}});
-    await loadHistory(currentMatter.id);
-    return d&&d.followup_count?d.followup_count:null;
-  }catch(e){return null;}
-}
-/* v5.6d: Render a single follow-up block (header + answer + meta with its
-   own Word download button) into a tool workspace. Shared between the
-   live follow-up flow and history replay so both look identical. */
-function renderFollowUpBlock(ws,toolName,question,answer){
-  var cfg=toolDefs[toolName];
-  var toolLabel=cfg?cfg.title:toolName;
-  /* Remove any existing followup-doc-selector so the new block isn't
-     appended below an abandoned chaining input. */
-  var oldSelector=ws.querySelector('.followup-doc-selector');
-  if(oldSelector&&oldSelector.parentElement)oldSelector.parentElement.remove();
-  var header=document.createElement('div');
-  header.className='followup-header';
-  header.innerHTML='<div class="followup-question-label">Follow-up on '+esc(toolLabel.replace(/^[^\w]*/,''))+'</div>'
-    +'<div class="followup-question-text">'+esc(question)+'</div>';
-  ws.appendChild(header);
-  var answerWrap=document.createElement('div');
-  answerWrap.className='followup-answer';
-  answerWrap.innerHTML=renderMdWithSourceLinks(answer);
-  ws.appendChild(answerWrap);
-  var meta=document.createElement('div');meta.className='followup-meta';
-  meta.innerHTML='<span>Ex Libris Juris \u00B7 '+(jurisdiction==='British Virgin Islands'?'BVI':jurisdiction)+'</span>';
-  var dlBtn=document.createElement('button');dlBtn.className='btn-dl';dlBtn.textContent='\u2B07 Word';
-  dlBtn.onclick=function(){downloadWord(answer,toolLabel+' follow-up: '+question.slice(0,40));};
-  meta.appendChild(dlBtn);
-  ws.appendChild(meta);
 }
 
 /* ── DOCUMENTS ───────────────────────────────────────────────────────────── */
@@ -1751,23 +1699,18 @@ async function sendToolFollowUp(question,toolName){
   /* Get selected focus documents from the follow-up doc selector (if present) */
   var focusDocNames=[];
   document.querySelectorAll('#followUpDocList input:checked').forEach(function(cb){focusDocNames.push(cb.value);});
-  /* Get the current tool result text for context. We take the FIRST bubble
-     (the main tool answer) rather than the last — the last may be a prior
-     follow-up answer, but the tool context should always refer to the
-     original main output. */
+  /* Get the current tool result text for context */
   var msgsArea=document.getElementById('msgs-'+toolName);
+  var currentResult='';
+  if(msgsArea){
+    var bubbles=msgsArea.querySelectorAll('.msg-bubble');
+    if(bubbles.length>0)currentResult=bubbles[bubbles.length-1].innerText.slice(0,8000);
+  }
+  var toolContext='The user is viewing the '+toolLabel+' output for this matter. Answer their follow-up question in that context.';
+  /* Replace the tool workspace with follow-up layout: question at top, answer below */
   var ws=msgsArea;
   if(!ws)return;
-  var currentResult='';
-  var bubbles=ws.querySelectorAll('.msg-bubble');
-  if(bubbles.length>0)currentResult=bubbles[0].innerText.slice(0,8000);
-  var toolContext='The user is viewing the '+toolLabel+' output for this matter. Answer their follow-up question in that context.';
-  /* v5.6d: do NOT wipe the workspace. Append the follow-up block beneath
-     whatever is already there (main answer + any previous follow-ups).
-     Also strip the existing followup-doc-selector so the chaining input
-     doesn't end up in the middle of the conversation. */
-  var oldSelector=ws.querySelector('.followup-doc-selector');
-  if(oldSelector&&oldSelector.parentElement)oldSelector.parentElement.remove();
+  ws.innerHTML='';ws.style.display='flex';
   /* Follow-up header */
   var header=document.createElement('div');
   header.className='followup-header';
@@ -1788,29 +1731,22 @@ async function sendToolFollowUp(question,toolName){
     var d=await api('/api/analyse','POST',body);
     typing.remove();
     if(d&&d.result){
-      var costStr=d.usage&&d.usage.costUsd?' \u00B7 $'+d.usage.costUsd.toFixed(4):'';
-      /* v5.6d: append to the main row's followups[] array via PATCH, not
-         insert as a new POST row. historyId is stashed on the workspace
-         by the main-answer render path (see appendMsgTo caller / loadHistItem). */
-      var parentHistoryId=ws.dataset?ws.dataset.historyId:null;
-      if(parentHistoryId){
-        await saveToolFollowUp(parentHistoryId,question,d.result);
-      }
+      var costStr=d.usage&&d.usage.costUsd?' · $'+d.usage.costUsd.toFixed(4):'';
+      var hId=await saveHistory(toolLabel+' follow-up: '+question.slice(0,80),d.result,toolName);
       /* Render answer in full workspace */
       var answerWrap=document.createElement('div');
       answerWrap.className='followup-answer';
       answerWrap.innerHTML=renderMdWithSourceLinks(d.result);
       ws.appendChild(answerWrap);
-      /* Meta bar with per-follow-up Word download */
+      /* Meta bar */
       var meta=document.createElement('div');meta.className='followup-meta';
-      meta.innerHTML='<span>Ex Libris Juris \u00B7 '+(jurisdiction==='British Virgin Islands'?'BVI':jurisdiction)+(costStr||'')+'</span>';
+      meta.innerHTML='<span>Ex Libris Juris · '+(jurisdiction==='British Virgin Islands'?'BVI':jurisdiction)+(costStr||'')+'</span>';
       var dlBtn=document.createElement('button');dlBtn.className='btn-dl';dlBtn.textContent='\u2B07 Word';
       dlBtn.onclick=function(){downloadWord(d.result,toolLabel+' follow-up: '+question.slice(0,40));};
       meta.appendChild(dlBtn);
       ws.appendChild(meta);
       /* Doc selector + new follow-up input for chaining */
       buildFollowUpDocSelector(ws,toolName);
-      ws.scrollTop=ws.scrollHeight;
     }
   }catch(e){
     typing.remove();
@@ -1873,9 +1809,6 @@ function appendMsgTo(area,role,content,variant,question,costStr,toolName,history
   }else{meta.textContent='You · '+time;}
   w.appendChild(bubble);w.appendChild(meta);
   if(toolName&&historyId){var histBar=renderToolHistoryBar(toolName,historyId);if(histBar.children.length)w.appendChild(histBar);}
-  /* v5.6d: tag the tool workspace with the history id of its main answer
-     so sendToolFollowUp knows which row to PATCH. */
-  if(role==='assistant'&&toolName&&historyId&&area&&area.dataset)area.dataset.historyId=historyId;
   area.appendChild(w);area.scrollTop=area.scrollHeight;
 }
 

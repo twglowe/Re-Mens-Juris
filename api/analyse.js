@@ -3,13 +3,12 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const config = { maxDuration: 300 };
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const INPUT_COST_PER_M  = 3.00;
 const OUTPUT_COST_PER_M = 15.00;
 
-async function getUser(req) {
+async function getUser(supabase, req) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
   try {
@@ -46,8 +45,9 @@ Terms:`
 }
 
 /* v3.7: searchChunks now accepts optional focusDocNames array.
-   When provided, chunks are filtered to only those documents. */
-async function searchChunks(matterId, query, limit, focusDocNames) {
+   When provided, chunks are filtered to only those documents.
+   v5.6a: supabase is now passed in, not module-scoped. */
+async function searchChunks(supabase, matterId, query, limit, focusDocNames) {
   limit = limit || 30;
   // First try with AI-extracted terms
   const terms = await extractSearchTerms(query);
@@ -83,7 +83,7 @@ async function searchChunks(matterId, query, limit, focusDocNames) {
   return data || [];
 }
 
-async function logUsage(matterId, userId, toolName, inputTokens, outputTokens, cost) {
+async function logUsage(supabase, matterId, userId, toolName, inputTokens, outputTokens, cost) {
   try {
     await supabase.from("usage_log").insert({
       matter_id: matterId, user_id: userId, tool_name: toolName,
@@ -92,11 +92,19 @@ async function logUsage(matterId, userId, toolName, inputTokens, outputTokens, c
   } catch (e) { console.error("Usage log error:", e); }
 }
 
-const SERVER_VERSION = "v5.6";
+const SERVER_VERSION = "v5.6a";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " analyse handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  const user = await getUser(req);
+
+  /* v5.6a: Fresh createClient() per invocation. The previous module-scope
+     client was responsible for sporadic 403 responses from Supabase Auth
+     on getUser() calls, which surfaced as 401 Unauthorized to the frontend
+     and silently broke tool follow-ups. Documented bug pattern — see v4.2j
+     note in permanent technical references. */
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+  const user = await getUser(supabase, req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
   /* v3.7: Accept focusDocNames from request body */
@@ -110,7 +118,7 @@ export default async function handler(req, res) {
     let contextText = "";
     if (matterId) {
       /* v3.7: Pass focusDocNames to searchChunks for document-focused follow-ups */
-      const chunks = await searchChunks(matterId, userQuery, 30, focusDocNames);
+      const chunks = await searchChunks(supabase, matterId, userQuery, 30, focusDocNames);
       if (chunks.length > 0) {
         const byDoc = {};
         for (const c of chunks) {
@@ -168,7 +176,7 @@ Analysis type: ${queryType || "General Legal Analysis"}`;
     const outputTokens = response.usage?.output_tokens || 0;
     const costUsd = (inputTokens * INPUT_COST_PER_M / 1_000_000) + (outputTokens * OUTPUT_COST_PER_M / 1_000_000);
 
-    if (matterId) await logUsage(matterId, user.id, "qa", inputTokens, outputTokens, costUsd);
+    if (matterId) await logUsage(supabase, matterId, user.id, "qa", inputTokens, outputTokens, costUsd);
 
     return res.status(200).json({ result: resultText, usage: { inputTokens, outputTokens, costUsd } });
   } catch (err) {

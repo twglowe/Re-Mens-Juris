@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v3.4 — JAVASCRIPT
+   EX LIBRIS JURIS v5.6g — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -400,7 +400,53 @@ function loadHistItem(i){
     if(histOpen)toggleHistory();
     return;
   }
-  if(h.tool_name){getOrCreateToolTab(h.tool_name);var area=showToolResult(h.tool_name);area.innerHTML='';appendMsgTo(area,'assistant',h.answer,'tool',h.question,'',h.tool_name,h.id);}
+  if(h.tool_name){
+    getOrCreateToolTab(h.tool_name);
+    var area=showToolResult(h.tool_name);
+    area.innerHTML='';
+    appendMsgTo(area,'assistant',h.answer,'tool',h.question,'',h.tool_name,h.id);
+    /* v5.6g: replay any follow-ups saved against this row. Rendered as
+       stacked blocks below the main tool bubble, matching the live V2
+       layout. Cost pill hidden per preference — cost is still stored
+       for reporting. */
+    var fus=Array.isArray(h.followups)?h.followups:[];
+    if(fus.length>0){
+      var toolCfg=toolDefs[h.tool_name];
+      var toolLabel=toolCfg?toolCfg.title:h.tool_name;
+      for(var fi=0;fi<fus.length;fi++){
+        var fu=fus[fi];
+        var block=document.createElement('div');
+        block.className='followup-block';
+        block.style.cssText='margin-top:1.15rem;border-top:1.5px solid var(--border);padding-top:1.15rem;display:flex;flex-direction:column;gap:.75rem';
+        var qHdr=document.createElement('div');
+        qHdr.className='followup-block-question';
+        qHdr.style.cssText='padding:.6rem .9rem;background:var(--blue-faint);border-radius:6px;border:1px solid var(--blue-light)';
+        qHdr.innerHTML='<div class="followup-question-label">Follow-up on '+esc(toolLabel.replace(/^[^\w]*/,''))+'</div>'
+          +'<div class="followup-question-text">'+esc(fu.question||'')+'</div>';
+        block.appendChild(qHdr);
+        var aMsg=document.createElement('div');
+        aMsg.className='msg msg-assistant msg-tool';
+        var aBubble=document.createElement('div');
+        aBubble.className='msg-bubble';
+        aBubble.innerHTML=renderMdWithSourceLinks(fu.answer||'');
+        aMsg.appendChild(aBubble);
+        var meta=document.createElement('div');meta.className='msg-meta';
+        var ts=document.createElement('span');
+        var fuTime=fu.created_at?new Date(fu.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+        ts.textContent='Ex Libris Juris \u00B7 '+(jurisdiction==='British Virgin Islands'?'BVI':jurisdiction)+(fuTime?' \u00B7 '+fuTime:'');
+        meta.appendChild(ts);
+        var dl=document.createElement('button');dl.className='btn-dl';dl.textContent='\u2B07 Word';
+        (function(answerText,qText){
+          dl.onclick=function(){downloadWord(answerText,toolLabel+' follow-up: '+String(qText||'').slice(0,40));};
+        })(fu.answer||'',fu.question||'');
+        meta.appendChild(dl);
+        aMsg.appendChild(meta);
+        block.appendChild(aMsg);
+        area.appendChild(block);
+      }
+      area.scrollTop=0;
+    }
+  }
   else{switchTab('chat');clearMessages();appendMsg('user',h.question);appendMsg('assistant',h.answer,'','','',null,h.id);}
   if(histOpen)toggleHistory();
 }
@@ -1786,6 +1832,13 @@ async function sendToolFollowUpV2(question,toolName){
   var mainBubble=msgsArea.querySelector('.msg.msg-assistant.msg-tool .msg-bubble');
   if(!mainBubble){console.log('FOLLOWUP_V2: no main tool bubble yet, falling back');return sendToolFollowUp(question,toolName);}
 
+  /* v5.6g: find the main tool-message's history row id so we can PATCH
+     follow-ups onto that row. Walk from the bubble up to its .msg parent
+     and read dataset.historyId. If absent (e.g. a history replay that
+     didn't stash it), we'll fall through to POST at save-time. */
+  var mainMsg=mainBubble.closest('.msg.msg-assistant.msg-tool');
+  var mainRowId=mainMsg?mainMsg.dataset.historyId||null:null;
+
   /* Capture main result text for the analyse prompt context. */
   var currentResult=mainBubble.innerText.slice(0,8000);
   var toolContext='The user is viewing the '+toolLabel+' output for this matter. Answer their follow-up question in that context.';
@@ -1822,11 +1875,33 @@ async function sendToolFollowUpV2(question,toolName){
     var d=await api('/api/analyse','POST',body);
     typing.remove();
     if(d&&d.result){
-      var costStr=d.usage&&d.usage.costUsd?' \u00B7 $'+d.usage.costUsd.toFixed(4):'';
-      /* Save follow-up using existing semantics — separate history row,
-         same as today's sendToolFollowUp does. Stage 2 will switch this
-         to a PATCH that appends to the main row's followups[] instead. */
-      await saveHistory(toolLabel+' follow-up: '+question.slice(0,80),d.result,toolName);
+      var costUsd=d.usage&&typeof d.usage.costUsd==='number'?d.usage.costUsd:0;
+      /* v5.6g: PATCH the follow-up onto the main row's followups[] array.
+         Falls back to POST (old behaviour: separate history row) if either
+         the mainRowId is missing or PATCH itself fails. The fallback
+         guarantees no follow-up work is ever silently lost. */
+      var savedViaPatch=false;
+      if(mainRowId){
+        try{
+          await api('/api/history?id='+encodeURIComponent(mainRowId),'PATCH',{
+            question:question,
+            answer:d.result,
+            cost_usd:costUsd,
+            focus_doc_names:focusDocNames
+          });
+          savedViaPatch=true;
+          /* Refresh the in-memory history cache so loadHistItem sees the new
+             follow-up without a full page reload. */
+          if(currentMatter)await loadHistory(currentMatter.id);
+        }catch(patchErr){
+          console.warn('FOLLOWUP_V2 PATCH failed, falling back to POST:',patchErr&&patchErr.message);
+        }
+      }
+      if(!savedViaPatch){
+        await saveHistory(toolLabel+' follow-up: '+question.slice(0,80),d.result,toolName);
+      }
+
+      var costStr=costUsd?' \u00B7 $'+costUsd.toFixed(4):'';
 
       /* Answer bubble — mirrors the appendMsgTo 'assistant' layout, but
          scoped inside this follow-up block so it's clearly a reply to the
@@ -1838,12 +1913,12 @@ async function sendToolFollowUpV2(question,toolName){
       aBubble.innerHTML=renderMdWithSourceLinks(d.result);
       aMsg.appendChild(aBubble);
 
-      /* Per-follow-up meta bar with its own Word download button. */
+      /* Per-follow-up meta bar. v5.6g: cost pill hidden per Tom's preference.
+         Cost is still saved to the database for reporting. */
       var time=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
       var meta=document.createElement('div');meta.className='msg-meta';
       var ts=document.createElement('span');
       ts.textContent='Ex Libris Juris \u00B7 '+(jurisdiction==='British Virgin Islands'?'BVI':jurisdiction)+' \u00B7 '+time;
-      if(costStr){var cp=document.createElement('span');cp.className='cost-pill';cp.textContent=costStr;ts.appendChild(cp);}
       meta.appendChild(ts);
       var dl=document.createElement('button');dl.className='btn-dl';dl.textContent='\u2B07 Word';
       dl.onclick=function(){downloadWord(d.result,toolLabel+' follow-up: '+question.slice(0,40));};
@@ -1919,6 +1994,10 @@ function appendMsgTo(area,role,content,variant,question,costStr,toolName,history
     }
   }else{meta.textContent='You · '+time;}
   w.appendChild(bubble);w.appendChild(meta);
+  /* v5.6g: stash the history row id on the DOM element so sendToolFollowUpV2
+     can find it and PATCH follow-ups onto that row's followups[] array.
+     Backward-compatible — nothing else reads dataset.historyId today. */
+  if(historyId)w.dataset.historyId=historyId;
   if(toolName&&historyId){var histBar=renderToolHistoryBar(toolName,historyId);if(histBar.children.length)w.appendChild(histBar);}
   area.appendChild(w);area.scrollTop=area.scrollHeight;
 }

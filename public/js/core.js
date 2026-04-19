@@ -1669,10 +1669,18 @@ async function sendMessage(){
   isLoading=true;input.value='';input.style.height='auto';
   document.getElementById('sendBtn').disabled=true;
 
-  /* Tool follow-up: open dedicated follow-up view */
+  /* Tool follow-up: open dedicated follow-up view.
+     v5.6e: When window.FOLLOWUP_V2===true, use the new "append below main
+     tool result" renderer. Default remains the existing wipe-and-replace
+     behaviour so flipping the flag off in the browser console restores
+     exactly the pre-v5.6e experience with no push required. */
   var isToolFollowUp=activeTab!=='chat'&&activeTab!=='diagram'&&toolDefs[activeTab];
   if(isToolFollowUp){
-    await sendToolFollowUp(text,activeTab);
+    if(window.FOLLOWUP_V2===true){
+      await sendToolFollowUpV2(text,activeTab);
+    }else{
+      await sendToolFollowUp(text,activeTab);
+    }
     isLoading=false;document.getElementById('sendBtn').disabled=false;input.focus();
     return;
   }
@@ -1753,6 +1761,109 @@ async function sendToolFollowUp(question,toolName){
     var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';
     errEl.textContent='\u26A0\uFE0F Error: '+e.message;ws.appendChild(errEl);
     buildFollowUpDocSelector(ws,toolName);
+  }
+}
+
+/* ── v5.6e — Tool Follow-Up V2: append below main tool result ─────────────
+   Feature-flagged via window.FOLLOWUP_V2. Default off. The existing
+   sendToolFollowUp above is unchanged and remains the default path. When
+   the flag is on, this version preserves the main tool bubble and appends
+   a follow-up Q+A block below it, so the user can see the tool output and
+   their follow-up simultaneously. Multiple follow-ups stack in order.
+
+   Stage 1: no persistence change. Saves via the existing saveHistory path
+   as a separate row, same as sendToolFollowUp does today. Stage 2 will add
+   PATCH-based persistence in a follow-up push once Stage 1 is solid. */
+async function sendToolFollowUpV2(question,toolName){
+  var cfg=toolDefs[toolName];
+  var toolLabel=cfg?cfg.title:toolName;
+  var msgsArea=document.getElementById('msgs-'+toolName);
+  if(!msgsArea){console.log('FOLLOWUP_V2: no workspace, falling back');return sendToolFollowUp(question,toolName);}
+
+  /* Find the main tool result bubble. If absent, the user has somehow hit
+     send before the tool produced a result — fall back to the old behaviour
+     rather than rendering a follow-up into an empty workspace. */
+  var mainBubble=msgsArea.querySelector('.msg.msg-assistant.msg-tool .msg-bubble');
+  if(!mainBubble){console.log('FOLLOWUP_V2: no main tool bubble yet, falling back');return sendToolFollowUp(question,toolName);}
+
+  /* Capture main result text for the analyse prompt context. */
+  var currentResult=mainBubble.innerText.slice(0,8000);
+  var toolContext='The user is viewing the '+toolLabel+' output for this matter. Answer their follow-up question in that context.';
+
+  /* Optional document focus (if a prior V2 follow-up added checkboxes). */
+  var focusDocNames=[];
+  msgsArea.querySelectorAll('.followup-doc-list input:checked').forEach(function(cb){focusDocNames.push(cb.value);});
+
+  /* Build the follow-up block and append below the main result. */
+  var block=document.createElement('div');
+  block.className='followup-block';
+  block.style.cssText='margin-top:1.15rem;border-top:1.5px solid var(--border);padding-top:1.15rem;display:flex;flex-direction:column;gap:.75rem';
+
+  /* Question header. */
+  var qHdr=document.createElement('div');
+  qHdr.className='followup-block-question';
+  qHdr.style.cssText='padding:.6rem .9rem;background:var(--blue-faint);border-radius:6px;border:1px solid var(--blue-light)';
+  qHdr.innerHTML='<div class="followup-question-label">Follow-up on '+esc(toolLabel.replace(/^[^\w]*/,''))+'</div>'
+    +'<div class="followup-question-text">'+esc(question)+'</div>';
+  block.appendChild(qHdr);
+
+  /* Typing indicator. */
+  var typing=document.createElement('div');
+  typing.className='msg msg-assistant';
+  typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
+  block.appendChild(typing);
+
+  msgsArea.appendChild(block);
+  msgsArea.scrollTop=msgsArea.scrollHeight;
+
+  try{
+    var body={matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:question+'\n\n[Context: '+toolContext+']\n\n[Previous tool output summary (first 8000 chars):\n'+currentResult+']'}],jurisdiction:jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:Array.from(focusAreas)};
+    if(focusDocNames.length>0)body.focusDocNames=focusDocNames;
+    var d=await api('/api/analyse','POST',body);
+    typing.remove();
+    if(d&&d.result){
+      var costStr=d.usage&&d.usage.costUsd?' \u00B7 $'+d.usage.costUsd.toFixed(4):'';
+      /* Save follow-up using existing semantics — separate history row,
+         same as today's sendToolFollowUp does. Stage 2 will switch this
+         to a PATCH that appends to the main row's followups[] instead. */
+      await saveHistory(toolLabel+' follow-up: '+question.slice(0,80),d.result,toolName);
+
+      /* Answer bubble — mirrors the appendMsgTo 'assistant' layout, but
+         scoped inside this follow-up block so it's clearly a reply to the
+         follow-up question and not a replacement of the main result. */
+      var aMsg=document.createElement('div');
+      aMsg.className='msg msg-assistant msg-tool';
+      var aBubble=document.createElement('div');
+      aBubble.className='msg-bubble';
+      aBubble.innerHTML=renderMdWithSourceLinks(d.result);
+      aMsg.appendChild(aBubble);
+
+      /* Per-follow-up meta bar with its own Word download button. */
+      var time=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+      var meta=document.createElement('div');meta.className='msg-meta';
+      var ts=document.createElement('span');
+      ts.textContent='Ex Libris Juris \u00B7 '+(jurisdiction==='British Virgin Islands'?'BVI':jurisdiction)+' \u00B7 '+time;
+      if(costStr){var cp=document.createElement('span');cp.className='cost-pill';cp.textContent=costStr;ts.appendChild(cp);}
+      meta.appendChild(ts);
+      var dl=document.createElement('button');dl.className='btn-dl';dl.textContent='\u2B07 Word';
+      dl.onclick=function(){downloadWord(d.result,toolLabel+' follow-up: '+question.slice(0,40));};
+      meta.appendChild(dl);
+      aMsg.appendChild(meta);
+
+      block.appendChild(aMsg);
+      msgsArea.scrollTop=msgsArea.scrollHeight;
+    }else{
+      var noRes=document.createElement('div');
+      noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem';
+      noRes.textContent='Follow-up returned no result.';
+      block.appendChild(noRes);
+    }
+  }catch(e){
+    typing.remove();
+    var errEl=document.createElement('div');
+    errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem';
+    errEl.textContent='\u26A0\uFE0F Error: '+e.message;
+    block.appendChild(errEl);
   }
 }
 

@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v5.6i — JAVASCRIPT
+   EX LIBRIS JURIS v5.6j — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
-var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
+var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
 /* v5.0: Folders for the current matter. Loaded on matter select. Each entry:
    { id, name, sort_order, created_at, document_count }. */
@@ -148,16 +148,6 @@ document.querySelectorAll('.jur-tab').forEach(function(btn){
     btn.classList.add('active');jurisdiction=btn.dataset.jur;
   });
 });
-
-/* ── FOCUS CHIPS ─────────────────────────────────────────────────────────── */
-document.querySelectorAll('.chip').forEach(function(c){
-  c.addEventListener('click',function(){
-    var v=c.dataset.v;if(!v)return;
-    if(focusAreas.has(v)){focusAreas.delete(v);c.classList.remove('on');}
-    else{focusAreas.add(v);c.classList.add('on');}
-  });
-});
-function addFocusChip(){var name=prompt('Focus area name:');if(!name||!name.trim())return;var chip=document.createElement('span');chip.className='chip';chip.setAttribute('data-v',name.trim());chip.innerHTML=esc(name.trim())+' <button class="chip-del" onclick="this.parentElement.remove()">&times;</button>';var container=document.getElementById('focusChips');var addBtn=container.querySelector('.chip-add');container.insertBefore(chip,addBtn);}
 
 /* ── MATTERS CRUD ────────────────────────────────────────────────────────── */
 async function loadMatters(){
@@ -1739,7 +1729,7 @@ async function sendMessage(){
   typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
   area.appendChild(typing);area.scrollTop=area.scrollHeight;
   try{
-    var d=await api('/api/analyse','POST',{matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:text}],jurisdiction:jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:Array.from(focusAreas)});
+    var d=await api('/api/analyse','POST',{matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:text}],jurisdiction:jurisdiction});
     typing.remove();
     if(d&&d.result){var hId=await saveHistory(text,d.result);var costStr=d.usage&&d.usage.costUsd?' · $'+d.usage.costUsd.toFixed(4):'';appendMsgTo(area,'assistant',d.result,'',text,costStr,null,hId);}
   }catch(e){typing.remove();var errEl=document.createElement('div');errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem;';errEl.textContent='\u26A0\uFE0F Error: '+e.message;area.appendChild(errEl);}
@@ -1780,7 +1770,7 @@ async function sendToolFollowUp(question,toolName){
   typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
   ws.appendChild(typing);ws.scrollTop=ws.scrollHeight;
   try{
-    var body={matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:question+'\n\n[Context: '+toolContext+']\n\n[Previous tool output summary (first 8000 chars):\n'+currentResult+']'}],jurisdiction:jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:Array.from(focusAreas)};
+    var body={matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:question+'\n\n[Context: '+toolContext+']\n\n[Previous tool output summary (first 8000 chars):\n'+currentResult+']'}],jurisdiction:jurisdiction};
     if(focusDocNames.length>0)body.focusDocNames=focusDocNames;
     var d=await api('/api/analyse','POST',body);
     typing.remove();
@@ -1870,7 +1860,7 @@ async function sendToolFollowUpV2(question,toolName){
   msgsArea.scrollTop=msgsArea.scrollHeight;
 
   try{
-    var body={matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:question+'\n\n[Context: '+toolContext+']\n\n[Previous tool output summary (first 8000 chars):\n'+currentResult+']'}],jurisdiction:jurisdiction,queryType:document.getElementById('qtypeSelect').value,focusAreas:Array.from(focusAreas)};
+    var body={matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:question+'\n\n[Context: '+toolContext+']\n\n[Previous tool output summary (first 8000 chars):\n'+currentResult+']'}],jurisdiction:jurisdiction};
     if(focusDocNames.length>0)body.focusDocNames=focusDocNames;
     var d=await api('/api/analyse','POST',body);
     typing.remove();

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v5.6g — JAVASCRIPT
+   EX LIBRIS JURIS v5.6i — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],focusAreas=new Set(),isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -1716,13 +1716,13 @@ async function sendMessage(){
   document.getElementById('sendBtn').disabled=true;
 
   /* Tool follow-up: open dedicated follow-up view.
-     v5.6e: When window.FOLLOWUP_V2===true, use the new "append below main
-     tool result" renderer. Default remains the existing wipe-and-replace
-     behaviour so flipping the flag off in the browser console restores
-     exactly the pre-v5.6e experience with no push required. */
+     v5.6i: V2 ("append below main tool result") is now the default. V1
+     ("wipe-and-replace") remains available as an emergency opt-out by
+     setting window.FOLLOWUP_V2=false in the browser console. Prior to
+     v5.6i the default was V1 and V2 required window.FOLLOWUP_V2=true. */
   var isToolFollowUp=activeTab!=='chat'&&activeTab!=='diagram'&&toolDefs[activeTab];
   if(isToolFollowUp){
-    if(window.FOLLOWUP_V2===true){
+    if(window.FOLLOWUP_V2!==false){
       await sendToolFollowUpV2(text,activeTab);
     }else{
       await sendToolFollowUp(text,activeTab);

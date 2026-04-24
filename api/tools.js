@@ -1,18 +1,26 @@
-/* EX LIBRIS JURIS v4.2e — tools.js (API)
+/* EX LIBRIS JURIS v5.8a — tools.js (API)
    Thin job dispatcher: creates a tool_jobs row, fires worker, returns jobId.
    NO Claude API calls happen here. All processing is in worker.js.
 
-   v4.2e: Worker fetch is fire-and-forget (no await, no AbortController).
-   If the worker doesn't start, the frontend polling loop detects "pending"
-   status and re-fires the worker itself. No server-to-server chaining. */
+   v5.8a CHANGES (24 Apr 2026) — Push H cleanup:
+   1. createClient() moved inside the handler. At module scope it caches the
+      PostgREST schema on first warm invocation and any column added by a
+      later migration gets silently stripped from UPDATE/PATCH payloads.
+      tools.js only ever INSERTs here (no silent-drop risk for INSERT), but
+      the pattern is kept consistent across all API files — api/history.js
+      and api/analyse.js did the same in v5.6a/f. Defensive.
+   2. Version banner bumped to v5.8a. No other behavioural change.
+
+   v4.2e (carried forward): Worker fetch is fire-and-forget (no await, no
+   AbortController). If the worker doesn't start, the frontend polling loop
+   detects "pending" status and re-fires the worker itself. No server-to-
+   server chaining. */
 
 import { createClient } from "@supabase/supabase-js";
 
 export const config = { maxDuration: 30 };
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-
-async function getUser(req) {
+async function getUser(supabase, req) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
   try {
@@ -25,12 +33,15 @@ async function getUser(req) {
   }
 }
 
-const SERVER_VERSION = "v5.5";
+const SERVER_VERSION = "v5.8a";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " tools handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const user = await getUser(req);
+  /* v5.8a: Fresh client per invocation. See header comment. */
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+  const user = await getUser(supabase, req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
   const { tool, matterId, matterName, matterNature, matterIssues, jurisdiction,

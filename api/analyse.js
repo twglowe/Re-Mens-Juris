@@ -92,7 +92,7 @@ async function logUsage(supabase, matterId, userId, toolName, inputTokens, outpu
   } catch (e) { console.error("Usage log error:", e); }
 }
 
-const SERVER_VERSION = "v5.6a";
+const SERVER_VERSION = "v5.8a";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " analyse handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -166,7 +166,7 @@ Analysis type: ${queryType || "General Legal Analysis"}`;
 
     const response = await anthropic.messages.create({
       model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-      max_tokens: 8192,
+      max_tokens: 16384,
       system,
       messages: cleanMessages,
     });

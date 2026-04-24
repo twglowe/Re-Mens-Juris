@@ -2,14 +2,7 @@ name: Tests
 
 # v5.8a — Push H.
 # Runs the unit tests on every push to main and on every PR.
-# When wired as a required status check in GitHub branch protection,
-# Vercel waits for the green tick before auto-deploying.
-#
-# How to make this a required check:
-#   1. Merge this workflow (first run creates the "tests" status).
-#   2. GitHub → repo → Settings → Branches → Branch protection rules
-#      → Add rule for "main" → Require status checks → pick "tests".
-#   3. Vercel → Project settings → Git → enable "Wait for CI before deploy".
+# Requires package-lock.json for reproducible installs via `npm ci`.
 
 on:
   push:
@@ -23,16 +16,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Run tests
         run: npm test

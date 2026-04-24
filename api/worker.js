@@ -1,6 +1,44 @@
-/* EX LIBRIS JURIS v4.5c — worker.js
+/* EX LIBRIS JURIS v5.8a — worker.js
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
+
+   v5.8a CHANGES (24 Apr 2026) — Push H, sectioned synthesis:
+   1. NEW: sectioned synthesis path for Briefing, Draft, and Proposition.
+      These three tools can now produce outputs longer than a single
+      max_tokens response by planning a section list first and then
+      synthesising each section in its own Claude call. Triggered by
+      passing { sectioned: true } as the 8th argument to
+      runBatchedChained(). Group A tools (Chronology, Persons, Issues) and
+      Citations still use the single-call synthesis path.
+   2. NEW: sectioned-synthesis helpers extracted into
+      ./lib/sectioned_synth.js for unit-testability. Production code in
+      this file imports planSections and synthesiseSections from there and
+      calls them with runTool and updateJob injected. The extracted
+      module is pure — no module-scope Anthropic or Supabase clients.
+   3. Plan phase: one short Claude call per job. Input is condensed
+      material + user instructions, output is a JSON array of
+      { title, description, target_words }. Retried up to 2x on bad JSON.
+      Plan written to tool_jobs.section_plan (new jsonb column).
+   4. Synthesis loop: one Claude call per planned section, each with its
+      own max_tokens budget scaled to target_words. If a section fails
+      all runTool retries, assembly continues and a banner is prepended
+      to the final output. Section text persisted incrementally to
+      tool_jobs.section_results (new jsonb column) for resume + frontend.
+   5. Single-call synthesis max_tokens raised from 10000 to 16384 on the
+      non-sectioned path (lines previously ~718 and ~623). Sonnet 4.5/4.6
+      supports this; the original 10000 cap was set when Vercel
+      maxDuration was 300s and a long synth would blow the ceiling. With
+      maxDuration now 800s (v4.5c), 16384 fits comfortably.
+   6. section_plan and section_results added to CRITICAL_FIELDS so a
+      stale schema cache cannot silently drop them.
+
+   PRECONDITION: tool_jobs table must have these columns (in addition to
+   the earlier v4.5c preconditions):
+     - section_plan jsonb
+     - section_results jsonb
+   Migration:
+     ALTER TABLE tool_jobs ADD COLUMN IF NOT EXISTS section_plan jsonb;
+     ALTER TABLE tool_jobs ADD COLUMN IF NOT EXISTS section_results jsonb;
 
    v4.5c CHANGES (12 Apr 2026):
    1. maxDuration raised from 300 to 800. Vercel Pro permits up to 800 seconds.
@@ -96,6 +134,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { planSections as planSectionsLib, synthesiseSections as synthesiseSectionsLib } from "./lib/sectioned_synth.js";
 
 export const config = { maxDuration: 800 };
 
@@ -370,6 +409,12 @@ var CRITICAL_FIELDS = {
   condense_done: true,
   status: true,
   batches_done: true,
+  /* v5.8a: sectioned-synthesis persistence. A stale schema cache silently
+     dropping these columns would leave a planned Briefing/Draft/Proposition
+     job with no plan and no section results, which would look identical to
+     a pre-plan state and cause infinite replanning on re-entry. */
+  section_plan: true,
+  section_results: true,
 };
 
 async function updateJob(jobId, fields) {
@@ -426,7 +471,7 @@ async function failJob(jobId, errorMsg) {
    Returns null if paused/synthesising (caller should return response and stop).
    ══════════════════════════════════════════════════════════════════════════ */
 
-async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthPromptFn, byDoc, hostUrl) {
+async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthPromptFn, byDoc, hostUrl, options) {
   var batches = batchDocs(byDoc);
   var startTime = Date.now();
 
@@ -451,29 +496,16 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
        "no advancement" check prevents false positives — a job that legitimately
        needs many attempts to chew through a large condense run is fine, because
        each attempt advances condense_done. Only a job that re-enters synthesis
-       N times in a row with no progress at all is genuinely stuck.
-
-       The advancement check uses the row state at the start of this invocation
-       (job.condense_done and job.result), which were loaded immediately above
-       and reflect what was persisted by the previous attempt. */
+       N times in a row with no progress at all is genuinely stuck. */
     var priorAttempts = job.synth_attempts || 0;
     var priorCondenseDone = job.condense_done || 0;
     var priorResult = job.result || null;
     var newAttempts = priorAttempts + 1;
     console.log("v4.5c Worker: synthesising entry #" + newAttempts + " (prior condense_done=" + priorCondenseDone + ", prior result=" + (priorResult ? "set" : "null") + ")");
 
-    /* Persist the bumped counter immediately so even a hard-killed run leaves
-       evidence of its attempt. */
     await updateJob(jobId, { synth_attempts: newAttempts });
 
-    /* If we are on attempt 6+ AND the prior attempt made no progress, give up. */
     if (priorAttempts >= 5) {
-      /* Compare against the SECOND-prior state. We can't see it directly, but
-         the rule is: if the row STILL looks the same as it did when we entered
-         on attempt 5, then attempts 5 -> 6 made no progress and we're stuck.
-         The simplest signal is "still no result and condense_done hasn't moved
-         past the extract count". This catches the pathological case where
-         final synthesis fails repeatedly with no forward progress. */
       var stillIncomplete = !priorResult && priorCondenseDone >= extracts.length;
       if (stillIncomplete || (priorAttempts >= 8)) {
         var stuckMsg = "Synthesis exceeded retry limit (" + newAttempts + " attempts with no forward progress). The matter may be too large for the current configuration, or the model is repeatedly failing to produce a complete output. Consider reducing the matter size, narrowing the focus instructions, or contacting support.";
@@ -483,13 +515,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
       }
     }
 
-    /* v4.2f: Two-stage synthesis for large jobs.
-       v4.2i: SYNTH_GROUP reduced from 5 to 3 and condense max_tokens reduced
-       from 16000 to 10000. Diagnostic data from v4.2h showed that a single
-       condense call on 5 dense extracts was exceeding the 300s Vercel ceiling
-       before any per-group save could happen, so condensed_extracts stayed null
-       and condense_done stayed at 0 forever. Smaller groups + smaller output
-       ceiling should make each call complete in 30-60s. */
+    /* Condense phase. Unchanged from v4.5c. */
     var SYNTH_GROUP = 3;
     var CONDENSE_MAX_TOKENS = 10000;
     var condensed = job.condensed_extracts || null;
@@ -497,21 +523,10 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     var needsCondense = extracts.length > SYNTH_GROUP && condenseDoneFromDb < extracts.length;
 
     if (needsCondense) {
-      /* Stage 1: condense extracts in groups.
-         v4.2h: re-entry safe — uses condense_done from DB to know where to resume.
-         The previous version (`if !condensed`) skipped the loop entirely on re-entry,
-         leaving final synthesis to run with only the partial condensed array. */
       if (!condensed) condensed = [];
       var condenseDone = condenseDoneFromDb;
       console.log("v4.2i Worker: condensing " + extracts.length + " extracts in groups of " + SYNTH_GROUP + " (starting from group " + condenseDone + ", " + condensed.length + " already done)");
 
-      /* v4.2h: Tightened time guard. A single condense call should now take
-         30-60s. Allow at most ~150s elapsed before pausing — leaves a 150s
-         safety margin for the in-flight call to finish before Vercel's 300s kill.
-         v4.5c: raised from 150000 to 600000 to use the new 800s maxDuration
-         ceiling. The worker can now process several condense groups in a
-         single invocation rather than pausing after one, eliminating most
-         cron-resume cycles for medium-sized matters. */
       var CONDENSE_TIME_LIMIT_MS = 600000;
 
       for (var gi = condenseDone; gi < extracts.length; gi += SYNTH_GROUP) {
@@ -526,7 +541,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
             output_tokens: totalOutput,
             cost_usd: totalCost,
           });
-          return null; /* v4.2g: status explicitly set to synthesising — frontend will re-fire */
+          return null;
         }
 
         var group = extracts.slice(gi, gi + SYNTH_GROUP);
@@ -543,7 +558,6 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
           );
         } catch (condenseErr) {
           console.log("v4.2i Worker: CONDENSE CALL FAILED at group " + gi + " after " + Math.round((Date.now() - condenseCallStart) / 1000) + "s: " + condenseErr.message);
-          /* Save what we have so far so the next invocation can resume */
           await updateJob(jobId, {
             condensed_extracts: condensed,
             condense_done: gi,
@@ -564,9 +578,6 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         totalOutput += condenseResult.outputTokens;
         totalCost += condenseResult.cost;
 
-        /* v4.2h: Persist progress after EVERY successful group. If Vercel kills
-           the function during the next iteration's condense call, the work
-           already completed survives and the next invocation resumes from here. */
         console.log("v4.2i Worker: writing progress to DB after group " + gi + " (condense_done=" + (gi + SYNTH_GROUP) + ", condensed.length=" + condensed.length + ")");
         await updateJob(jobId, {
           condensed_extracts: condensed,
@@ -579,7 +590,6 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         console.log("v4.2i Worker: DB write complete for group " + gi + ", total elapsed " + Math.round((Date.now() - startTime) / 1000) + "s");
       }
 
-      /* Save condensed extracts — if time is short, set synthesising and chain */
       if (Date.now() - startTime > TIME_LIMIT_MS) {
         console.log("Worker: condense done, setting synthesising before final synthesis");
         await updateJob(jobId, {
@@ -598,7 +608,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
       }
     }
 
-    /* Stage 2 (or single stage for small jobs): final synthesis */
+    /* Stage 2 input preparation */
     var synthInput;
     if (condensed && condensed.length > 0) {
       synthInput = condensed.map(function(e, idx) { return "=== SUMMARY " + (idx + 1) + " ===\n" + e; }).join("\n\n");
@@ -608,20 +618,65 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
       console.log("Worker: direct synthesis from " + extracts.length + " extracts");
     }
 
-    /* Stage 2 (or single stage for small jobs): final synthesis.
-       v4.2k: max_tokens lowered from 16000 to 10000. The 16000 ceiling allowed
-       Claude to stream for >300s on dense legal content with 6 condensed
-       summaries as input, blowing the Vercel function ceiling. 10000 tokens is
-       still ~30 pages of output, which should comfortably cover any Chronology. */
     /* v5.5: Heartbeat immediately before final synthesis so the cron-resume
-       240s threshold is not breached during the long Claude call. Without
-       this, the cron fires parallel workers that each produce a separate
-       synthesis result, creating duplicate history rows. */
+       240s threshold is not breached during the long Claude call. */
     await updateJob(jobId, {});
+
+    /* v5.8a: Sectioned vs single-call branching. */
+    var useSectioned = !!(options && options.sectioned);
+
+    if (useSectioned) {
+      var toolName = (options && options.toolName) || "briefing";
+      var userInstructions = (options && options.instructions) || "";
+      var actingFor = (options && options.actingFor) || "";
+      var matterName = (options && options.matterName) || "";
+      var sectionHeaderText = (options && options.headerText) || "";
+
+      var existingPlan = Array.isArray(job.section_plan) ? job.section_plan : null;
+      var plan;
+      if (existingPlan && existingPlan.length > 0) {
+        plan = existingPlan;
+        console.log("v5.8a sectioned: resuming with existing plan of " + plan.length + " sections");
+      } else {
+        var planStart = Date.now();
+        console.log("v5.8a sectioned: calling planSections for " + toolName);
+        var planResult;
+        try {
+          planResult = await planSectionsLib(runTool, systemBase, toolName, userInstructions, synthInput, actingFor, matterName);
+        } catch (planErr) {
+          console.error("v5.8a sectioned: plan phase failed, falling back to single-call synthesis: " + planErr.message);
+          var fallbackResult = await runTool(systemBase, synthPromptFn(synthInput, batches.length), 16384);
+          totalInput += fallbackResult.inputTokens;
+          totalOutput += fallbackResult.outputTokens;
+          totalCost += fallbackResult.cost;
+          return { text: fallbackResult.text, inputTokens: totalInput, outputTokens: totalOutput, cost: totalCost, done: true };
+        }
+        plan = planResult.sections;
+        totalInput += planResult.inputTokens;
+        totalOutput += planResult.outputTokens;
+        totalCost += planResult.cost;
+        console.log("v5.8a sectioned: plan produced in " + Math.round((Date.now() - planStart) / 1000) + "s, " + plan.length + " sections");
+        await updateJob(jobId, { section_plan: plan });
+      }
+
+      var secResult = await synthesiseSectionsLib(runTool, updateJob, jobId, job, systemBase, toolName, userInstructions, synthInput, plan, actingFor, matterName, sectionHeaderText);
+      totalInput += secResult.inputTokens;
+      totalOutput += secResult.outputTokens;
+      totalCost += secResult.cost;
+
+      if (secResult.sectionsCompleted === 0) {
+        throw new Error("All " + plan.length + " sections failed synthesis. The matter may be too large for the current configuration, or the model is repeatedly failing on this content. Consider reducing the matter size or narrowing the focus instructions.");
+      }
+
+      console.log("v5.8a sectioned: synthesis complete, " + secResult.sectionsCompleted + "/" + plan.length + " sections succeeded");
+      return { text: secResult.text, inputTokens: totalInput, outputTokens: totalOutput, cost: totalCost, done: true };
+    }
+
+    /* Original single-call synthesis path (Group A tools + Citations) */
     var synthCallStart = Date.now();
     console.log("v5.5 Worker: starting final synthesis call (heartbeat refreshed)");
-    var synthResult = await runTool(systemBase, synthPromptFn(synthInput, batches.length), 10000);
-    console.log("v4.2k Worker: final synthesis returned in " + Math.round((Date.now() - synthCallStart) / 1000) + "s, output " + (synthResult.text ? synthResult.text.length : 0) + " chars, " + synthResult.outputTokens + " tokens");
+    var synthResult = await runTool(systemBase, synthPromptFn(synthInput, batches.length), 16384);
+    console.log("v5.8a Worker: final synthesis returned in " + Math.round((Date.now() - synthCallStart) / 1000) + "s, output " + (synthResult.text ? synthResult.text.length : 0) + " chars, " + synthResult.outputTokens + " tokens");
     totalInput += synthResult.inputTokens;
     totalOutput += synthResult.outputTokens;
     totalCost += synthResult.cost;
@@ -649,7 +704,6 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
 
   /* Multi-batch: extraction phase — process from where we left off */
   for (var i = batchesDone; i < batches.length; i += PARALLEL) {
-    /* Time guard: save progress and chain to next invocation */
     if (Date.now() - startTime > TIME_LIMIT_MS) {
       console.log("Worker chain: processed batches 1-" + i + " of " + batches.length + ", chaining (" + Math.round((Date.now() - startTime) / 1000) + "s elapsed)");
       await updateJob(jobId, {
@@ -659,15 +713,13 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         output_tokens: totalOutput,
         cost_usd: totalCost,
       });
-      /* v4.2f: Hybrid chaining — try server-side chain first (works with laptop closed),
-         frontend polling is backup if the chain fetch gets killed by Vercel. */
       await updateJob(jobId, { status: "paused" });
       console.log("Worker: paused at batch " + i + " of " + batches.length);
       fetch(hostUrl + "/api/worker?jobId=" + jobId, {
         method: "POST", headers: { "Content-Type": "application/json" }
       }).catch(function(ce) { console.log("Chain attempt (frontend will retry if needed):", ce.message); });
       await new Promise(function(r) { setTimeout(r, 2000); });
-      return null; /* null means paused, not done */
+      return null;
     }
 
     var slice = batches.slice(i, i + PARALLEL);
@@ -683,7 +735,6 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     }
     batchesDone = Math.min(i + PARALLEL, batches.length);
 
-    /* Update progress so frontend polling can show it */
     await updateJob(jobId, {
       batches_done: batchesDone,
       input_tokens: totalInput,
@@ -692,8 +743,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     });
   }
 
-  /* v4.2f: All extraction done. Set "synthesising" and try server-side chain.
-     Frontend polling is backup if the chain fetch gets killed. */
+  /* Extraction done. Set "synthesising" and try server-side chain. */
   if (Date.now() - startTime > 10000) {
     console.log("Worker: extraction done (" + batches.length + " batches, " + Math.round((Date.now() - startTime) / 1000) + "s elapsed), setting synthesising");
     await updateJob(jobId, {
@@ -712,10 +762,54 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
   }
 
   /* Enough time remaining — run synthesis directly.
-     v4.2k: max_tokens lowered from 16000 to 10000 to ensure single-call completion
-     within Vercel's 300s ceiling. */
+     v5.8a: max_tokens raised from 10000 to 16384 on the single-call path.
+     If options.sectioned is set, run the plan-then-loop path instead. */
   var combinedExtracts = extracts.map(function(e, idx) { return "=== BATCH " + (idx + 1) + " FINDINGS ===\n" + e; }).join("\n\n");
-  var synthResult = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length), 10000);
+  var useSectionedDirect = !!(options && options.sectioned);
+
+  if (useSectionedDirect) {
+    var toolNameDirect = (options && options.toolName) || "briefing";
+    var userInstructionsDirect = (options && options.instructions) || "";
+    var actingForDirect = (options && options.actingFor) || "";
+    var matterNameDirect = (options && options.matterName) || "";
+    var headerTextDirect = (options && options.headerText) || "";
+
+    var existingPlanDirect = Array.isArray(job.section_plan) ? job.section_plan : null;
+    var planDirect;
+    if (existingPlanDirect && existingPlanDirect.length > 0) {
+      planDirect = existingPlanDirect;
+      console.log("v5.8a sectioned (direct): resuming with existing plan of " + planDirect.length + " sections");
+    } else {
+      var planResultDirect;
+      try {
+        planResultDirect = await planSectionsLib(runTool, systemBase, toolNameDirect, userInstructionsDirect, combinedExtracts, actingForDirect, matterNameDirect);
+      } catch (planErrDirect) {
+        console.error("v5.8a sectioned (direct): plan phase failed, falling back to single-call synthesis: " + planErrDirect.message);
+        var fallbackDirect = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length), 16384);
+        totalInput += fallbackDirect.inputTokens;
+        totalOutput += fallbackDirect.outputTokens;
+        totalCost += fallbackDirect.cost;
+        return { text: fallbackDirect.text, inputTokens: totalInput, outputTokens: totalOutput, cost: totalCost, done: true };
+      }
+      planDirect = planResultDirect.sections;
+      totalInput += planResultDirect.inputTokens;
+      totalOutput += planResultDirect.outputTokens;
+      totalCost += planResultDirect.cost;
+      await updateJob(jobId, { section_plan: planDirect });
+    }
+
+    var secResultDirect = await synthesiseSectionsLib(runTool, updateJob, jobId, job, systemBase, toolNameDirect, userInstructionsDirect, combinedExtracts, planDirect, actingForDirect, matterNameDirect, headerTextDirect);
+    totalInput += secResultDirect.inputTokens;
+    totalOutput += secResultDirect.outputTokens;
+    totalCost += secResultDirect.cost;
+
+    if (secResultDirect.sectionsCompleted === 0) {
+      throw new Error("All " + planDirect.length + " sections failed synthesis. The matter may be too large for the current configuration, or the model is repeatedly failing on this content. Consider reducing the matter size or narrowing the focus instructions.");
+    }
+    return { text: secResultDirect.text, inputTokens: totalInput, outputTokens: totalOutput, cost: totalCost, done: true };
+  }
+
+  var synthResult = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length), 16384);
   totalInput += synthResult.inputTokens;
   totalOutput += synthResult.outputTokens;
   totalCost += synthResult.cost;
@@ -729,7 +823,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
    the function alive as long as the response has not been sent.
    ══════════════════════════════════════════════════════════════════════════ */
 
-const SERVER_VERSION = "v5.6";
+const SERVER_VERSION = "v5.8a";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " worker handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -814,7 +908,8 @@ export default async function handler(req, res) {
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "PROPOSITION: \"" + instructions + "\"\n\nBatch " + batchNum + " of " + total + ". Extract ALL relevant passages \u2014 supporting, contradicting, or neutral.\n\nFor each:\n### [Document] \u2014 [Brief description]\nGRADE: [1-5]\n[Relevant passage]\n**Analysis:** [Relevance to proposition]\n**Reference:** [page and paragraph if available]\n\nGrading: 5=strong direct, 4=good supportive, 3=moderate indirect, 2=weak tangential, 1=contrary" + pageIndex + "\n\nDOCUMENTS:\n\n" + batchText; },
         function(combined, numBatches) { return numBatches ? "PROPOSITION: \"" + instructions + "\"\n\nSynthesise findings from " + numBatches + " batches into a single evidence assessment.\n\nRetain format:\n### [Document] \u2014 [Description]\nGRADE: [1-5]\n[Passage]\n**Analysis:** [Relevance]\n**Reference:** [page and paragraph]\n\nThen:\n## Overall Assessment\nStrength of evidence for/against and view on balance of probabilities.\n\nFINDINGS:\n\n" + combined : "PROPOSITION: \"" + instructions + "\"\n\nFind ALL evidence \u2014 supporting, contradicting, or neutral.\n\n### [Document] \u2014 [Description]\nGRADE: [1-5] (5=strong direct, 4=good supportive, 3=moderate indirect, 2=weak tangential, 1=contrary)\n[Relevant passage]\n**Analysis:** [Relevance]\n**Reference:** [page and paragraph if available]\n\n## Overall Assessment\nSummary and preliminary view." + pageIndex + "\n\nDOCUMENTS:\n\n" + combined; },
-        byDoc, hostUrl
+        byDoc, hostUrl,
+        { sectioned: true, toolName: "proposition", instructions: instructions, actingFor: actingFor, matterName: matterName, headerText: "" }
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
@@ -1003,7 +1098,8 @@ export default async function handler(req, res) {
           }
           return "Produce a structured briefing note.\n\n" + briefingHeader + completionMandate + sectionHeaders + briefingFocus + "DOCUMENTS:\n\n" + combined + pageIndex;
         },
-        byDoc, hostUrl
+        byDoc, hostUrl,
+        { sectioned: true, toolName: "briefing", instructions: instructions, actingFor: actingFor, matterName: matterName, headerText: briefingHeader }
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
@@ -1091,7 +1187,8 @@ export default async function handler(req, res) {
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract all facts, legal points, and arguments from batch " + batchNum + " of " + total + " relevant to: " + (instructions || "Draft a skeleton argument") + "\n\nDOCUMENTS:\n\n" + batchText; },
         function(combined, numBatches) { return numBatches ? "Using source material from " + numBatches + " batches, produce:\n\n" + (instructions || "Draft a skeleton argument.") + "\n\nApply " + jur + " court rules and conventions.\n\nSOURCE MATERIAL:\n\n" + combined : (instructions || "Draft a skeleton argument based on the matter documents.") + "\n\nApply " + jur + " court rules and conventions.\n\nDOCUMENTS:\n\n" + combined; },
-        byDoc, hostUrl
+        byDoc, hostUrl,
+        { sectioned: true, toolName: "draft", instructions: instructions, actingFor: actingFor, matterName: matterName, headerText: headingText || "" }
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;

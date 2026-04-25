@@ -1,7 +1,15 @@
-/* EX LIBRIS JURIS v4.5c — jobs.js
+/* EX LIBRIS JURIS v5.8b — jobs.js
    Job status polling endpoint.
    GET /api/jobs?id=xxx        — single job status (for polling)
    GET /api/jobs?matterId=xxx  — all recent jobs for a matter (for resume on page load)
+
+   v5.8b CHANGES (25 Apr 2026):
+   1. Single-job SELECT now also includes section_plan and section_results so
+      the frontend can render the per-section progress widget for sectioned
+      tools (Briefing, Draft, Proposition). Both columns are nullable JSONB
+      and pass through to the response unchanged. Non-sectioned tools have
+      both as null and are unaffected.
+   2. No other changes.
 
    v4.5c CHANGES (12 Apr 2026):
    1. Single-job SELECT now includes condensed_extracts, condense_done, extracts,
@@ -30,7 +38,7 @@ async function getUser(req) {
   } catch (e) { return null; }
 }
 
-const SERVER_VERSION = "v5.5";
+const SERVER_VERSION = "v5.8b";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " jobs handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
@@ -44,7 +52,7 @@ export default async function handler(req, res) {
   if (id) {
     const { data: job, error } = await supabase
       .from("tool_jobs")
-      .select("id, matter_id, tool_name, status, result, error, batches_total, batches_done, input_tokens, output_tokens, cost_usd, created_at, started_at, completed_at, instructions, condensed_extracts, condense_done, extracts, synth_attempts")
+      .select("id, matter_id, tool_name, status, result, error, batches_total, batches_done, input_tokens, output_tokens, cost_usd, created_at, started_at, completed_at, instructions, condensed_extracts, condense_done, extracts, synth_attempts, section_plan, section_results")
       .eq("id", id)
       .eq("user_id", user.id)
       .single();
@@ -69,6 +77,14 @@ export default async function handler(req, res) {
       condensedCount: condensedCount,
       condenseDone: job.condense_done || 0,
       synthAttempts: job.synth_attempts || 0,
+      /* v5.8b: sectioned-synthesis fields. Both nullable JSONB; pass through
+         as-is so the frontend widget can decide how to render them.
+         section_plan: array of {index,title,description,target_words} once the
+         plan phase completes (Briefing/Draft/Proposition only).
+         section_results: array of {index,status,result,error} populated as each
+         section synthesis completes. */
+      sectionPlan: job.section_plan || null,
+      sectionResults: job.section_results || null,
       usage: {
         inputTokens: job.input_tokens,
         outputTokens: job.output_tokens,

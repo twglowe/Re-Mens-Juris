@@ -92,7 +92,7 @@ async function logUsage(supabase, matterId, userId, toolName, inputTokens, outpu
   } catch (e) { console.error("Usage log error:", e); }
 }
 
-const SERVER_VERSION = "v5.8a";
+const SERVER_VERSION = "v5.9a";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " analyse handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -107,8 +107,14 @@ export default async function handler(req, res) {
   const user = await getUser(supabase, req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-  /* v3.7: Accept focusDocNames from request body */
-  const { matterId, matterName, matterNature, matterIssues, messages, jurisdiction, queryType, focusAreas, actingFor, focusDocNames } = req.body;
+  /* v3.7: Accept focusDocNames from request body.
+     v5.9a: Accept subElement and freeformFocus from request body. These are
+     the two new fields supplied by the unified three-mode focus component
+     (Push I) and are folded into the system prompt the same way focusDocNote
+     is — as small conditional notes that only appear when the field is set.
+     Retrieval is unchanged in v5.9a; subElement and freeformFocus do not
+     affect searchChunks. That can be revisited in a later push. */
+  const { matterId, matterName, matterNature, matterIssues, messages, jurisdiction, queryType, focusAreas, actingFor, focusDocNames, subElement, freeformFocus } = req.body;
   if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: "Invalid request" });
 
   try {
@@ -138,6 +144,18 @@ export default async function handler(req, res) {
       focusDocNote = "\nThe user has specifically asked you to focus your answer on the following documents: " + focusDocNames.join(", ") + ". Draw your answer primarily from passages in these documents, citing them by name.\n";
     }
 
+    /* v5.9a: If subElement was specified, narrow the analysis to that sub-element. */
+    var subElementNote = "";
+    if (subElement && typeof subElement === "string" && subElement.trim().length > 0) {
+      subElementNote = "\nThe user has specifically asked you to narrow the analysis to the following sub-element of the parent result: " + subElement.trim() + ". Treat that sub-element as the focus of your answer rather than producing a broad survey.\n";
+    }
+
+    /* v5.9a: If freeformFocus was specified, treat it as an additional focus instruction. */
+    var freeformFocusNote = "";
+    if (freeformFocus && typeof freeformFocus === "string" && freeformFocus.trim().length > 0) {
+      freeformFocusNote = "\nThe user has provided the following additional focus instruction for this answer: " + freeformFocus.trim() + ". Honour this instruction in shaping the depth, scope, and emphasis of your response.\n";
+    }
+
     const matterContext = [
       matterNature ? `Nature of the dispute: ${matterNature}` : "",
       matterIssues ? `Key issues in this matter: ${matterIssues}` : "",
@@ -147,7 +165,7 @@ export default async function handler(req, res) {
     const system = `You are a senior litigation counsel specialising in ${jurisdiction || "Bermuda"} offshore common law litigation. You have deep expertise in Bermuda, Cayman Islands and BVI law, court rules (RSC Bermuda, GCR Cayman, CPR BVI), statutes, company law, trust law, insolvency, and English common law precedent as applied offshore.
 
 Matter: "${matterName || "Current Matter"}"
-${matterContext ? `\n${matterContext}\n` : ""}${focusDocNote}
+${matterContext ? `\n${matterContext}\n` : ""}${focusDocNote}${subElementNote}${freeformFocusNote}
 ${contextText ? `The following passages are retrieved from the matter documents as most relevant to this question. Refer to them specifically, quoting where helpful:\n\n${contextText}` : "No documents uploaded yet. Answer based on your legal knowledge."}
 
 In every response:

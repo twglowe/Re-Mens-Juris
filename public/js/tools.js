@@ -354,6 +354,8 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   var progressWrap=document.getElementById('progressWrap');
   var progressLabel=document.getElementById('progressLabel');
   var progressFill=document.getElementById('progressFill');
+  /* v5.8b: clear any leftover widget from a previous run before showing the bar. */
+  resetSectionWidget();
   progressWrap.classList.add('on');
   progressLabel.textContent='Submitting '+toolLabel+'\u2026';
   progressFill.style.width='5%';
@@ -389,12 +391,234 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   }
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   v5.8b — SECTION PROGRESS WIDGET (Push H-bis)
+   ───────────────────────────────────────────────────────────────────────────
+   Push H (24 Apr 2026) split synthesis for Briefing, Draft, and Proposition
+   into a plan phase plus a per-section synthesis loop. The DB now records
+   section_plan and section_results on tool_jobs. This widget reads those two
+   fields from /api/jobs polling responses and renders a per-section checklist
+   inside the existing progress-bar card.
+
+   Behaviour:
+     - Hidden when sectionPlan is null (non-sectioned tools, or before the plan
+       phase completes). Existing label and bar behave exactly as before.
+     - Once sectionPlan arrives, the widget appears beneath the progress track
+       and the progress label is replaced with "Tool: N of M sections complete".
+     - Expanded by default; the user can toggle with "Hide ▴ / Show ▾".
+     - On terminal status (complete/partial/failed), auto-collapses but stays
+       visible so the user can expand it to see which section failed.
+
+   The widget is purely additive — it appends a single child div after the
+   existing track inside #progressWrap. When sectionPlan is null on a poll,
+   the widget div stays hidden via display:none; nothing else is mutated.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Toggle the expanded/collapsed state. Reads/writes a data-collapsed attribute
+   on the widget root and updates the toggle text. Stored on the DOM so it
+   survives subsequent polls without any module-level state. */
+function _sw_toggle(rootId){
+  var root=document.getElementById(rootId);
+  if(!root)return;
+  var collapsed=root.getAttribute('data-collapsed')==='1';
+  root.setAttribute('data-collapsed',collapsed?'0':'1');
+  var list=root.querySelector('.elj-sw-list');
+  var divider=root.querySelector('.elj-sw-divider');
+  var toggle=root.querySelector('.elj-sw-toggle');
+  if(list)list.style.display=collapsed?'block':'none';
+  if(divider)divider.style.display=collapsed?'block':'none';
+  if(toggle)toggle.textContent=collapsed?'Hide \u25B4':'Show \u25BE';
+}
+
+/* Lazily create the widget DOM the first time it's needed. Returns the root
+   element. Idempotent: calling twice returns the same element.
+   The widget is appended as a sibling of the progress track inside
+   #progressWrap, which has flex-direction:column already. */
+function _sw_ensure(){
+  var existing=document.getElementById('sectionWidget');
+  if(existing)return existing;
+  var wrap=document.getElementById('progressWrap');
+  if(!wrap)return null;
+  var root=document.createElement('div');
+  root.id='sectionWidget';
+  root.setAttribute('data-collapsed','0');
+  root.style.cssText='display:none;flex-direction:column;font-size:.78rem';
+  /* Header row: status text + toggle. Separate <span>s so the count text and
+     toggle behave independently. */
+  var header=document.createElement('div');
+  header.className='elj-sw-header';
+  header.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:.5rem;font-weight:600;color:var(--blue)';
+  var headerText=document.createElement('span');
+  headerText.className='elj-sw-text';
+  var toggle=document.createElement('span');
+  toggle.className='elj-sw-toggle';
+  toggle.style.cssText='font-size:.72rem;color:var(--blue);cursor:pointer;user-select:none;font-weight:400';
+  toggle.textContent='Hide \u25B4';
+  toggle.addEventListener('click',function(){_sw_toggle('sectionWidget');});
+  header.appendChild(headerText);
+  header.appendChild(toggle);
+  /* Thin divider between the bar and the section list. */
+  var divider=document.createElement('div');
+  divider.className='elj-sw-divider';
+  divider.style.cssText='height:1px;background:var(--border);margin:.1rem 0';
+  /* Section list. Built fresh on every poll \u2014 small (typically 5\u201312 rows). */
+  var list=document.createElement('div');
+  list.className='elj-sw-list';
+  list.style.cssText='display:flex;flex-direction:column;gap:2px';
+  root.appendChild(header);
+  root.appendChild(divider);
+  root.appendChild(list);
+  wrap.appendChild(root);
+  return root;
+}
+
+/* Render or update the section widget for a single poll response.
+     j         — the parsed /api/jobs?id=xxx response
+     toolLabel — the tool's display title (e.g. "\ud83d\udccb Briefing Note")
+     progressLabel — the existing #progressLabel element to override when sectioned
+   Returns true if the widget took over the label, false otherwise. The caller
+   uses this to know whether to skip the existing label-setting branches. */
+function setSectionWidget(j,toolLabel,progressLabel){
+  /* Sectioned tools only. Bail early on non-sectioned tools (Chronology,
+     Persons, Issues, Inconsistency, Citations, Issue Briefing) \u2014 those have
+     sectionPlan permanently null and behave exactly as they always have. */
+  var SECTIONED={briefing:1,proposition:1,inconsistency:0};
+  /* Note: deliberately not gating on toolName here \u2014 the source of truth is
+     whether sectionPlan is non-null. Push H wires up Briefing, Draft, and
+     Proposition; if a future push adds another sectioned tool, this widget
+     picks it up automatically without needing a code change. */
+  if(!j||!j.sectionPlan||!Array.isArray(j.sectionPlan)||j.sectionPlan.length===0){
+    var existing=document.getElementById('sectionWidget');
+    if(existing)existing.style.display='none';
+    return false;
+  }
+  var root=_sw_ensure();
+  if(!root)return false;
+  /* Make visible. Only flip display once \u2014 if already visible, leave it. */
+  if(root.style.display==='none'||!root.style.display){
+    root.style.display='flex';
+  }
+
+  /* Build a fast lookup of section_results by index. section_results may be
+     null (no sections complete yet), an array, or shorter than section_plan. */
+  var resultsByIdx={};
+  if(Array.isArray(j.sectionResults)){
+    j.sectionResults.forEach(function(r){
+      if(r&&typeof r.index==='number')resultsByIdx[r.index]=r;
+    });
+  }
+
+  /* Count statuses for the header line. */
+  var doneCount=0;var failCount=0;var runningCount=0;
+  j.sectionPlan.forEach(function(s){
+    var r=resultsByIdx[s.index];
+    if(!r){runningCount++;return;}
+    if(r.status==='complete'||r.status==='done'){doneCount++;return;}
+    if(r.status==='failed'||r.status==='error'){failCount++;return;}
+    if(r.status==='running'||r.status==='in_progress'){runningCount++;return;}
+    /* unknown status \u2014 treat as pending so we don't lie to the user */
+    runningCount++;
+  });
+  var totalCount=j.sectionPlan.length;
+
+  /* Header text: "Tool: N of M sections complete" with optional failed suffix. */
+  var labelShort=toolLabel.replace(/^[^\w]*/,'').split(' ').slice(0,2).join(' ');
+  var headerText=labelShort+': '+doneCount+' of '+totalCount+' sections complete';
+  if(failCount>0)headerText+=' ('+failCount+' failed)';
+  var headerEl=root.querySelector('.elj-sw-text');
+  if(headerEl)headerEl.textContent=headerText;
+
+  /* The progress label takes the same text \u2014 the widget header is the new
+     home for it. We keep the progress label visible so the layout doesn't
+     jump; just override its text. */
+  if(progressLabel)progressLabel.textContent=headerText;
+
+  /* Auto-collapse on terminal status. Only flip once \u2014 use a data-attr to
+     remember we already did it, so the user can re-expand without us slamming
+     it shut every poll. */
+  var terminal=(j.status==='complete'||j.status==='partial'||j.status==='failed');
+  if(terminal&&root.getAttribute('data-auto-collapsed')!=='1'){
+    root.setAttribute('data-auto-collapsed','1');
+    if(root.getAttribute('data-collapsed')!=='1'){
+      _sw_toggle('sectionWidget');
+    }
+  }
+
+  /* Render rows. We rebuild the list each poll \u2014 it's small (typically
+     5\u201312 rows) and avoids any partial-update bugs.
+     Status icon mapping:
+       complete   \u2192 \u2713  (green)
+       failed     \u2192 \u2717  (red)
+       running    \u2192 \u22EF  (blue, animated via opacity transitions)
+       pending    \u2192 \u25CB  (faint grey) */
+  var listEl=root.querySelector('.elj-sw-list');
+  if(!listEl)return true;
+  /* If the list is currently hidden (collapsed state) skip the work. */
+  if(root.getAttribute('data-collapsed')==='1'){
+    listEl.style.display='none';
+    var dividerEl=root.querySelector('.elj-sw-divider');
+    if(dividerEl)dividerEl.style.display='none';
+    return true;
+  }
+  /* Only rebuild if section count or any section status changed since last
+     render. We stash a fingerprint string on the list element. */
+  var fp=String(totalCount);
+  for(var k=0;k<j.sectionPlan.length;k++){
+    var s=j.sectionPlan[k];
+    var r=resultsByIdx[s.index];
+    fp+='|'+s.index+':'+(r?(r.status||'?'):'pending');
+  }
+  if(listEl.getAttribute('data-fp')===fp)return true;
+  listEl.setAttribute('data-fp',fp);
+  listEl.innerHTML='';
+  j.sectionPlan.forEach(function(s){
+    var r=resultsByIdx[s.index];
+    var status='pending';
+    if(r){
+      if(r.status==='complete'||r.status==='done')status='complete';
+      else if(r.status==='failed'||r.status==='error')status='failed';
+      else if(r.status==='running'||r.status==='in_progress')status='running';
+    }
+    var icon='\u25CB';var iconColor='var(--text-faint)';var titleColor='var(--text-faint)';
+    if(status==='complete'){icon='\u2713';iconColor='#0F6E56';titleColor='var(--text-mid)';}
+    else if(status==='failed'){icon='\u2717';iconColor='#A32D2D';titleColor='#A32D2D';}
+    else if(status==='running'){icon='\u22EF';iconColor='var(--blue)';titleColor='var(--blue)';}
+    var row=document.createElement('div');
+    row.className='elj-sw-row';
+    row.style.cssText='display:flex;align-items:center;gap:8px;padding:1px 0;font-size:.78rem;color:'+titleColor;
+    var iconEl=document.createElement('span');
+    iconEl.style.cssText='width:14px;flex-shrink:0;text-align:center;font-weight:600;color:'+iconColor;
+    iconEl.textContent=icon;
+    var titleEl=document.createElement('span');
+    titleEl.style.cssText='flex:1';
+    /* Sentence-case the title \u2014 plan titles come from the model and are
+       usually already sentence case, but trim and decode just in case. */
+    titleEl.textContent=String(s.title||('Section '+(s.index+1))).trim();
+    row.appendChild(iconEl);
+    row.appendChild(titleEl);
+    listEl.appendChild(row);
+  });
+  return true;
+}
+
+/* Reset the widget. Called when a new job starts so stale data from a previous
+   run doesn't briefly flash on screen. Removes the widget entirely; the next
+   call to setSectionWidget will recreate it lazily if needed. */
+function resetSectionWidget(){
+  var existing=document.getElementById('sectionWidget');
+  if(existing&&existing.parentNode)existing.parentNode.removeChild(existing);
+}
+
 /* ── v4.4: POLLING LOOP (extracted from toolRunBtn handler for reuse) ────── */
 /* Starts polling /api/jobs for a single job. Handles status updates, progress
    bar, worker re-firing on paused/synthesising, completion, failure, and the
    60-minute safety stop. Used both by new tool runs and by resumeInProgressJobs
    on matter reload. All v4.2k over-firing protection preserved.
-   v4.5c: Condense progress and synth attempt count surfaced in the label. */
+   v4.5c: Condense progress and synth attempt count surfaced in the label.
+   v5.8b: Section progress widget hooked in via setSectionWidget(). When the
+   widget takes over the label (sectioned tool, plan phase complete), the
+   per-status branches below see widgetTookLabel=true and skip their label
+   writes. */
 function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progressWrap,progressLabel,progressFill,typing){
   var pollCount=0;
   /* v4.2k: Frontend over-firing fix. Track last fire status + time. Only re-fire
@@ -411,10 +635,15 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
       if(!j)return;
       /* v4.5c: build attempt suffix once — used in several status labels. */
       var attemptSuffix=(j.synthAttempts&&j.synthAttempts>=2)?' (attempt '+j.synthAttempts+')':'';
+      /* v5.8b: hand the poll response to the section widget. If the widget
+         takes over the label (sectioned tool, plan phase complete), every
+         label-writing branch below skips its write. The widget owns the
+         label text from the moment sectionPlan arrives until the job ends. */
+      var widgetTookLabel=setSectionWidget(j,toolLabel,progressLabel);
       if(j.batchesTotal>0&&j.batchesDone>0){
         var pct=Math.min(10+Math.round((j.batchesDone/j.batchesTotal)*80),90);
         progressFill.style.width=pct+'%';
-        progressLabel.textContent='Processing '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
+        if(!widgetTookLabel)progressLabel.textContent='Processing '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
       }
       if(j.status==='complete'||j.status==='partial'){
         clearInterval(pollInterval);if(typing)typing.remove();
@@ -450,16 +679,16 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
                final partial group; clamp the display so it never reads "X of X"
                while still working on the last group. */
             var displayDone=Math.min(condensedCount*3,extractsCount);
-            progressLabel.textContent='Condensing '+toolLabel+'\u2026 '+displayDone+' of '+extractsCount+attemptSuffix;
+            if(!widgetTookLabel)progressLabel.textContent='Condensing '+toolLabel+'\u2026 '+displayDone+' of '+extractsCount+attemptSuffix;
             /* Map condense progress between 90% and 95% */
             var condensePct=90+Math.round((displayDone/extractsCount)*5);
             progressFill.style.width=condensePct+'%';
           }else{
-            progressLabel.textContent='Producing final '+toolLabel+'\u2026'+attemptSuffix;
+            if(!widgetTookLabel)progressLabel.textContent='Producing final '+toolLabel+'\u2026'+attemptSuffix;
             progressFill.style.width='95%';
           }
         }else{
-          progressLabel.textContent='Resuming '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal+attemptSuffix;
+          if(!widgetTookLabel)progressLabel.textContent='Resuming '+toolLabel+'\u2026 batch '+j.batchesDone+' of '+j.batchesTotal+attemptSuffix;
         }
         var nowMs=Date.now();
         var statusChanged=(j.status!==lastFireStatus);
@@ -714,6 +943,11 @@ async function runIssueBriefing(selectedIssues,extraInstructions){
   var progressWrap=document.getElementById('progressWrap');
   var progressLabel=document.getElementById('progressLabel');
   var progressFill=document.getElementById('progressFill');
+  /* v5.8b: clear any leftover widget from a previous run. Issue Briefing is
+     not in scope for sectioned synthesis, but we still reset so a leftover
+     widget from a prior Briefing run doesn't briefly show on top of the
+     Issue Briefing bar. */
+  resetSectionWidget();
   progressWrap.classList.add('on');
   progressLabel.textContent='Submitting '+toolLabel+'\u2026';
   progressFill.style.width='5%';

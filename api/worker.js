@@ -463,6 +463,28 @@ async function failJob(jobId, errorMsg) {
   await updateJob(jobId, { status: "failed", error: errorMsg, completed_at: new Date().toISOString() });
 }
 
+/* v5.9b: Increment synth_attempts and check the guard. Called immediately
+   before each real synthesis call (single-call path, sectioned plan call).
+   Returns true if the guard fired and the job has been failed; the caller
+   should bail out. Returns false to proceed with synthesis.
+   The threshold is the same as the previous v4.5c guard (>= 5 prior real
+   synthesis attempts), but now counts only true synthesis attempts rather
+   than every entry into the synthesising branch — so chained continuations
+   that did only condense work don't burn the budget. */
+async function bumpAndGuardSynthAttempts(jobId, job, extractsLength) {
+  var priorAttempts = job.synth_attempts || 0;
+  var newAttempts = priorAttempts + 1;
+  console.log("v5.9b Worker: incrementing synth_attempts before real synthesis call (priorAttempts=" + priorAttempts + ", newAttempts=" + newAttempts + ")");
+  await updateJob(jobId, { synth_attempts: newAttempts });
+  if (priorAttempts >= 5) {
+    var stuckMsg = "Synthesis exceeded retry limit (" + newAttempts + " real synthesis attempts with no successful completion). The matter may be too large for the current configuration, or the model is repeatedly failing to produce a complete output. Consider reducing the matter size, narrowing the focus instructions, or contacting support.";
+    console.error("v5.9b Worker: " + stuckMsg);
+    await failJob(jobId, stuckMsg);
+    return true;
+  }
+  return false;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    BATCHED RUNNER (v4.2e: frontend-driven chaining)
    Processes extraction batches within time limit. If time runs out, saves
@@ -489,31 +511,20 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
   if (job.status === "synthesising") {
     console.log("Worker: running synthesis for " + jobId + " (" + extracts.length + " extracts)");
 
-    /* v4.5c: Persistent-failure detection.
-       Increment synth_attempts on every entry into the synthesising branch.
-       If the previous attempt count was already >= 5 AND neither condense_done
-       nor result has advanced since the prior attempt, fail the job. The
-       "no advancement" check prevents false positives — a job that legitimately
-       needs many attempts to chew through a large condense run is fine, because
-       each attempt advances condense_done. Only a job that re-enters synthesis
-       N times in a row with no progress at all is genuinely stuck. */
+    /* v5.9b: Persistent-failure detection (REVISED).
+       Previously synth_attempts was incremented here on every entry into the
+       synthesising branch — including legitimate chained continuations doing
+       only condense work. On a job where condensing took several invocations
+       to complete, the counter could reach 5+ purely from condense entries,
+       and the guard would fire prematurely on the very first real synthesis
+       attempt — which then succeeded, but too late to clear the stuck-error.
+       Fix: do NOT increment on entry. Increment immediately before the actual
+       synthesis runTool call (and the sectioned plan call), so the counter
+       reflects true synthesis attempts only. */
     var priorAttempts = job.synth_attempts || 0;
     var priorCondenseDone = job.condense_done || 0;
     var priorResult = job.result || null;
-    var newAttempts = priorAttempts + 1;
-    console.log("v4.5c Worker: synthesising entry #" + newAttempts + " (prior condense_done=" + priorCondenseDone + ", prior result=" + (priorResult ? "set" : "null") + ")");
-
-    await updateJob(jobId, { synth_attempts: newAttempts });
-
-    if (priorAttempts >= 5) {
-      var stillIncomplete = !priorResult && priorCondenseDone >= extracts.length;
-      if (stillIncomplete || (priorAttempts >= 8)) {
-        var stuckMsg = "Synthesis exceeded retry limit (" + newAttempts + " attempts with no forward progress). The matter may be too large for the current configuration, or the model is repeatedly failing to produce a complete output. Consider reducing the matter size, narrowing the focus instructions, or contacting support.";
-        console.error("v4.5c Worker: " + stuckMsg);
-        await failJob(jobId, stuckMsg);
-        return null;
-      }
-    }
+    console.log("v5.9b Worker: synthesising entry (prior synth_attempts=" + priorAttempts + ", prior condense_done=" + priorCondenseDone + ", prior result=" + (priorResult ? "set" : "null") + ")");
 
     /* Condense phase. Unchanged from v4.5c. */
     var SYNTH_GROUP = 3;
@@ -638,13 +649,18 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         plan = existingPlan;
         console.log("v5.8a sectioned: resuming with existing plan of " + plan.length + " sections");
       } else {
+        /* v5.9b: increment synth_attempts and check the guard immediately
+           before the real plan call. Resuming with an existing plan skips
+           this — the work has already been done. */
+        var guardFiredSectioned = await bumpAndGuardSynthAttempts(jobId, job, extracts.length);
+        if (guardFiredSectioned) return null;
         var planStart = Date.now();
-        console.log("v5.8a sectioned: calling planSections for " + toolName);
+        console.log("v5.9b sectioned: calling planSections for " + toolName);
         var planResult;
         try {
           planResult = await planSectionsLib(runTool, systemBase, toolName, userInstructions, synthInput, actingFor, matterName);
         } catch (planErr) {
-          console.error("v5.8a sectioned: plan phase failed, falling back to single-call synthesis: " + planErr.message);
+          console.error("v5.9b sectioned: plan phase failed, falling back to single-call synthesis: " + planErr.message);
           var fallbackResult = await runTool(systemBase, synthPromptFn(synthInput, batches.length), 16384);
           totalInput += fallbackResult.inputTokens;
           totalOutput += fallbackResult.outputTokens;
@@ -655,7 +671,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         totalInput += planResult.inputTokens;
         totalOutput += planResult.outputTokens;
         totalCost += planResult.cost;
-        console.log("v5.8a sectioned: plan produced in " + Math.round((Date.now() - planStart) / 1000) + "s, " + plan.length + " sections");
+        console.log("v5.9b sectioned: plan produced in " + Math.round((Date.now() - planStart) / 1000) + "s, " + plan.length + " sections");
         await updateJob(jobId, { section_plan: plan });
       }
 
@@ -673,10 +689,15 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     }
 
     /* Original single-call synthesis path (Group A tools + Citations) */
+    /* v5.9b: increment synth_attempts and check the guard immediately before
+       the real synthesis call. Returns true if the guard fired (job already
+       failed); bail out so the worker exits cleanly. */
+    var guardFiredSingle = await bumpAndGuardSynthAttempts(jobId, job, extracts.length);
+    if (guardFiredSingle) return null;
     var synthCallStart = Date.now();
-    console.log("v5.5 Worker: starting final synthesis call (heartbeat refreshed)");
+    console.log("v5.9b Worker: starting final synthesis call (heartbeat refreshed)");
     var synthResult = await runTool(systemBase, synthPromptFn(synthInput, batches.length), 16384);
-    console.log("v5.8a Worker: final synthesis returned in " + Math.round((Date.now() - synthCallStart) / 1000) + "s, output " + (synthResult.text ? synthResult.text.length : 0) + " chars, " + synthResult.outputTokens + " tokens");
+    console.log("v5.9b Worker: final synthesis returned in " + Math.round((Date.now() - synthCallStart) / 1000) + "s, output " + (synthResult.text ? synthResult.text.length : 0) + " chars, " + synthResult.outputTokens + " tokens");
     totalInput += synthResult.inputTokens;
     totalOutput += synthResult.outputTokens;
     totalCost += synthResult.cost;
@@ -823,7 +844,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
    the function alive as long as the response has not been sent.
    ══════════════════════════════════════════════════════════════════════════ */
 
-const SERVER_VERSION = "v5.8a";
+const SERVER_VERSION = "v5.9b";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " worker handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -1023,7 +1044,7 @@ export default async function handler(req, res) {
       var systemBase = "You are a senior litigation counsel compiling a dramatis personae for \"" + matterName + "\" in " + jur + ".\n" + matterContext;
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract EVERY person and entity from batch " + batchNum + " of " + total + ".\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Name]\n**Description:** [A concise description of who this person/entity is and their relevance to the proceedings]\n**References in pleadings/petitions:** [List each reference with document name, page and paragraph]\n**References in affidavits:** [List each reference with document name, page and paragraph]\n**References in other documents:** [List each reference with document name, page and paragraph]\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + batchText + pageIndex; },
-        function(combined, numBatches) { return numBatches ? "Synthesise persons from " + numBatches + " batches. Merge entries for the same person/entity. Sort alphabetically.\n\n## Dramatis Personae \u2014 " + matterName + "\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Full Name]\n**Description:** [Concise description of who they are and their relevance]\n**References in pleadings/petitions:** [document, page, paragraph \u2014 listed first]\n**References in affidavits:** [document, page, paragraph \u2014 listed second]\n**References in other documents:** [document, page, paragraph \u2014 listed third]\n\nEXTRACTS:\n\n" + combined : "Compile a complete dramatis personae. Include EVERY person and entity.\n\n## Dramatis Personae \u2014 " + matterName + "\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Full Name]\n**Description:** [Concise description of who they are and their relevance to the proceedings]\n**References in pleadings/petitions:** [document, page, paragraph \u2014 listed first]\n**References in affidavits:** [document, page, paragraph \u2014 listed second]\n**References in other documents:** [document, page, paragraph \u2014 listed third]\n\nSort alphabetically.\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
+        function(combined, numBatches) { return numBatches ? "Synthesise persons from " + numBatches + " batches. Merge entries for the same person/entity. Sort alphabetically.\n\n## Dramatis Personae \u2014 " + matterName + "\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Full Name]\n**Description:** [Concise description of who they are and their relevance]\n**References in pleadings/petitions:** [document, page, paragraph \u2014 listed first]\n**References in affidavits:** [document, page, paragraph \u2014 listed second]\n**References in other documents:** [document, page, paragraph \u2014 listed third]\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "EXTRACTS:\n\n" + combined : "Compile a complete dramatis personae. Include EVERY person and entity.\n\n## Dramatis Personae \u2014 " + matterName + "\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Full Name]\n**Description:** [Concise description of who they are and their relevance to the proceedings]\n**References in pleadings/petitions:** [document, page, paragraph \u2014 listed first]\n**References in affidavits:** [document, page, paragraph \u2014 listed second]\n**References in other documents:** [document, page, paragraph \u2014 listed third]\n\nSort alphabetically.\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
         byDoc, hostUrl
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
@@ -1038,7 +1059,7 @@ export default async function handler(req, res) {
       var systemBase = "You are a senior litigation counsel in " + jur + " mapping issues for \"" + matterName + "\".\n" + matterContext;
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Identify every legal and factual issue from batch " + batchNum + " of " + total + ".\n\n### Issue: [description]\n**Type:** Legal / Factual / Mixed\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + batchText + pageIndex; },
-        function(combined, numBatches) { return numBatches ? "Synthesise issues from " + numBatches + " batches. Merge duplicates.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\nFINDINGS:\n\n" + combined : "Produce a complete issue tracker.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
+        function(combined, numBatches) { return numBatches ? "Synthesise issues from " + numBatches + " batches. Merge duplicates.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "FINDINGS:\n\n" + combined : "Produce a complete issue tracker.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
         byDoc, hostUrl
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
@@ -1267,17 +1288,27 @@ export default async function handler(req, res) {
        v5.5: Idempotency guard. Multiple workers can reach this point in parallel
        if the cron-resume fired during a long synthesis call. Re-read the job
        status: if another worker already set it to "complete", skip the save
-       so we don't create duplicate history rows. */
+       so we don't create duplicate history rows.
+       v5.9b: Also handle the case where a prematurely-fired synth_attempts
+       watchdog has already written status="failed" with a stuck-error message,
+       but the underlying synthesis call eventually returned a real result.
+       In that case the success was real — clear the stale error and write
+       completion legitimately rather than leaving a "failed" job that did
+       in fact succeed. */
     var freshJob = await supabase.from("tool_jobs").select("status").eq("id", jobId).single();
     if (freshJob.data && freshJob.data.status === "complete") {
-      console.log("v5.5 Worker: job " + jobId + " already complete — skipping duplicate save");
+      console.log("v5.9b Worker: job " + jobId + " already complete — skipping duplicate save");
       return res.status(200).json({ ok: true, status: "already_done" });
+    }
+    if (freshJob.data && freshJob.data.status === "failed") {
+      console.log("v5.9b Worker: job " + jobId + " was marked failed by watchdog but synthesis did succeed — clearing stale error and completing");
     }
     await logUsage(matterId, userId, tool, inputTokens, outputTokens, cost);
     await saveHistory(matterId, userId, (toolLabels[tool] || tool) + (instructions ? ": " + instructions : ""), result, tool);
     await updateJob(jobId, {
       status: "complete",
       result: result,
+      error: null,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
       cost_usd: cost,

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v5.6j — JAVASCRIPT
+   EX LIBRIS JURIS v5.8b — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};

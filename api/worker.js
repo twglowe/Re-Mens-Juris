@@ -1,6 +1,29 @@
-/* EX LIBRIS JURIS v5.8a — worker.js
+/* EX LIBRIS JURIS v5.9c — worker.js
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
+
+   v5.9c CHANGES (26 Apr 2026) — Push I Part B:
+   1. Issues synth prompt now reads p.subElement and p.freeformFocus from the
+      job parameters and weaves them into BOTH branches of the synth ternary
+      (multi-batch and single-batch), alongside the existing `instructions`
+      field. Same shape as the v5.9b focus-instruction asymmetry fix —
+      branch A (multi-batch synthesis) and branch B (single-batch direct)
+      both inject the same focus block. Other tools unchanged: only Issues
+      is wired in v5.9c. Push J extends the same pattern to Chronology,
+      Persons, and Briefing.
+   2. New helper buildFocusBlock(instructions, subElement, freeformFocus)
+      returns a unified focus string the prompts can interpolate. Empty
+      strings are skipped. Returns "" when nothing to inject.
+   3. Header banner bumped from v5.8a to v5.9c (v5.9b's inline log lines
+      were correct; the file header was simply stale).
+
+   v5.9b CHANGES (25 Apr 2026) — Push I Part A:
+   - synth_attempts watchdog counts real synthesis attempts only, not
+     condense-phase chained re-entries. See bumpAndGuardSynthAttempts.
+   - error field cleared on success; idempotency guard handles stale
+     "failed" status from a falsely-fired watchdog.
+   - Issues + Persons synth ternary branch-A asymmetry fixed (focus
+     instruction now reaches multi-batch synthesis path).
 
    v5.8a CHANGES (24 Apr 2026) — Push H, sectioned synthesis:
    1. NEW: sectioned synthesis path for Briefing, Draft, and Proposition.
@@ -887,6 +910,26 @@ export default async function handler(req, res) {
        folders to document names and passes them here. Empty = no filter. */
     var includeDocNames = p.includeDocNames || [];
 
+    /* v5.9c: focus widget fields. Empty strings are equivalent to absent.
+       Wired into the Issues prompt only in v5.9c. Push J extends to
+       Chronology, Persons, and Briefing. */
+    var subElement = p.subElement || "";
+    var freeformFocus = p.freeformFocus || "";
+
+    /* v5.9c: build a unified focus block from instructions + subElement +
+       freeformFocus. Returns "" when nothing to inject. The three are
+       layered, not mutually exclusive — sub-element names the chapter,
+       freeformFocus is the question that develops it, instructions is the
+       legacy free-text field that pre-dates the widget. All three can be
+       set together; whichever are non-empty get included. */
+    function buildFocusBlock(ins, sub, ff) {
+      var lines = [];
+      if (sub && sub.length) lines.push("Focus on this issue / sub-element: " + sub);
+      if (ff && ff.length)   lines.push("Question to develop within that focus: " + ff);
+      if (ins && ins.length) lines.push("Additional instructions: " + ins);
+      return lines.length ? "FOCUS:\n" + lines.join("\n") + "\n\n" : "";
+    }
+
     var matterContext = [
       p.matterNature ? "Nature of the dispute: " + p.matterNature : "",
       p.matterIssues ? "Key issues: " + p.matterIssues : "",
@@ -1057,9 +1100,13 @@ export default async function handler(req, res) {
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
       var systemBase = "You are a senior litigation counsel in " + jur + " mapping issues for \"" + matterName + "\".\n" + matterContext;
+      /* v5.9c: focusBlock built once and re-used in all three prompt fragments
+         (extract, multi-batch synth, single-batch synth). Same shape as the
+         v5.9b asymmetry fix; now also carries subElement and freeformFocus. */
+      var focusBlock = buildFocusBlock(instructions, subElement, freeformFocus);
       var r = await runBatchedChained(jobId, job, systemBase,
-        function(batchText, batchNum, total) { return "Identify every legal and factual issue from batch " + batchNum + " of " + total + ".\n\n### Issue: [description]\n**Type:** Legal / Factual / Mixed\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + batchText + pageIndex; },
-        function(combined, numBatches) { return numBatches ? "Synthesise issues from " + numBatches + " batches. Merge duplicates.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "FINDINGS:\n\n" + combined : "Produce a complete issue tracker.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
+        function(batchText, batchNum, total) { return "Identify every legal and factual issue from batch " + batchNum + " of " + total + ".\n\n### Issue: [description]\n**Type:** Legal / Factual / Mixed\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n\n" + focusBlock + "DOCUMENTS:\n\n" + batchText + pageIndex; },
+        function(combined, numBatches) { return numBatches ? "Synthesise issues from " + numBatches + " batches. Merge duplicates.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + focusBlock + "FINDINGS:\n\n" + combined : "Produce a complete issue tracker.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + focusBlock + "DOCUMENTS:\n\n" + combined + pageIndex; },
         byDoc, hostUrl
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });

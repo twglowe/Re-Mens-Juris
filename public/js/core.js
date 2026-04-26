@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v5.8b — JAVASCRIPT
+   EX LIBRIS JURIS v5.9c — JAVASCRIPT
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -1809,7 +1809,14 @@ async function sendToolFollowUp(question,toolName){
 
    Stage 1: no persistence change. Saves via the existing saveHistory path
    as a separate row, same as sendToolFollowUp does today. Stage 2 will add
-   PATCH-based persistence in a follow-up push once Stage 1 is solid. */
+   PATCH-based persistence in a follow-up push once Stage 1 is solid.
+
+   v5.9c (Push I Part B) — uses the unified focus widget rendered below the
+   most recent answer block (or below the main result, for the first
+   follow-up). Reads {subElement, freeformFocus, focusDocNames} from that
+   widget and sends them in the analyse payload. The chatInput at the
+   bottom of the screen is hidden on tool tabs once a focus widget is
+   present (see renderFollowUpFocusWidget). */
 async function sendToolFollowUpV2(question,toolName){
   var cfg=toolDefs[toolName];
   var toolLabel=cfg?cfg.title:toolName;
@@ -1833,21 +1840,36 @@ async function sendToolFollowUpV2(question,toolName){
   var currentResult=mainBubble.innerText.slice(0,8000);
   var toolContext='The user is viewing the '+toolLabel+' output for this matter. Answer their follow-up question in that context.';
 
-  /* Optional document focus (if a prior V2 follow-up added checkboxes). */
-  var focusDocNames=[];
-  msgsArea.querySelectorAll('.followup-doc-list input:checked').forEach(function(cb){focusDocNames.push(cb.value);});
+  /* v5.9c: focus widget values. The "live" widget is the one rendered below
+     the most recent answer (or the main result, on the first follow-up).
+     If the user typed the question in the widget's own freeform textarea,
+     that overrides the chatInput question.
+     readFocusControls is defined in tools.js. */
+  var liveWidget=msgsArea.querySelector('.followup-focus-host:last-of-type');
+  if (!liveWidget) liveWidget=msgsArea;
+  var focusVals=(typeof readFocusControls==='function')?readFocusControls(liveWidget):{subElement:'',freeformFocus:'',focusDocNames:[]};
+  /* If the user typed into the widget's freeform textarea, use that as the
+     question; otherwise use whatever was passed in (chatInput). */
+  if (focusVals.freeformFocus) {
+    question=focusVals.freeformFocus;
+  }
 
   /* Build the follow-up block and append below the main result. */
   var block=document.createElement('div');
   block.className='followup-block';
   block.style.cssText='margin-top:1.15rem;border-top:1.5px solid var(--border);padding-top:1.15rem;display:flex;flex-direction:column;gap:.75rem';
 
-  /* Question header. */
+  /* Question header — shows sub-element prefix when one is set, so the user
+     can see at a glance which "chapter" the follow-up addressed. */
   var qHdr=document.createElement('div');
   qHdr.className='followup-block-question';
   qHdr.style.cssText='padding:.6rem .9rem;background:var(--blue-faint);border-radius:6px;border:1px solid var(--blue-light)';
-  qHdr.innerHTML='<div class="followup-question-label">Follow-up on '+esc(toolLabel.replace(/^[^\w]*/,''))+'</div>'
+  var qPrefix=focusVals.subElement?'<div class="followup-question-subel" style="font-size:.78rem;color:var(--blue);font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.2rem">'+esc(focusVals.subElement)+'</div>':'';
+  qHdr.innerHTML=qPrefix+'<div class="followup-question-label">Follow-up on '+esc(toolLabel.replace(/^[^\w]*/,''))+'</div>'
     +'<div class="followup-question-text">'+esc(question)+'</div>';
+  if (focusVals.focusDocNames && focusVals.focusDocNames.length) {
+    qHdr.innerHTML+='<div class="followup-docs-label" style="margin-top:.3rem;font-size:.78rem;color:var(--text-mid)">Focused on documents: '+focusVals.focusDocNames.map(function(n){return esc(n);}).join(', ')+'</div>';
+  }
   block.appendChild(qHdr);
 
   /* Typing indicator. */
@@ -1856,12 +1878,25 @@ async function sendToolFollowUpV2(question,toolName){
   typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
   block.appendChild(typing);
 
+  /* Remove the previous live widget — it's now consumed. A fresh widget
+     will be rendered below the answer for the next follow-up. */
+  if (liveWidget && liveWidget.classList && liveWidget.classList.contains('followup-focus-host')) {
+    liveWidget.remove();
+  }
+
   msgsArea.appendChild(block);
   msgsArea.scrollTop=msgsArea.scrollHeight;
 
   try{
     var body={matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:question+'\n\n[Context: '+toolContext+']\n\n[Previous tool output summary (first 8000 chars):\n'+currentResult+']'}],jurisdiction:jurisdiction};
-    if(focusDocNames.length>0)body.focusDocNames=focusDocNames;
+    /* v5.9c: thread the three focus fields into the analyse payload.
+       analyse.js v5.9a already accepts subElement and freeformFocus and
+       folds them into the system prompt. focusDocNames was already
+       supported pre-v5.9c. Empty fields are sent as empty strings; the
+       backend treats those as absent. */
+    if(focusVals.subElement) body.subElement=focusVals.subElement;
+    if(focusVals.freeformFocus) body.freeformFocus=focusVals.freeformFocus;
+    if(focusVals.focusDocNames && focusVals.focusDocNames.length) body.focusDocNames=focusVals.focusDocNames;
     var d=await api('/api/analyse','POST',body);
     typing.remove();
     if(d&&d.result){
@@ -1877,7 +1912,8 @@ async function sendToolFollowUpV2(question,toolName){
             question:question,
             answer:d.result,
             cost_usd:costUsd,
-            focus_doc_names:focusDocNames
+            focus_doc_names:focusVals.focusDocNames,
+            sub_element:focusVals.subElement
           });
           savedViaPatch=true;
           /* Refresh the in-memory history cache so loadHistItem sees the new
@@ -1916,6 +1952,14 @@ async function sendToolFollowUpV2(question,toolName){
       aMsg.appendChild(meta);
 
       block.appendChild(aMsg);
+
+      /* v5.9c: render a fresh focus widget below the answer for the next
+         follow-up. The widget reads sub-element items from the main result
+         text using subElementParsers[toolName]. */
+      if (typeof renderFollowUpFocusWidget === 'function') {
+        renderFollowUpFocusWidget(msgsArea, toolName, null, null);
+      }
+
       msgsArea.scrollTop=msgsArea.scrollHeight;
     }else{
       var noRes=document.createElement('div');
@@ -1931,6 +1975,139 @@ async function sendToolFollowUpV2(question,toolName){
     block.appendChild(errEl);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v5.9c — FOLLOW-UP FOCUS WIDGET RENDERING (Push I Part B)
+   ───────────────────────────────────────────────────────────────────────────
+   Called after a tool completes (from tools.js polling) and after each
+   follow-up answer renders (from sendToolFollowUpV2 above). Renders the
+   unified focus widget below the most recent content, populated with
+   sub-element items parsed from the main tool result.
+
+   On first render after tool completion, also consumes any deferred-focus
+   stash on the job row (PATCH /api/jobs?id=... to clear it) and pre-
+   populates the widget with those values.
+
+   When the widget is rendered, the bottom-of-screen chatInput is hidden on
+   the active tool tab. The user types into the widget's own textarea
+   instead. (Hidden via CSS class on the workspace; restored if the user
+   switches back to the chat tab.)
+
+   v5.9c only wires this for Issues. Other Group A tools have parsers
+   ready but no widget render — Push J wires them in.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function renderFollowUpFocusWidget(msgsArea, toolName, completedJob, jobId) {
+  if (!msgsArea) return;
+  /* Only Issues is wired in v5.9c. Bail silently for other tools. */
+  if (toolName !== 'issues') return;
+
+  /* Source text for the parser: the most recent assistant tool bubble in
+     this workspace. */
+  var bubbles = msgsArea.querySelectorAll('.msg.msg-assistant.msg-tool .msg-bubble');
+  var sourceText = bubbles.length ? bubbles[bubbles.length - 1].innerText : '';
+
+  /* Parse sub-element items. */
+  var parser = (typeof subElementParsers !== 'undefined') ? subElementParsers[toolName] : null;
+  var items = parser ? parser(sourceText, completedJob) : [];
+
+  /* Pre-populate from any deferred-focus stash on the completed job. Only
+     consumed once — we PATCH it to null after consuming so a refresh
+     doesn't re-prefill. */
+  var prefill = null;
+  if (completedJob && completedJob.deferredFocus) {
+    prefill = completedJob.deferredFocus;
+    if (jobId) {
+      api('/api/jobs?id='+encodeURIComponent(jobId), 'PATCH', { deferred_focus: null })
+        .catch(function(err){ console.warn('Could not clear deferred_focus:', err && err.message); });
+    }
+  }
+
+  /* Remove any existing live widget host in this workspace — only the most
+     recent should be live. Older follow-up Q&A blocks keep their own
+     question text but don't keep an active widget. */
+  msgsArea.querySelectorAll('.followup-focus-host').forEach(function(el){ el.remove(); });
+
+  /* Build host. */
+  var host = document.createElement('div');
+  host.className = 'followup-focus-host';
+  host.style.cssText = 'margin-top:1.15rem;border-top:1.5px solid var(--border);padding-top:1.15rem';
+
+  /* Header strip. */
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'font-size:.78rem;font-weight:600;color:var(--text-mid);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.55rem';
+  hdr.textContent = 'Follow-up';
+  host.appendChild(hdr);
+
+  /* Widget HTML. buildFocusControls is defined in tools.js. */
+  if (typeof buildFocusControls !== 'function') {
+    console.warn('renderFollowUpFocusWidget: buildFocusControls is not defined');
+    return;
+  }
+  var widgetHtml = buildFocusControls(toolName, 'followup', items, prefill);
+  var widgetWrap = document.createElement('div');
+  widgetWrap.innerHTML = widgetHtml;
+  host.appendChild(widgetWrap.firstChild);
+
+  /* Send button. */
+  var sendRow = document.createElement('div');
+  sendRow.style.cssText = 'display:flex;justify-content:flex-end;margin-top:.65rem';
+  var sendBtn = document.createElement('button');
+  sendBtn.className = 'btn-run-tool';
+  sendBtn.style.cssText = 'padding:.5rem 1.1rem';
+  sendBtn.textContent = 'Send';
+  sendBtn.addEventListener('click', function() {
+    /* readFocusControls returns the values; we forward as the question. */
+    var vals = readFocusControls(host);
+    var question = vals.freeformFocus;
+    /* If the user only picked a sub-element, prompt for a question. */
+    if (!question) {
+      if (vals.subElement) {
+        showToast('Type a question to develop ' + vals.subElement.slice(0, 40) + '\u2026');
+      } else {
+        showToast('Type a follow-up question');
+      }
+      return;
+    }
+    /* sendToolFollowUpV2 reads its own widget values from msgsArea, so we
+       don't pass anything other than the question and toolName. */
+    sendToolFollowUpV2(question, toolName);
+  });
+  sendRow.appendChild(sendBtn);
+  host.appendChild(sendRow);
+
+  msgsArea.appendChild(host);
+
+  /* Wire the "type one not in list" toggle. */
+  if (typeof wireFocusControlsTypeit === 'function') wireFocusControlsTypeit(host);
+
+  /* Hide the bottom-of-screen chatInput on the active tool tab. The widget
+     has its own textarea, so the bottom input would be redundant and
+     confusing. Restored when the user switches back to chat. */
+  hideChatInputOnActiveToolTab();
+
+  msgsArea.scrollTop = msgsArea.scrollHeight;
+}
+
+/* Hide chatInput on the active tab if it's a tool tab with a focus widget.
+   Called by renderFollowUpFocusWidget. switchTab restores it on chat tab. */
+function hideChatInputOnActiveToolTab() {
+  var inputBar = document.querySelector('.input-bar') || document.getElementById('chatInput');
+  if (!inputBar) return;
+  /* Walk up to the bar container if we landed on the textarea itself. */
+  var bar = inputBar.classList && inputBar.classList.contains('input-bar') ? inputBar : (inputBar.closest && inputBar.closest('.input-bar')) || inputBar.parentElement;
+  if (!bar) return;
+  if (activeTab !== 'chat' && activeTab !== 'diagram' && toolDefs[activeTab]) {
+    var msgsArea = document.getElementById('msgs-' + activeTab);
+    var hasWidget = msgsArea && msgsArea.querySelector('.followup-focus-host');
+    bar.style.display = hasWidget ? 'none' : '';
+  } else {
+    bar.style.display = '';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   END v5.9c FOLLOW-UP FOCUS WIDGET RENDERING
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Build the document focus selector below a follow-up answer */
 function buildFollowUpDocSelector(container,toolName){

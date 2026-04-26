@@ -11,7 +11,7 @@ var toolDefs={
     +'<div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>'
     +'<textarea id="toolInstructions" placeholder="e.g. Focus on the share transfer events"></textarea>';}},
   persons:{title:'👥 Dramatis Personae',body:function(){return '<p class="tool-desc">Identifies every person and entity across all documents with descriptions and references. Excludes attorneys and judges. References are ordered: first in pleadings/petitions, then in affidavits.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the directors and shareholders"></textarea>';}},
-  issues:{title:'⚖ Issue Tracker',body:function(){return '<p class="tool-desc">Maps every legal and factual issue and assesses the supporting evidence for each party.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the limitation defence"></textarea>';}},
+  issues:{title:'⚖ Issue Tracker',body:function(){return '<p class="tool-desc">Maps every legal and factual issue and assesses the supporting evidence for each party.</p>'+buildFocusControls('issues','initial',null,null);}},
   citations:{title:'📚 Citation Checker',body:function(){return '<p class="tool-desc">Checks citations in skeleton arguments and pleadings against uploaded judgments.</p>'
     +'<div class="focus-label">Source Document <span style="font-weight:400;text-transform:none;letter-spacing:0">(containing citations to check — leave blank for all skeleton arguments &amp; pleadings)</span></div>'
     +'<select id="citationSourceSelect" class="f-input" style="margin-bottom:.6rem;padding:.5rem .7rem;font-size:.88rem"><option value="">— Auto-detect (skeleton arguments &amp; pleadings) —</option>'
@@ -28,6 +28,285 @@ var toolDefs={
   diagram:{title:'📈 Relationship Diagram',body:function(){return '<p class="tool-desc">Entity relationship diagram generated from the Dramatis Personae analysis.</p>';}}
 };
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   v5.9c — UNIFIED FOCUS WIDGET (Push I Part B)
+   ───────────────────────────────────────────────────────────────────────────
+   A shared three-mode focus widget used at:
+     - Issues launch modal (mode='initial', no sub-element dropdown)
+     - Issues follow-up area (mode='followup', dropdown populated from output)
+   The same widget will later be wired into Chronology, Dramatis Personae, and
+   Briefing in Push J. Parsers for those three are written here but dormant
+   until then.
+
+   API:
+     buildFocusControls(toolName, mode, parsedItems, prefill)
+        toolName    — 'issues' | 'chronology' | 'persons' | 'briefing'
+        mode        — 'initial' | 'followup'
+        parsedItems — array of {label,value} for the dropdown (followup only)
+        prefill     — optional {subElement, freeformFocus, focusDocNames}
+                      to pre-populate (used when consuming a deferred-focus
+                      stash on tool completion)
+        returns     — HTML string
+
+     readFocusControls(scopeEl)
+        Reads the three values out of the widget rendered inside scopeEl.
+        Returns {subElement, freeformFocus, focusDocNames}. Empty fields
+        are returned as "" or [] respectively.
+
+     subElementParsers[toolName](outputText, jobRow?)
+        Parses tool output into [{label, value}, ...] for the dropdown.
+        Returns [] if nothing detected. jobRow is the last successful
+        tool_jobs row for the matter — used by the briefing parser which
+        reads section_plan rather than the result text.
+
+   The widget does NOT submit on its own. The caller reads the values and
+   posts them to /api/tools (initial run) or /api/analyse (follow-up).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function buildFocusControls(toolName, mode, parsedItems, prefill) {
+  parsedItems = parsedItems || [];
+  prefill = prefill || {};
+  var preSub  = prefill.subElement || '';
+  var preFF   = prefill.freeformFocus || '';
+  var preDocs = prefill.focusDocNames || [];
+
+  var html = '<div class="focus-widget" data-tool="' + esc(toolName) + '" data-mode="' + esc(mode) + '">';
+
+  /* Header. Plain prose, no shouty caps. */
+  html += '<div class="focus-widget-header">Focus <span class="focus-widget-hint">(optional — narrow what the tool concentrates on)</span></div>';
+
+  /* Sub-element row (follow-up mode only). */
+  if (mode === 'followup') {
+    html += '<div class="focus-widget-row">';
+    html += '<label class="focus-widget-label">Issue / sub-element</label>';
+    if (parsedItems.length) {
+      html += '<select class="focus-widget-subselect f-input">';
+      html += '<option value="">— Select an issue / sub-element from the analysis (optional) —</option>';
+      for (var i = 0; i < parsedItems.length; i++) {
+        var it = parsedItems[i];
+        var sel = (preSub && preSub === it.value) ? ' selected' : '';
+        html += '<option value="' + esc(it.value) + '"' + sel + '>' + esc(it.label) + '</option>';
+      }
+      html += '</select>';
+      html += '<label class="focus-widget-typeit"><input type="checkbox" class="focus-widget-typeit-chk"> My issue isn\'t in the list — let me type one</label>';
+      html += '<textarea class="focus-widget-subtext f-input" placeholder="Type the issue or sub-element to focus on" style="display:none;margin-top:.4rem">' + esc(preSub && parsedItems.every(function(p){return p.value!==preSub;}) ? preSub : '') + '</textarea>';
+    } else {
+      html += '<div class="focus-widget-empty">No items detected from the tool output yet — type one below.</div>';
+      html += '<textarea class="focus-widget-subtext f-input" placeholder="Type the issue or sub-element to focus on">' + esc(preSub) + '</textarea>';
+    }
+    html += '</div>';
+  }
+
+  /* Question to develop (always shown). */
+  html += '<div class="focus-widget-row">';
+  html += '<label class="focus-widget-label">' + (mode === 'followup' ? 'Question to develop' : 'Question or instruction') + '</label>';
+  html += '<textarea class="focus-widget-freeform f-input" placeholder="' + (mode === 'followup' ? 'e.g. What is the strongest evidence for and against?' : 'e.g. Focus on the limitation defence') + '">' + esc(preFF) + '</textarea>';
+  html += '</div>';
+
+  /* Document filter (collapsed). */
+  html += '<div class="focus-widget-row">';
+  html += '<details class="focus-widget-docs"><summary class="focus-widget-docs-summary">Limit to specific documents <span class="focus-widget-hint">(optional — leave unchecked for all documents)</span></summary>';
+  html += '<div class="focus-widget-doclist">';
+  if (typeof documents !== 'undefined' && documents.length) {
+    for (var d = 0; d < documents.length; d++) {
+      var doc = documents[d];
+      var checked = preDocs.indexOf(doc.name) !== -1 ? ' checked' : '';
+      html += '<label class="anchor-item"><input type="checkbox" class="focus-widget-doc" value="' + esc(doc.name) + '"' + checked + '> ' + esc(doc.name) + ' <span style="color:var(--text-faint);font-size:.72rem">[' + esc(doc.doc_type) + ']</span></label>';
+    }
+  } else {
+    html += '<div style="font-size:.82rem;color:var(--text-faint);font-style:italic">No documents uploaded for this matter.</div>';
+  }
+  html += '</div></details></div>';
+
+  html += '</div>';
+  return html;
+}
+
+/* Read values out of a focus widget. scopeEl is the container that holds the
+   .focus-widget element (the modal body, a follow-up block, etc.). Returns
+   the three fields with empty defaults — never undefined. */
+function readFocusControls(scopeEl) {
+  var w = scopeEl ? scopeEl.querySelector('.focus-widget') : null;
+  if (!w) return { subElement: '', freeformFocus: '', focusDocNames: [] };
+
+  var subElement = '';
+  var sel = w.querySelector('.focus-widget-subselect');
+  var typeitChk = w.querySelector('.focus-widget-typeit-chk');
+  var subtext = w.querySelector('.focus-widget-subtext');
+  if (typeitChk && typeitChk.checked && subtext) {
+    subElement = subtext.value.trim();
+  } else if (sel && sel.value) {
+    subElement = sel.value;
+  } else if (subtext && !sel) {
+    /* dropdown absent (no parsed items) — subtext is the only source */
+    subElement = subtext.value.trim();
+  }
+
+  var ff = w.querySelector('.focus-widget-freeform');
+  var freeformFocus = ff ? ff.value.trim() : '';
+
+  var focusDocNames = [];
+  w.querySelectorAll('.focus-widget-doc:checked').forEach(function(cb) { focusDocNames.push(cb.value); });
+
+  return { subElement: subElement, freeformFocus: freeformFocus, focusDocNames: focusDocNames };
+}
+
+/* Wire up "type one not in list" toggle for follow-up widgets. Called once
+   after the widget is rendered into the DOM. */
+function wireFocusControlsTypeit(scopeEl) {
+  if (!scopeEl) return;
+  var chk = scopeEl.querySelector('.focus-widget-typeit-chk');
+  var sub = scopeEl.querySelector('.focus-widget-subtext');
+  var sel = scopeEl.querySelector('.focus-widget-subselect');
+  if (!chk || !sub) return;
+  chk.addEventListener('change', function() {
+    sub.style.display = chk.checked ? 'block' : 'none';
+    if (chk.checked && sel) sel.value = '';
+    if (chk.checked) sub.focus();
+  });
+  /* If the widget was prefilled with a freeform sub-element (not in list),
+     auto-tick the checkbox so the textarea is visible. */
+  if (sub.value && (!sel || sel.value === '')) {
+    chk.checked = true;
+    sub.style.display = 'block';
+  }
+}
+
+/* ─── Parsers: convert tool output text → [{label, value}, ...] ──────────── */
+var subElementParsers = {
+
+  /* Issues — parses headings shaped like "### Issue 3: Limitation defence" or
+     "**Issue 3:** Limitation defence". Falls back to "## Issue:" headings.
+     Mirrors the logic of parseIssuesFromText in core.js (line ~877) so the
+     two stay in sync; we duplicate rather than depend so this file remains
+     self-contained for Push J. */
+  issues: function(text /*, jobRow */) {
+    if (!text) return [];
+    var out = [];
+    var seen = {};
+    /* Pattern 1: "### Issue 3: Limitation defence" */
+    var re1 = /^###\s+Issue\s*(\d+)\s*:\s*(.+?)\s*$/gim;
+    var m;
+    while ((m = re1.exec(text)) !== null) {
+      var label = 'Issue ' + m[1] + ': ' + m[2];
+      var value = m[2].trim();
+      if (!seen[value]) { seen[value] = 1; out.push({ label: label, value: value }); }
+    }
+    if (out.length) return out;
+    /* Pattern 2: "**Issue 3:** Limitation defence" inline */
+    var re2 = /\*\*Issue\s*(\d+)\s*:\*\*\s*(.+?)(?:\n|$)/gi;
+    while ((m = re2.exec(text)) !== null) {
+      var l2 = 'Issue ' + m[1] + ': ' + m[2];
+      var v2 = m[2].trim();
+      if (!seen[v2]) { seen[v2] = 1; out.push({ label: l2, value: v2 }); }
+    }
+    return out;
+  },
+
+  /* Chronology — parses entries shaped like "**[1 Jan 2023]** — Description"
+     or "## 2023" year headings. Returns the events as sub-elements. Built
+     but DORMANT in v5.9c — wired in Push J. */
+  chronology: function(text /*, jobRow */) {
+    if (!text) return [];
+    var out = [];
+    var seen = {};
+    var re = /\*\*\[?([^\]\*\n]+?)\]?\*\*\s*[\u2014\-]\s*(.+?)(?:\n|$)/g;
+    var m;
+    while ((m = re.exec(text)) !== null) {
+      var date = m[1].trim();
+      var desc = m[2].replace(/\*\(Source:.*?\)\*/g, '').trim();
+      if (!desc || desc.length < 6) continue;
+      var label = date + ' — ' + desc.slice(0, 80);
+      var value = date + ': ' + desc.slice(0, 200);
+      if (!seen[value]) { seen[value] = 1; out.push({ label: label, value: value }); }
+      if (out.length >= 50) break;
+    }
+    return out;
+  },
+
+  /* Dramatis Personae — parses "### [Name]" headings. DORMANT in v5.9c. */
+  persons: function(text /*, jobRow */) {
+    if (!text) return [];
+    var out = [];
+    var seen = {};
+    var re = /^###\s+(.+?)\s*$/gim;
+    var m;
+    while ((m = re.exec(text)) !== null) {
+      var name = m[1].replace(/^\[|\]$/g, '').trim();
+      if (!name || name.length > 100) continue;
+      /* skip the kinds of headings that aren't person names */
+      if (/^(Description|References|Issue|Overall|Summary|Findings|Conclusion)/i.test(name)) continue;
+      if (!seen[name]) { seen[name] = 1; out.push({ label: name, value: name }); }
+    }
+    return out;
+  },
+
+  /* Briefing — reads section_plan from the job row rather than parsing the
+     result text. The plan was added in Push H (v5.8a) and is shaped as
+     [{index, title, description, target_words}, ...]. DORMANT in v5.9c. */
+  briefing: function(text, jobRow) {
+    var out = [];
+    var plan = jobRow && jobRow.sectionPlan;
+    if (Array.isArray(plan)) {
+      for (var i = 0; i < plan.length; i++) {
+        var s = plan[i];
+        if (!s || !s.title) continue;
+        var label = (s.index ? s.index + '. ' : '') + s.title;
+        out.push({ label: label, value: s.title });
+      }
+    }
+    return out;
+  },
+};
+
+/* ─── "Wait until tool run?" modal ───────────────────────────────────────────
+   Called from the Issues launch run-button handler when the user has typed
+   focus values. Returns a Promise that resolves to one of:
+     'now'    — run with focus immediately (focus goes in launch payload)
+     'after'  — run standard analysis, stash focus on the job row for the
+                follow-up widget to consume on completion
+     'cancel' — user backed out; do nothing
+   The modal is built ad-hoc as an overlay; no markup needed in index.html.
+   ───────────────────────────────────────────────────────────────────────── */
+function showWaitUntilToolRunModal() {
+  return new Promise(function(resolve) {
+    var existing = document.getElementById('focusWaitModal');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'focusWaitModal';
+    overlay.className = 'modal';
+    overlay.style.display = 'flex';
+    overlay.innerHTML =
+      '<div class="modal-content focus-wait-modal" style="max-width:520px">'
+      + '<div class="modal-header"><h3>Apply your focus instructions</h3></div>'
+      + '<div class="modal-body">'
+      + '<p style="margin:0 0 1rem 0;font-size:.92rem;color:var(--text-mid)">You have narrowed the focus. How would you like to apply it?</p>'
+      + '<button class="focus-wait-opt" data-choice="now" style="display:block;width:100%;text-align:left;padding:.85rem 1rem;margin-bottom:.55rem;border:1.5px solid var(--blue-light);background:var(--blue-faint);border-radius:6px;cursor:pointer">'
+      +   '<div style="font-weight:600;color:var(--blue);margin-bottom:.2rem">Run with this focus now</div>'
+      +   '<div style="font-size:.84rem;color:var(--text-mid)">The whole tool run is shaped by your instructions.</div>'
+      + '</button>'
+      + '<button class="focus-wait-opt" data-choice="after" style="display:block;width:100%;text-align:left;padding:.85rem 1rem;margin-bottom:.55rem;border:1.5px solid var(--border);background:var(--bg-1);border-radius:6px;cursor:pointer">'
+      +   '<div style="font-weight:600;color:var(--text);margin-bottom:.2rem">Run standard analysis, apply focus after</div>'
+      +   '<div style="font-size:.84rem;color:var(--text-mid)">Tool runs unfocused; your instructions are saved and pre-populate the first follow-up.</div>'
+      + '</button>'
+      + '<button class="focus-wait-opt" data-choice="cancel" style="display:block;width:100%;text-align:center;padding:.7rem;border:1px solid var(--border);background:transparent;border-radius:6px;cursor:pointer;color:var(--text-faint)">Cancel</button>'
+      + '</div></div>';
+    document.body.appendChild(overlay);
+
+    overlay.querySelectorAll('.focus-wait-opt').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var choice = btn.dataset.choice;
+        overlay.remove();
+        resolve(choice);
+      });
+    });
+  });
+}
+/* ═══════════════════════════════════════════════════════════════════════════
+   END v5.9c FOCUS WIDGET
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 /* ── TAB MANAGEMENT ──────────────────────────────────────────────────────── */
 function switchTab(tabId){
   activeTab=tabId;
@@ -39,6 +318,9 @@ function switchTab(tabId){
   if(tabId==='diagram')inp.placeholder='Diagram view — use the toolbar to filter relationships…';
   else if(cfg)inp.placeholder='Ask a follow-up question about the '+cfg.title.replace(/^[^\w]*/,'')+'…';
   else inp.placeholder='Ask a question about this matter…';
+  /* v5.9c: hide chatInput on tool tabs that have a follow-up focus widget
+     visible. Restored automatically on chat/diagram or non-Issues tabs. */
+  if (typeof hideChatInputOnActiveToolTab === 'function') hideChatInputOnActiveToolTab();
 }
 
 function getOrCreateToolTab(toolName){
@@ -323,7 +605,23 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   /* v5.5: Lock BEFORE any await so a fast double-click can't slip through. */
   var v55LockedTool=pendingTool;
   rtLock(v55LockedTool);
-  var instructions=document.getElementById('toolInstructions')?document.getElementById('toolInstructions').value.trim():'';
+
+  /* v5.9c: read focus widget if present (Issues); else fall back to the
+     legacy #toolInstructions textarea used by the other tools. The widget's
+     freeformFocus field maps to the legacy `instructions` field on the
+     payload — Issues additionally sends subElement and (when deferring)
+     a deferredFocus stash. */
+  var focusVals = { subElement: '', freeformFocus: '', focusDocNames: [] };
+  var instructions = '';
+  var modalBody = document.getElementById('toolModalBody');
+  if (pendingTool === 'issues' && modalBody && modalBody.querySelector('.focus-widget')) {
+    focusVals = readFocusControls(modalBody);
+    instructions = focusVals.freeformFocus;  /* worker still reads `instructions`; widget's freeformFocus is the user's text */
+  } else {
+    var legacyTa = document.getElementById('toolInstructions');
+    instructions = legacyTa ? legacyTa.value.trim() : '';
+  }
+
   var anchorDocNames=[];
   if(pendingTool==='inconsistency'){document.querySelectorAll('#anchorList input:checked').forEach(function(cb){anchorDocNames.push(cb.value);});}
   var chronologyDateRange='';var chronologyEntities='';var chronologyCorrespondenceFilter=false;
@@ -346,7 +644,27 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     rtUnlock(v55LockedTool);
     return;
   }
-  closeModal('toolModal');
+
+  /* v5.9c: if Issues has any focus typed, ask whether to apply now or defer.
+     Three outcomes: 'now' (focus in payload), 'after' (focus stashed on job
+     row as deferred_focus), 'cancel' (release lock and abort). */
+  var applyMode = 'now';
+  if (pendingTool === 'issues') {
+    var hasFocus = !!(focusVals.subElement || focusVals.freeformFocus || (focusVals.focusDocNames && focusVals.focusDocNames.length));
+    if (hasFocus) {
+      closeModal('toolModal');
+      applyMode = await showWaitUntilToolRunModal();
+      if (applyMode === 'cancel') {
+        rtUnlock(v55LockedTool);
+        return;
+      }
+    } else {
+      closeModal('toolModal');
+    }
+  } else {
+    closeModal('toolModal');
+  }
+
   var toolName=pendingTool;
   var toolLabel=toolDefs[toolName]?toolDefs[toolName].title:toolName;
   switchTab(toolName);
@@ -375,6 +693,49 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
       document.querySelectorAll('#citationTargetList input:checked').forEach(function(cb){citTargets.push(cb.value);});
       if(citTargets.length>0)body.citationTargets=citTargets;
     }
+    /* v5.9c: focus widget plumbing.
+       - applyMode='now': focus values go into the launch payload. The
+         widget's freeformFocus is already in `instructions` (reused).
+         subElement is sent separately. focusDocNames goes via includeDocNames
+         (narrows the corpus) AND via a future per-question filter — for v5.9c
+         we treat it as the same thing as the existing folder filter: it adds
+         to includeDocNames (intersected with the folder filter if both set).
+       - applyMode='after': focus values are sent as deferredFocus on the
+         job row; instructions is sent empty so the worker runs unfocused. */
+    if (toolName === 'issues') {
+      if (applyMode === 'now') {
+        if (focusVals.subElement) body.subElement = focusVals.subElement;
+        if (focusVals.focusDocNames && focusVals.focusDocNames.length) {
+          /* If the user picked specific documents in the widget AND the folder
+             filter resolved to a list, intersect. Otherwise the widget's
+             selection is the include set. */
+          if (body.includeDocNames && body.includeDocNames.length) {
+            body.includeDocNames = body.includeDocNames.filter(function(n) {
+              return focusVals.focusDocNames.indexOf(n) !== -1;
+            });
+            if (body.includeDocNames.length === 0) {
+              showToast('Document focus and folder filter exclude each other \u2014 adjust one of them');
+              rtUnlock(v55LockedTool);
+              typing.remove();
+              progressWrap.classList.remove('on');
+              return;
+            }
+          } else {
+            body.includeDocNames = focusVals.focusDocNames.slice();
+          }
+        }
+      } else if (applyMode === 'after') {
+        /* Tool runs unfocused. Stash the values on the job for the follow-up
+           widget to consume after completion. */
+        body.instructions = '';
+        body.deferredFocus = {
+          subElement: focusVals.subElement,
+          freeformFocus: focusVals.freeformFocus,
+          focusDocNames: focusVals.focusDocNames,
+        };
+      }
+    }
+
     /* v3.4: Fire job — returns immediately with jobId */
     var d=await api('/api/tools','POST',body);
     if(!d||!d.jobId)throw new Error('No jobId returned');
@@ -658,6 +1019,13 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
           var latestH=matterHistory.find(function(h){return h.tool_name===toolName;});
           var hId=latestH?latestH.id:null;
           appendMsgTo(msgsArea,'assistant',j.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);
+          /* v5.9c: render the follow-up focus widget below the result and
+             consume any deferred-focus stash. The widget is only rendered
+             today for tools that have a parser AND are wired to use it
+             (Issues only in v5.9c; Push J wires the others). */
+          if (typeof renderFollowUpFocusWidget === 'function') {
+            renderFollowUpFocusWidget(msgsArea, toolName, j, jobId);
+          }
         }else{
           var noRes=document.createElement('div');noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem;';
           noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);

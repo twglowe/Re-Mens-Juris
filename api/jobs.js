@@ -1,7 +1,20 @@
-/* EX LIBRIS JURIS v5.8b — jobs.js
+/* EX LIBRIS JURIS v5.9c — jobs.js
    Job status polling endpoint.
-   GET /api/jobs?id=xxx        — single job status (for polling)
-   GET /api/jobs?matterId=xxx  — all recent jobs for a matter (for resume on page load)
+   GET   /api/jobs?id=xxx        — single job status (for polling)
+   GET   /api/jobs?matterId=xxx  — all recent jobs for a matter (for resume on page load)
+   PATCH /api/jobs?id=xxx        — update mutable job fields (currently only deferred_focus)
+
+   v5.9c CHANGES (26 Apr 2026) — Push I Part B:
+   1. Single-job SELECT now also returns deferred_focus (JSONB, nullable). The
+      frontend follow-up widget reads this on tool completion and pre-populates
+      itself if the user chose "Run standard analysis, apply focus after" at
+      launch time.
+   2. New PATCH handler accepts a JSON body with {deferred_focus: null} (or
+      with a replacement object) and updates the matching row. PATCH only;
+      GET and POST behaviour unchanged. Auth enforced — user must own the
+      matching row.
+   3. createClient() moved inside handler (defensive — same pattern as
+      api/history.js v5.6f and api/tools.js v5.8a).
 
    v5.8b CHANGES (25 Apr 2026):
    1. Single-job SELECT now also includes section_plan and section_results so
@@ -26,9 +39,13 @@ import { createClient } from "@supabase/supabase-js";
 
 export const config = { maxDuration: 10 };
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+/* v5.9c: createClient moved inside handler. At module scope it caches the
+   PostgREST schema on the first warm invocation, and any column added by a
+   later migration gets silently stripped from PATCH/UPDATE payloads. The
+   v5.9c migration adds deferred_focus to tool_jobs — exactly the shape of
+   the bug we hit in api/history.js. Defensive. */
 
-async function getUser(req) {
+async function getUser(supabase, req) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
   try {
@@ -38,13 +55,54 @@ async function getUser(req) {
   } catch (e) { return null; }
 }
 
-const SERVER_VERSION = "v5.8b";
+const SERVER_VERSION = "v5.9c";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " jobs handler: " + (req.method || "?") + " " + (req.url || ""));
-  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  const user = await getUser(req);
+  /* v5.9c: fresh client per invocation. See header comment. */
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+  const user = await getUser(supabase, req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  /* ── PATCH: update mutable fields on a job row ─────────────────────────
+     Currently only deferred_focus is mutable post-insert. Auth enforced via
+     the user_id eq filter; if the row doesn't belong to this user the
+     update silently affects zero rows and we return a 404. */
+  if (req.method === "PATCH") {
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: "id query parameter required" });
+
+    const body = req.body || {};
+    const update = {};
+    /* v5.9c: only deferred_focus is patchable today. Accept null (clear) or
+       an object (replace). Anything else is ignored. */
+    if (body.hasOwnProperty("deferred_focus")) {
+      if (body.deferred_focus === null || typeof body.deferred_focus === "object") {
+        update.deferred_focus = body.deferred_focus;
+      } else {
+        return res.status(400).json({ error: "deferred_focus must be an object or null" });
+      }
+    }
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ error: "No patchable fields supplied" });
+    }
+
+    const { data, error } = await supabase
+      .from("tool_jobs")
+      .update(update)
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: "Job not found or update failed" });
+    }
+    return res.status(200).json({ ok: true, id: data.id });
+  }
+
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   const { id, matterId } = req.query;
 
@@ -52,7 +110,7 @@ export default async function handler(req, res) {
   if (id) {
     const { data: job, error } = await supabase
       .from("tool_jobs")
-      .select("id, matter_id, tool_name, status, result, error, batches_total, batches_done, input_tokens, output_tokens, cost_usd, created_at, started_at, completed_at, instructions, condensed_extracts, condense_done, extracts, synth_attempts, section_plan, section_results")
+      .select("id, matter_id, tool_name, status, result, error, batches_total, batches_done, input_tokens, output_tokens, cost_usd, created_at, started_at, completed_at, instructions, condensed_extracts, condense_done, extracts, synth_attempts, section_plan, section_results, deferred_focus")
       .eq("id", id)
       .eq("user_id", user.id)
       .single();
@@ -85,6 +143,11 @@ export default async function handler(req, res) {
          section synthesis completes. */
       sectionPlan: job.section_plan || null,
       sectionResults: job.section_results || null,
+      /* v5.9c: deferred focus stash. Set when user picked "Run standard
+         analysis, apply focus after" at launch. Read by the follow-up
+         widget on tool completion to pre-populate the three fields.
+         Cleared via PATCH once consumed. */
+      deferredFocus: job.deferred_focus || null,
       usage: {
         inputTokens: job.input_tokens,
         outputTokens: job.output_tokens,

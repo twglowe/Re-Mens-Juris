@@ -1,21 +1,6 @@
-/* EX LIBRIS JURIS v5.9c — tools.js (API)
+/* EX LIBRIS JURIS v5.8a — tools.js (API)
    Thin job dispatcher: creates a tool_jobs row, fires worker, returns jobId.
    NO Claude API calls happen here. All processing is in worker.js.
-
-   v5.9c CHANGES (26 Apr 2026) — Push I Part B:
-   1. Accepts three new request-body fields used by the unified focus widget:
-        subElement      — string, names a sub-issue/topic to focus on
-        freeformFocus   — string, the question that develops the sub-element
-        deferredFocus   — object {subElement, freeformFocus, focusDocNames}
-                          stored on the job row when the user picks
-                          "Run standard analysis, apply focus after". The
-                          tool runs unfocused but the values are persisted
-                          for the follow-up widget to pre-populate.
-      subElement and freeformFocus are folded into the parameters JSONB so
-      the worker can read them as p.subElement / p.freeformFocus.
-      deferredFocus is written to the new tool_jobs.deferred_focus column
-      (added in MIGRATION_v59c.sql).
-   2. No other behavioural change.
 
    v5.8a CHANGES (24 Apr 2026) — Push H cleanup:
    1. createClient() moved inside the handler. At module scope it caches the
@@ -48,7 +33,7 @@ async function getUser(supabase, req) {
   }
 }
 
-const SERVER_VERSION = "v5.9c";
+const SERVER_VERSION = "v5.8a";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " tools handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -64,9 +49,7 @@ export default async function handler(req, res) {
           citationSource, citationTargets,
           chronologyDateRange, chronologyEntities, chronologyCorrespondenceFilter,
           caseTypeId, docTypeId, subcatId, libraryContext,
-          excludeDocNames, excludeDocTypes, includeDocNames,
-          /* v5.9c: focus widget fields. All optional. */
-          subElement, freeformFocus, deferredFocus } = req.body;
+          excludeDocNames, excludeDocTypes, includeDocNames } = req.body;
 
   if (!tool || !matterId) return res.status(400).json({ error: "tool and matterId required" });
 
@@ -101,12 +84,6 @@ export default async function handler(req, res) {
        names and passes them here. Worker reads p.includeDocNames and filters
        chunks to only those documents. Empty/missing = no include filter. */
     includeDocNames: includeDocNames || [],
-    /* v5.9c: focus widget. Worker reads p.subElement and p.freeformFocus and
-       weaves them into the synthesis prompt (Issues only in v5.9c; other
-       Group A tools follow in Push J). Empty strings mean "no focus" and
-       are equivalent to the field being absent. */
-    subElement: subElement || "",
-    freeformFocus: freeformFocus || "",
   };
 
   /* Create job row */
@@ -119,11 +96,6 @@ export default async function handler(req, res) {
       status: "pending",
       instructions: instructions || "",
       parameters,
-      /* v5.9c: deferred focus. Set when the user picks "Run standard
-         analysis, apply focus after" in the focus widget. Read by the
-         frontend follow-up widget on tool completion to pre-populate
-         itself. Cleared via PATCH /api/jobs?id=... once consumed. */
-      deferred_focus: deferredFocus || null,
     })
     .select("id")
     .single();

@@ -1,6 +1,29 @@
-/* EX LIBRIS JURIS v5.8a — worker.js
+/* EX LIBRIS JURIS v5.10a — worker.js
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
+
+   v5.10a CHANGES (27 Apr 2026) — Push v5.10a (Issues focus widget):
+   1. Read two new optional parameters from p: subElement, focusDocNames.
+      Both default to empty values; behaviour unchanged for every job that
+      lacks them (every job before this push, plus every non-Issues tool
+      forever). The "Question to develop" textarea on the frontend reuses
+      id="toolInstructions" so its value already arrives on
+      job.instructions as today \u2014 no new field needed for it.
+   2. Build a single focusBlock string near the parameter-extraction site.
+      Combines the three contributors \u2014 instructions, subElement,
+      focusDocNames \u2014 whichever are non-empty. Plain-string
+      concatenation; no template literals; no awaits. Empty focusBlock
+      means identical behaviour to v5.9b for an unfocused run.
+   3. Replace the three inline `(instructions ? "Focus: " + instructions
+      ... : "")` fragments inside the Issues block (lines previously
+      ~1061 and ~1062 twice) with focusBlock. Only the Issues block is
+      touched; every other tool's prompt fragments are unchanged.
+   4. focusDocNames is option (b): a prompt instruction, not a chunk
+      filter. Documents are NOT removed from the batches; the model is
+      told "Concentrate your analysis on these documents: X, Y. You may
+      still reference other documents where relevant." The existing
+      includeDocNames folder filter is unchanged.
+   5. Version banner bumped to v5.10a.
 
    v5.8a CHANGES (24 Apr 2026) — Push H, sectioned synthesis:
    1. NEW: sectioned synthesis path for Briefing, Draft, and Proposition.
@@ -887,6 +910,28 @@ export default async function handler(req, res) {
        folders to document names and passes them here. Empty = no filter. */
     var includeDocNames = p.includeDocNames || [];
 
+    /* v5.10a: Issues focus widget. Two optional fields sent by the new
+       launch modal for the Issues tool. The "Question to develop"
+       textarea reuses id="toolInstructions" on the frontend so its value
+       arrives on job.instructions as today \u2014 nothing new to read for
+       that field. All harmless defaults for every other tool. */
+    var subElement = p.subElement || "";
+    var focusDocNames = Array.isArray(p.focusDocNames) ? p.focusDocNames : [];
+
+    /* v5.10a: Build focusBlock once, reused across the three Issues prompt
+       fragments below. Each contributor only adds to the block when
+       non-empty. With nothing typed, focusBlock == "" and the prompts are
+       identical to v5.9b. The "Focus: <instructions>" line is preserved
+       verbatim from v5.9b for that case, so a job that only fills the
+       Question textarea is byte-identical to v5.9b. */
+    var focusBlock = "";
+    if (instructions) focusBlock += "Focus: " + instructions + "\n\n";
+    if (subElement) focusBlock += "Issue or sub-element to develop: " + subElement + "\n\n";
+    if (focusDocNames.length > 0) {
+      focusBlock += "Concentrate your analysis on these documents: " + focusDocNames.join(", ")
+        + ". You may still reference other documents where relevant.\n\n";
+    }
+
     var matterContext = [
       p.matterNature ? "Nature of the dispute: " + p.matterNature : "",
       p.matterIssues ? "Key issues: " + p.matterIssues : "",
@@ -1058,8 +1103,8 @@ export default async function handler(req, res) {
       var pageIndex = buildPageIndex(byDoc);
       var systemBase = "You are a senior litigation counsel in " + jur + " mapping issues for \"" + matterName + "\".\n" + matterContext;
       var r = await runBatchedChained(jobId, job, systemBase,
-        function(batchText, batchNum, total) { return "Identify every legal and factual issue from batch " + batchNum + " of " + total + ".\n\n### Issue: [description]\n**Type:** Legal / Factual / Mixed\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + batchText + pageIndex; },
-        function(combined, numBatches) { return numBatches ? "Synthesise issues from " + numBatches + " batches. Merge duplicates.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "FINDINGS:\n\n" + combined : "Produce a complete issue tracker.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
+        function(batchText, batchNum, total) { return "Identify every legal and factual issue from batch " + batchNum + " of " + total + ".\n\n### Issue: [description]\n**Type:** Legal / Factual / Mixed\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n\n" + focusBlock + "DOCUMENTS:\n\n" + batchText + pageIndex; },
+        function(combined, numBatches) { return numBatches ? "Synthesise issues from " + numBatches + " batches. Merge duplicates.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + focusBlock + "FINDINGS:\n\n" + combined : "Produce a complete issue tracker.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + focusBlock + "DOCUMENTS:\n\n" + combined + pageIndex; },
         byDoc, hostUrl
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });

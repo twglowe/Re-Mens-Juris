@@ -1,5 +1,27 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v5.8b — JAVASCRIPT
+   EX LIBRIS JURIS v5.10b — JAVASCRIPT
+   v5.10b (27 Apr 2026) — Push v5.10b (Issues follow-up focus widget):
+   1. New shared functions buildIssuesFollowupFocusWidget(msgsArea) and
+      readIssuesFollowupFocus(msgsArea). The first builds a three-field
+      widget (issue dropdown populated from parseIssuesFromText, "type one"
+      checkbox revealing a freeform textarea, collapsed document picker)
+      and appends it at the bottom of msgsArea, removing any prior widget
+      first so only one is ever on screen. The second reads the values
+      from whatever widget is currently in msgsArea, returning empty
+      values when no widget is present so the first follow-up before
+      any widget exists behaves byte-identically to v5.10a.
+   2. sendToolFollowUpV2 modified: reads focus via readIssuesFollowupFocus
+      (Issues only) and adds body.subElement / body.focusDocNames only
+      when non-empty. After the answer renders, calls
+      buildIssuesFollowupFocusWidget to put a fresh widget below the
+      newest answer ready for the next follow-up. No new awaits, no
+      modal, no chatInput change.
+   3. loadHistItem modified: after replaying an Issues row's main bubble
+      and any saved follow-ups, calls buildIssuesFollowupFocusWidget so a
+      replayed Issues result shows the focus widget at the bottom too.
+   4. Wire format byte-identical to v5.10a today when no fields are
+      filled (subElement and focusDocNames are simply not added to the
+      body). All callers of /api/analyse outside Issues are unchanged.
    ═══════════════════════════════════════════════════════════════════════════════ */
 var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
 var toolHistoryCache={};
@@ -436,6 +458,9 @@ function loadHistItem(i){
       }
       area.scrollTop=0;
     }
+    /* v5.10b: Issues replayed from history gets the focus widget at the
+       bottom, ready for a follow-up. Same widget the live flow uses. */
+    if(h.tool_name==='issues')buildIssuesFollowupFocusWidget(area);
   }
   else{switchTab('chat');clearMessages();appendMsg('user',h.question);appendMsg('assistant',h.answer,'','','',null,h.id);}
   if(histOpen)toggleHistory();
@@ -1833,9 +1858,20 @@ async function sendToolFollowUpV2(question,toolName){
   var currentResult=mainBubble.innerText.slice(0,8000);
   var toolContext='The user is viewing the '+toolLabel+' output for this matter. Answer their follow-up question in that context.';
 
-  /* Optional document focus (if a prior V2 follow-up added checkboxes). */
+  /* v5.10b: Read focus from the persistent widget at the bottom of msgsArea,
+     if one exists. On the very first follow-up after a fresh tool run, no
+     widget exists yet (the v5.10b polling-completion hook will append it
+     just after appendMsgTo), so this returns empty values and the wire
+     payload is byte-identical to v5.10a. Issues only — readIssuesFollowupFocus
+     itself returns empty values for non-Issues tools, but we gate the call
+     anyway to make the intent explicit. */
+  var subElement='';
   var focusDocNames=[];
-  msgsArea.querySelectorAll('.followup-doc-list input:checked').forEach(function(cb){focusDocNames.push(cb.value);});
+  if(toolName==='issues'){
+    var f=readIssuesFollowupFocus(msgsArea);
+    subElement=f.subElement;
+    focusDocNames=f.focusDocNames;
+  }
 
   /* Build the follow-up block and append below the main result. */
   var block=document.createElement('div');
@@ -1862,6 +1898,9 @@ async function sendToolFollowUpV2(question,toolName){
   try{
     var body={matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:question+'\n\n[Context: '+toolContext+']\n\n[Previous tool output summary (first 8000 chars):\n'+currentResult+']'}],jurisdiction:jurisdiction};
     if(focusDocNames.length>0)body.focusDocNames=focusDocNames;
+    /* v5.10b: subElement only added when non-empty so an unfocused follow-up
+       produces a body byte-identical to v5.10a today. */
+    if(subElement)body.subElement=subElement;
     var d=await api('/api/analyse','POST',body);
     typing.remove();
     if(d&&d.result){
@@ -1917,6 +1956,12 @@ async function sendToolFollowUpV2(question,toolName){
 
       block.appendChild(aMsg);
       msgsArea.scrollTop=msgsArea.scrollHeight;
+      /* v5.10b: After the answer renders, re-build the focus widget at
+         the bottom of the area, ready for the next follow-up. The builder
+         removes any prior widget first, so only one is on screen at a time
+         and it always sits below the latest answer. Issues only — other
+         tools never get this widget. */
+      if(toolName==='issues')buildIssuesFollowupFocusWidget(msgsArea);
     }else{
       var noRes=document.createElement('div');
       noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem';
@@ -1949,6 +1994,156 @@ function buildFollowUpDocSelector(container,toolName){
   var wrap=document.createElement('div');
   wrap.innerHTML=html;
   container.appendChild(wrap.firstChild);
+}
+
+/* ── v5.10b — Issues Follow-Up Focus Widget ───────────────────────────────
+   Persistent three-field widget at the bottom of the Issues messages area.
+   One widget on screen at any time. Lives below the latest answer, gets
+   moved to below each new answer as follow-ups stack. Built from three
+   call sites: tools.js polling-completion (fresh run), tools.js history
+   replay click (loadHistItem in core.js), and sendToolFollowUpV2 (after
+   each follow-up answer renders). Same builder, same DOM, same ids in
+   every case — but scoped to msgsArea so the launch widget on the modal
+   (different ids: issuesSubElement, issuesFocusDocList) is never collided
+   with. */
+
+/* Build the focus widget and append to msgsArea, removing any prior widget
+   first so only one is ever on screen. Pulls candidate issues from the
+   most recent main-or-followup result text using parseIssuesFromText (a
+   global function defined in tools.js). When no issues parse cleanly the
+   dropdown shows only the placeholder and the "type one" textarea is
+   force-shown. */
+function buildIssuesFollowupFocusWidget(msgsArea){
+  if(!msgsArea)return;
+  /* Remove any prior widget so only one ever exists in this area. */
+  var prior=msgsArea.querySelector('.issues-followup-focus-widget');
+  if(prior&&prior.parentNode)prior.parentNode.removeChild(prior);
+
+  /* Find the text to parse for issue candidates. Prefer the latest
+     follow-up answer if one exists, else the main tool result. */
+  var sourceText='';
+  var followBubbles=msgsArea.querySelectorAll('.followup-block .msg-bubble');
+  if(followBubbles.length>0){
+    sourceText=followBubbles[followBubbles.length-1].innerText||'';
+  }else{
+    var mainBubble=msgsArea.querySelector('.msg.msg-assistant.msg-tool .msg-bubble');
+    if(mainBubble)sourceText=mainBubble.innerText||'';
+  }
+
+  /* parseIssuesFromText is defined in tools.js. If it's somehow not
+     loaded, fall back to no parsed issues — widget still works, just
+     forces freeform entry. */
+  var issues=[];
+  try{
+    if(typeof parseIssuesFromText==='function')issues=parseIssuesFromText(sourceText)||[];
+  }catch(e){console.warn('parseIssuesFromText failed:',e&&e.message);issues=[];}
+
+  var noIssues=issues.length===0;
+
+  var wrap=document.createElement('div');
+  wrap.className='issues-followup-focus-widget';
+  wrap.style.cssText='margin-top:1rem;padding:.85rem 1rem;border:1px solid var(--border);border-radius:8px;background:var(--surface);display:flex;flex-direction:column;gap:.55rem';
+
+  var hdr='<div class="focus-label" style="margin:0;color:var(--navy);letter-spacing:.04em">FOCUS NEXT FOLLOW-UP <span style="font-weight:400;text-transform:none;letter-spacing:0">(all three fields optional)</span></div>';
+
+  var selectLabel='<div class="focus-label" style="margin-top:.3rem">Issue / sub-element <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>';
+  var selectHtml='<select class="f-input issues-fu-select" style="padding:.45rem .55rem;font-size:.88rem">'
+    +'<option value="">— Pick an issue or type one —</option>';
+  if(!noIssues){
+    for(var ii=0;ii<issues.length;ii++){
+      selectHtml+='<option value="'+esc(issues[ii])+'">'+esc(issues[ii])+'</option>';
+    }
+  }
+  selectHtml+='</select>';
+
+  /* "Type one not in list" checkbox + freeform textarea. When the dropdown
+     parsed zero issues, force the textarea visible from the start so the
+     user has a way to enter a sub-element at all. */
+  var typeOneInitialChecked=noIssues?' checked':'';
+  var typeOneInitialDisplay=noIssues?'block':'none';
+  var typeOneRow='<label style="display:flex;align-items:center;gap:.45rem;font-size:.84rem;color:var(--text-mid);cursor:pointer;margin-top:.25rem">'
+    +'<input type="checkbox" class="issues-fu-typeone-cb" style="width:14px;height:14px;accent-color:var(--blue)"'+typeOneInitialChecked+'>'
+    +'Type one not in list</label>'
+    +'<textarea class="issues-fu-typeone-text" placeholder="e.g. The limitation defence" style="display:'+typeOneInitialDisplay+';min-height:42px"></textarea>';
+
+  var docLabel='<div class="focus-label" style="margin-top:.4rem">Limit to specific documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>';
+  var docHtml='<details class="issues-fu-doc-details" style="border:1px solid var(--border);border-radius:6px;padding:.4rem .55rem;background:var(--surface)">'
+    +'<summary style="cursor:pointer;font-size:.84rem;color:var(--text-mid);user-select:none">Pick documents to focus on \u2026 <span style="color:var(--text-faint);font-weight:400">(leave collapsed for none)</span></summary>'
+    +'<div class="anchor-list issues-fu-doc-list" style="margin-top:.5rem;max-height:160px">';
+  if(documents&&documents.length>0){
+    for(var di=0;di<documents.length;di++){
+      var doc=documents[di];
+      docHtml+='<label class="anchor-item"><input type="checkbox" value="'+esc(doc.name)+'"> '+esc(doc.name)+' <span style="color:var(--text-faint);font-size:.72rem">['+esc(doc.doc_type)+']</span></label>';
+    }
+  }else{
+    docHtml+='<div style="font-size:.82rem;color:var(--text-faint);padding:.3rem">No documents uploaded.</div>';
+  }
+  docHtml+='</div></details>';
+
+  wrap.innerHTML=hdr+selectLabel+selectHtml+typeOneRow+docLabel+docHtml;
+  msgsArea.appendChild(wrap);
+
+  /* Wire the "type one" checkbox to show/hide the textarea, AND clear the
+     textarea when unchecked so an accidental tick that's later untoggled
+     does not leak text into the next request. */
+  var cb=wrap.querySelector('.issues-fu-typeone-cb');
+  var ta=wrap.querySelector('.issues-fu-typeone-text');
+  if(cb&&ta){
+    cb.addEventListener('change',function(){
+      if(cb.checked){
+        ta.style.display='block';
+      }else{
+        ta.value='';
+        ta.style.display='none';
+      }
+    });
+  }
+
+  /* When the user picks an issue from the dropdown, untick the "type one"
+     checkbox and clear the freeform textarea, since the dropdown choice
+     wins. Conversely, when the user types into the freeform textarea, the
+     dropdown selection becomes irrelevant — the read function gives the
+     freeform textarea precedence when the checkbox is ticked AND the
+     textarea has content. */
+  var sel=wrap.querySelector('.issues-fu-select');
+  if(sel&&cb&&ta){
+    sel.addEventListener('change',function(){
+      if(sel.value){
+        cb.checked=false;
+        ta.value='';
+        ta.style.display='none';
+      }
+    });
+  }
+}
+
+/* Read the three values from whatever widget is currently in msgsArea.
+   Returns {subElement, focusDocNames}. subElement is the freeform textarea
+   value when the "type one" checkbox is ticked AND the textarea has
+   content; otherwise it is the dropdown selection (which can be empty).
+   Returns empty values when no widget is present, so the very first
+   follow-up before any widget exists produces a wire payload byte-
+   identical to v5.10a. */
+function readIssuesFollowupFocus(msgsArea){
+  var empty={subElement:'',focusDocNames:[]};
+  if(!msgsArea)return empty;
+  var widget=msgsArea.querySelector('.issues-followup-focus-widget');
+  if(!widget)return empty;
+
+  var sub='';
+  var cb=widget.querySelector('.issues-fu-typeone-cb');
+  var ta=widget.querySelector('.issues-fu-typeone-text');
+  var sel=widget.querySelector('.issues-fu-select');
+  if(cb&&cb.checked&&ta&&ta.value&&ta.value.trim().length>0){
+    sub=ta.value.trim();
+  }else if(sel&&sel.value){
+    sub=sel.value;
+  }
+
+  var docs=[];
+  widget.querySelectorAll('.issues-fu-doc-list input:checked').forEach(function(c){docs.push(c.value);});
+
+  return {subElement:sub,focusDocNames:docs};
 }
 document.getElementById('sendBtn').addEventListener('click',sendMessage);
 document.getElementById('chatInput').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}});

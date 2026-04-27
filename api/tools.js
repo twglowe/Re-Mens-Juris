@@ -1,6 +1,16 @@
-/* EX LIBRIS JURIS v5.8a — tools.js (API)
+/* EX LIBRIS JURIS v5.10a — tools.js (API)
    Thin job dispatcher: creates a tool_jobs row, fires worker, returns jobId.
    NO Claude API calls happen here. All processing is in worker.js.
+
+   v5.10a CHANGES (27 Apr 2026) — Push v5.10a (Issues focus widget):
+   1. Destructure subElement, focusDocNames from req.body. These are sent
+      only by the Issues launch modal in this push; harmless no-ops for
+      every other tool because they default to empty. The "Question to
+      develop" textarea on the frontend reuses id="toolInstructions" so
+      its value already arrives on body.instructions as today.
+   2. Stored on parameters JSONB so the worker can read p.subElement and
+      p.focusDocNames.
+   3. Version banner bumped to v5.10a. No control-flow change.
 
    v5.8a CHANGES (24 Apr 2026) — Push H cleanup:
    1. createClient() moved inside the handler. At module scope it caches the
@@ -33,7 +43,7 @@ async function getUser(supabase, req) {
   }
 }
 
-const SERVER_VERSION = "v5.8a";
+const SERVER_VERSION = "v5.10a";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " tools handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -49,7 +59,8 @@ export default async function handler(req, res) {
           citationSource, citationTargets,
           chronologyDateRange, chronologyEntities, chronologyCorrespondenceFilter,
           caseTypeId, docTypeId, subcatId, libraryContext,
-          excludeDocNames, excludeDocTypes, includeDocNames } = req.body;
+          excludeDocNames, excludeDocTypes, includeDocNames,
+          subElement, focusDocNames } = req.body;
 
   if (!tool || !matterId) return res.status(400).json({ error: "tool and matterId required" });
 
@@ -84,6 +95,17 @@ export default async function handler(req, res) {
        names and passes them here. Worker reads p.includeDocNames and filters
        chunks to only those documents. Empty/missing = no include filter. */
     includeDocNames: includeDocNames || [],
+    /* v5.10a: Issues focus widget fields. Sent only by the Issues launch
+       modal in this push; empty defaults for all other tools. The worker
+       weaves these into the Issues synthesis prompt fragments alongside
+       the existing instructions field. The "Question to develop" textarea
+       on the frontend reuses id="toolInstructions" so its value arrives
+       on body.instructions as today; we don't carry it again here.
+       focusDocNames is option (b): a prompt instruction, not a chunk
+       filter \u2014 model is told to focus on these documents but may
+       still reference others. */
+    subElement: subElement || "",
+    focusDocNames: focusDocNames || [],
   };
 
   /* Create job row */

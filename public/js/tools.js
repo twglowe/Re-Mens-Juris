@@ -1,3 +1,18 @@
+/* EX LIBRIS JURIS v5.10a — public/js/tools.js
+   v5.10a (27 Apr 2026) — Push v5.10a (Issues focus widget):
+   1. Issues launch body replaced: single textarea -> three optional fields.
+        - id="issuesSubElement" (textarea, freeform sub-element)
+        - id="toolInstructions" (textarea, kept) — "Question to develop"
+        - id="issuesFocusDocList" (checkbox list inside <details>, collapsed)
+      Other tools' bodies are unchanged.
+   2. Run-button click handler reads the new fields inside an Issues guard.
+      Adds body.subElement, body.freeformFocus, body.focusDocNames only
+      when non-empty. No new awaits, no new modals. Control flow byte-for-
+      byte identical to v5.8b for any tool other than Issues, and identical
+      for an unfocused Issues run.
+   3. No change to follow-up flow, polling, progress display, history.
+*/
+
 /* ── TOOL DEFINITIONS ────────────────────────────────────────────────────── */
 var toolDefs={
   inconsistency:{title:'🔍 Inconsistency Tracker',body:function(){return '<p class="tool-desc">Select anchor documents (your baseline factual position). The system finds all contradictions in the remaining documents.</p><div class="focus-label">Anchor Documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to compare all)</span></div><div class="anchor-list" id="anchorList">'+documents.map(function(d){return '<label class="anchor-item"><input type="checkbox" value="'+esc(d.name)+'"> '+esc(d.name)+' <span style="color:var(--text-faint);font-size:.72rem">['+d.doc_type+']</span></label>';}).join('')+'</div><div class="focus-label" style="margin-top:.85rem">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the dates of payments"></textarea>';}},
@@ -11,7 +26,20 @@ var toolDefs={
     +'<div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>'
     +'<textarea id="toolInstructions" placeholder="e.g. Focus on the share transfer events"></textarea>';}},
   persons:{title:'👥 Dramatis Personae',body:function(){return '<p class="tool-desc">Identifies every person and entity across all documents with descriptions and references. Excludes attorneys and judges. References are ordered: first in pleadings/petitions, then in affidavits.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the directors and shareholders"></textarea>';}},
-  issues:{title:'⚖ Issue Tracker',body:function(){return '<p class="tool-desc">Maps every legal and factual issue and assesses the supporting evidence for each party.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the limitation defence"></textarea>';}},
+  issues:{title:'⚖ Issue Tracker',body:function(){
+    return '<p class="tool-desc">Maps every legal and factual issue and assesses the supporting evidence for each party.</p>'
+      +'<div class="focus-label" style="margin-top:.4rem;color:var(--navy);letter-spacing:.04em">FOCUS <span style="font-weight:400;text-transform:none;letter-spacing:0">(all three fields optional)</span></div>'
+      +'<div class="focus-label">Issue / sub-element <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>'
+      +'<textarea id="issuesSubElement" placeholder="e.g. The limitation defence, or knowledge of trustees prior to 2018" style="min-height:54px"></textarea>'
+      +'<div class="focus-label" style="margin-top:.6rem">Question to develop <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>'
+      +'<textarea id="toolInstructions" placeholder="e.g. What is the strongest evidence for and against?" style="min-height:54px"></textarea>'
+      +'<div class="focus-label" style="margin-top:.6rem">Limit to specific documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>'
+      +'<details style="border:1px solid var(--border);border-radius:6px;padding:.4rem .55rem;background:var(--surface)">'
+      +'<summary style="cursor:pointer;font-size:.84rem;color:var(--text-mid);user-select:none">Pick documents to focus on \u2026 <span style="color:var(--text-faint);font-weight:400">(leave collapsed for none)</span></summary>'
+      +'<div class="anchor-list" id="issuesFocusDocList" style="margin-top:.5rem;max-height:160px">'
+      +(documents.length===0?'<div style="font-size:.82rem;color:var(--text-faint);padding:.3rem">No documents uploaded.</div>':documents.map(function(d){return '<label class="anchor-item"><input type="checkbox" value="'+esc(d.name)+'"> '+esc(d.name)+' <span style="color:var(--text-faint);font-size:.72rem">['+d.doc_type+']</span></label>';}).join(''))
+      +'</div></details>';
+  }},
   citations:{title:'📚 Citation Checker',body:function(){return '<p class="tool-desc">Checks citations in skeleton arguments and pleadings against uploaded judgments.</p>'
     +'<div class="focus-label">Source Document <span style="font-weight:400;text-transform:none;letter-spacing:0">(containing citations to check — leave blank for all skeleton arguments &amp; pleadings)</span></div>'
     +'<select id="citationSourceSelect" class="f-input" style="margin-bottom:.6rem;padding:.5rem .7rem;font-size:.88rem"><option value="">— Auto-detect (skeleton arguments &amp; pleadings) —</option>'
@@ -332,6 +360,16 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     var enEl=document.getElementById('chronoEntities');if(enEl)chronologyEntities=enEl.value.trim();
     var cfEl=document.getElementById('chronoCorresFilter');if(cfEl)chronologyCorrespondenceFilter=cfEl.checked;
   }
+  /* v5.10a: Issues focus widget. Three optional fields. Same null-safe
+     pattern as the chronology block above. The "Question to develop"
+     textarea reuses id="toolInstructions" so the existing read on the line
+     that sets var instructions=... above already captures it; we only need
+     to read the two new fields here. */
+  var issuesSubElement='';var issuesFocusDocNames=[];
+  if(pendingTool==='issues'){
+    var seEl=document.getElementById('issuesSubElement');if(seEl)issuesSubElement=seEl.value.trim();
+    document.querySelectorAll('#issuesFocusDocList input:checked').forEach(function(cb){issuesFocusDocNames.push(cb.value);});
+  }
   /* v3.4: Collect document exclusions from filter */
   var excludeDocNames=getExcludedDocNames();
   var excludeDocTypes=getExcludedDocTypes();
@@ -367,6 +405,15 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     if(chronologyDateRange)body.chronologyDateRange=chronologyDateRange;
     if(chronologyEntities)body.chronologyEntities=chronologyEntities;
     if(chronologyCorrespondenceFilter)body.chronologyCorrespondenceFilter=true;
+    /* v5.10a: Issues focus fields. Each only added when non-empty so that
+       a no-focus run produces a body byte-identical to v5.9b. Note that
+       the "Question to develop" textarea reuses id="toolInstructions" and
+       is therefore already on body.instructions \u2014 we don't send it a
+       second time. We only add the two genuinely new fields here. */
+    if(toolName==='issues'){
+      if(issuesSubElement)body.subElement=issuesSubElement;
+      if(issuesFocusDocNames.length>0)body.focusDocNames=issuesFocusDocNames;
+    }
     /* v3.6: Citation source and target parameters */
     if(toolName==='citations'){
       var citSrc=document.getElementById('citationSourceSelect');

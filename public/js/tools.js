@@ -1,4 +1,15 @@
-/* EX LIBRIS JURIS v5.10a — public/js/tools.js
+/* EX LIBRIS JURIS v5.10b — public/js/tools.js
+   v5.10b (27 Apr 2026) — Push v5.10b (Issues follow-up focus widget):
+   1. Two one-line additions: after the polling-completion handler renders
+      the Issues main bubble (line ~707), and after the in-page history
+      click handler renders an Issues result (line ~911), call
+      buildIssuesFollowupFocusWidget(msgsArea) so a focus widget appears
+      below every Issues result. Issues only — gated by toolName check.
+   2. The widget builder and reader live in core.js (v5.10b). This file
+      only adds the call sites. parseIssuesFromText (line ~923) is
+      unchanged and is read by the widget builder via global scope.
+   3. Other tools' polling/history paths are byte-identical to v5.10a.
+
    v5.10a (27 Apr 2026) — Push v5.10a (Issues focus widget):
    1. Issues launch body replaced: single textarea -> three optional fields.
         - id="issuesSubElement" (textarea, freeform sub-element)
@@ -705,6 +716,11 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
           var latestH=matterHistory.find(function(h){return h.tool_name===toolName;});
           var hId=latestH?latestH.id:null;
           appendMsgTo(msgsArea,'assistant',j.result,isProp?'prop':'tool',toolLabel+(instructions?': '+instructions.slice(0,60):''),costStr,toolName,hId);
+          /* v5.10b: Issues only — append the persistent focus widget below
+             the freshly-rendered main result so the user can focus the
+             very first follow-up. Builder lives in core.js, scoped to
+             msgsArea so launch-modal ids never collide with widget ids. */
+          if(toolName==='issues'&&typeof buildIssuesFollowupFocusWidget==='function')buildIssuesFollowupFocusWidget(msgsArea);
         }else{
           var noRes=document.createElement('div');noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem;';
           noRes.textContent='Tool completed but returned no result.';msgsArea.appendChild(noRes);
@@ -908,7 +924,7 @@ function renderToolHistoryBar(toolName,historyId){
     delBtn.addEventListener('click',function(e){e.stopPropagation();if(!confirm('Delete this saved result?'))return;api('/api/history?id='+h.id,'DELETE').then(function(){loadHistory(currentMatter.id);item.remove();showToast('Deleted');}).catch(function(err){showToast('Error: '+err.message);});});
     actions.appendChild(wordBtn);actions.appendChild(delBtn);
     item.appendChild(lbl);item.appendChild(dt);item.appendChild(actions);
-    item.addEventListener('click',function(){var area=getActiveMessagesArea();area.innerHTML='';appendMsgTo(area,'assistant',h.answer,'tool',h.question,null,h.tool_name,h.id);list.classList.remove('open');});
+    item.addEventListener('click',function(){var area=getActiveMessagesArea();area.innerHTML='';appendMsgTo(area,'assistant',h.answer,'tool',h.question,null,h.tool_name,h.id);list.classList.remove('open');/* v5.10b: Issues replayed via the per-tool history bar gets the focus widget too. Note this path does NOT replay saved follow-ups (unlike loadHistItem in core.js); it shows the main bubble only. */if(h.tool_name==='issues'&&typeof buildIssuesFollowupFocusWidget==='function')buildIssuesFollowupFocusWidget(area);});
     list.appendChild(item);
   });
   toggle.addEventListener('click',function(){list.classList.toggle('open');});

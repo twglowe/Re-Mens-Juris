@@ -1,4 +1,17 @@
-/* EX LIBRIS JURIS v4.3a — cron-resume.js
+/* EX LIBRIS JURIS v5.10c — cron-resume.js
+   Vercel Cron job. Fires every 2 minutes (configured in vercel.json).
+
+   v5.10c CHANGES (27 Apr 2026) — Push v5.10c (follow-ups survive sleep):
+   1. SELECT now includes tool_name so we can route the resume call to
+      the correct worker.
+   2. Worker URL is branched by tool_name prefix. Rows with tool_name
+      starting "followup:" are resumed via /api/analyseWorker; launch
+      jobs continue to /api/worker. The status filter is unchanged —
+      both kinds of job use the same 'running'/'paused'/'synthesising'
+      statuses, so the existing stale-detection logic applies to both.
+   3. Version banner bumped to v5.10c.
+
+   v4.3a — cron-resume.js (carried forward)
    Vercel Cron job. Fires every 2 minutes (configured in vercel.json).
 
    Purpose: keep tool jobs progressing even when the user has closed the
@@ -59,7 +72,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export const config = { maxDuration: 10 };
 
-const SERVER_VERSION = "v5.5";
+const SERVER_VERSION = "v5.10c";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " cron-resume handler: " + (req.method || "?") + " " + (req.url || ""));
   /* Allow GET (Vercel Cron sends GET) and POST (for manual testing) */
@@ -80,7 +93,7 @@ export default async function handler(req, res) {
      migration — should be picked up at least once so they get a heartbeat). */
   var resp = await supabase
     .from("tool_jobs")
-    .select("id, status, updated_at, started_at, matter_id")
+    .select("id, status, updated_at, started_at, matter_id, tool_name")
     .in("status", ["running", "paused", "synthesising"])
     .or("updated_at.lt." + staleCutoff + ",updated_at.is.null")
     .limit(20);
@@ -116,7 +129,12 @@ export default async function handler(req, res) {
   var nowIso = new Date().toISOString();
   for (var i = 0; i < jobs.length; i++) {
     var job = jobs[i];
-    var url = baseUrl + "/api/worker?jobId=" + encodeURIComponent(job.id);
+    /* v5.10c: branch the worker URL by tool_name. Follow-up jobs
+       (tool_name starts with 'followup:') go to /api/analyseWorker;
+       launch jobs continue to /api/worker as before. */
+    var isFollowup = typeof job.tool_name === "string" && job.tool_name.indexOf("followup:") === 0;
+    var workerPath = isFollowup ? "/api/analyseWorker" : "/api/worker";
+    var url = baseUrl + workerPath + "?jobId=" + encodeURIComponent(job.id);
 
     /* Fire the worker (no await — fire and forget) */
     fetch(url, { method: "POST" }).catch(function(err) {

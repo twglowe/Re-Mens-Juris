@@ -1,5 +1,22 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   EX LIBRIS JURIS v5.10b — JAVASCRIPT
+   EX LIBRIS JURIS v5.10c — JAVASCRIPT
+   v5.10c (27 Apr 2026) — Push v5.10c (follow-ups survive laptop sleep):
+   1. sendToolFollowUpV2 rewired from synchronous POST /api/analyse to
+      job-and-poll: POST /api/followup -> {jobId} -> poll /api/jobs every
+      2s -> render on status==='complete'. The Anthropic call now happens
+      server-side in /api/analyseWorker, which writes the result to
+      tool_jobs.result and PATCHes the parent conversation_history row's
+      followups[]. Frontend only renders.
+   2. The reassurance line "you can close your laptop and come back" sits
+      below the typing indicator so the user understands the new behaviour.
+   3. localStorage stash of in-flight jobIds (keyed by matter) — written
+      now, not yet read on page load. The hook is in place for v5.10d.
+   4. Re-fire safety net: if status stays 'pending' for 10s, fire
+      /api/analyseWorker once. Mirrors the launch flow's safety net.
+   5. No change to buildIssuesFollowupFocusWidget, readIssuesFollowupFocus,
+      or any other helper introduced in v5.10b. The widget plumbing,
+      history-replay path, and Issues-only gating are all preserved.
+
    v5.10b (27 Apr 2026) — Push v5.10b (Issues follow-up focus widget):
    1. New shared functions buildIssuesFollowupFocusWidget(msgsArea) and
       readIssuesFollowupFocus(msgsArea). The first builds a three-field
@@ -1835,36 +1852,52 @@ async function sendToolFollowUp(question,toolName){
    Stage 1: no persistence change. Saves via the existing saveHistory path
    as a separate row, same as sendToolFollowUp does today. Stage 2 will add
    PATCH-based persistence in a follow-up push once Stage 1 is solid. */
+/* v5.10c (27 Apr 2026) — sendToolFollowUpV2 rewired to job-and-poll.
+
+   Before v5.10c, follow-ups went via a single synchronous POST to
+   /api/analyse. If the user closed the laptop mid-fetch, the browser
+   suspended the connection and on wake the fetch typically died with
+   "load failed". The answer never arrived and no row was written to
+   conversation_history.
+
+   v5.10c switches the wire to: POST /api/followup -> {jobId} -> poll
+   /api/jobs?id=<jobId> every 2s -> render on status==='complete'.
+   The Anthropic call now happens server-side in /api/analyseWorker,
+   which writes the result to tool_jobs.result AND patches the parent
+   conversation_history row's followups[]. The frontend just renders.
+
+   Cost-saving tactic: we DON'T re-fetch loadHistory here on every
+   follow-up; the worker has already written the row. We refresh once
+   at completion to keep the in-memory cache aligned with what
+   loadHistItem will see if the user navigates away and back.
+
+   Frontend re-fire: if the job sits in 'pending' for 10+ seconds with
+   no progress (e.g. tools.js fire-and-forget never reached the worker),
+   we re-fire /api/analyseWorker once. Cron-resume covers longer-term
+   stalls.
+
+   Resumability across page reload: the in-flight jobId is stashed in
+   localStorage keyed by matterId so a page reload could pick it up.
+   v5.10c does NOT yet wire that resume-on-load path — that's deferred.
+   The localStorage write is harmless on its own and gives the next
+   push something to read. */
 async function sendToolFollowUpV2(question,toolName){
   var cfg=toolDefs[toolName];
   var toolLabel=cfg?cfg.title:toolName;
   var msgsArea=document.getElementById('msgs-'+toolName);
   if(!msgsArea){console.log('FOLLOWUP_V2: no workspace, falling back');return sendToolFollowUp(question,toolName);}
 
-  /* Find the main tool result bubble. If absent, the user has somehow hit
-     send before the tool produced a result — fall back to the old behaviour
-     rather than rendering a follow-up into an empty workspace. */
   var mainBubble=msgsArea.querySelector('.msg.msg-assistant.msg-tool .msg-bubble');
   if(!mainBubble){console.log('FOLLOWUP_V2: no main tool bubble yet, falling back');return sendToolFollowUp(question,toolName);}
 
-  /* v5.6g: find the main tool-message's history row id so we can PATCH
-     follow-ups onto that row. Walk from the bubble up to its .msg parent
-     and read dataset.historyId. If absent (e.g. a history replay that
-     didn't stash it), we'll fall through to POST at save-time. */
+  /* v5.6g: find the main tool-message's history row id so the worker
+     can PATCH onto it. Absent on history replay paths that don't stash it. */
   var mainMsg=mainBubble.closest('.msg.msg-assistant.msg-tool');
   var mainRowId=mainMsg?mainMsg.dataset.historyId||null:null;
 
-  /* Capture main result text for the analyse prompt context. */
   var currentResult=mainBubble.innerText.slice(0,8000);
-  var toolContext='The user is viewing the '+toolLabel+' output for this matter. Answer their follow-up question in that context.';
 
-  /* v5.10b: Read focus from the persistent widget at the bottom of msgsArea,
-     if one exists. On the very first follow-up after a fresh tool run, no
-     widget exists yet (the v5.10b polling-completion hook will append it
-     just after appendMsgTo), so this returns empty values and the wire
-     payload is byte-identical to v5.10a. Issues only — readIssuesFollowupFocus
-     itself returns empty values for non-Issues tools, but we gate the call
-     anyway to make the intent explicit. */
+  /* v5.10b: read focus widget if Issues. */
   var subElement='';
   var focusDocNames=[];
   if(toolName==='issues'){
@@ -1873,12 +1906,11 @@ async function sendToolFollowUpV2(question,toolName){
     focusDocNames=f.focusDocNames;
   }
 
-  /* Build the follow-up block and append below the main result. */
+  /* Build the follow-up block. */
   var block=document.createElement('div');
   block.className='followup-block';
   block.style.cssText='margin-top:1.15rem;border-top:1.5px solid var(--border);padding-top:1.15rem;display:flex;flex-direction:column;gap:.75rem';
 
-  /* Question header. */
   var qHdr=document.createElement('div');
   qHdr.className='followup-block-question';
   qHdr.style.cssText='padding:.6rem .9rem;background:var(--blue-faint);border-radius:6px;border:1px solid var(--blue-light)';
@@ -1886,94 +1918,151 @@ async function sendToolFollowUpV2(question,toolName){
     +'<div class="followup-question-text">'+esc(question)+'</div>';
   block.appendChild(qHdr);
 
-  /* Typing indicator. */
-  var typing=document.createElement('div');
-  typing.className='msg msg-assistant';
-  typing.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
-  block.appendChild(typing);
+  /* Typing indicator + reassurance line — v5.10c users can close the laptop. */
+  var typingWrap=document.createElement('div');
+  typingWrap.className='msg msg-assistant';
+  typingWrap.innerHTML='<div class="typing-bubble"><span></span><span></span><span></span></div>';
+  block.appendChild(typingWrap);
+
+  var reassure=document.createElement('div');
+  reassure.className='followup-reassure';
+  reassure.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.25rem .45rem;font-style:italic';
+  reassure.textContent='Working on your follow-up — you can close your laptop and come back, the answer will be here.';
+  block.appendChild(reassure);
 
   msgsArea.appendChild(block);
   msgsArea.scrollTop=msgsArea.scrollHeight;
 
-  try{
-    var body={matterId:currentMatter.id,matterName:currentMatter.name,matterNature:currentMatter.nature||'',matterIssues:currentMatter.issues||'',actingFor:currentMatter.acting_for||'',messages:[{role:'user',content:question+'\n\n[Context: '+toolContext+']\n\n[Previous tool output summary (first 8000 chars):\n'+currentResult+']'}],jurisdiction:jurisdiction};
-    if(focusDocNames.length>0)body.focusDocNames=focusDocNames;
-    /* v5.10b: subElement only added when non-empty so an unfocused follow-up
-       produces a body byte-identical to v5.10a today. */
-    if(subElement)body.subElement=subElement;
-    var d=await api('/api/analyse','POST',body);
-    typing.remove();
-    if(d&&d.result){
-      var costUsd=d.usage&&typeof d.usage.costUsd==='number'?d.usage.costUsd:0;
-      /* v5.6g: PATCH the follow-up onto the main row's followups[] array.
-         Falls back to POST (old behaviour: separate history row) if either
-         the mainRowId is missing or PATCH itself fails. The fallback
-         guarantees no follow-up work is ever silently lost. */
-      var savedViaPatch=false;
-      if(mainRowId){
-        try{
-          await api('/api/history?id='+encodeURIComponent(mainRowId),'PATCH',{
-            question:question,
-            answer:d.result,
-            cost_usd:costUsd,
-            focus_doc_names:focusDocNames
-          });
-          savedViaPatch=true;
-          /* Refresh the in-memory history cache so loadHistItem sees the new
-             follow-up without a full page reload. */
-          if(currentMatter)await loadHistory(currentMatter.id);
-        }catch(patchErr){
-          console.warn('FOLLOWUP_V2 PATCH failed, falling back to POST:',patchErr&&patchErr.message);
-        }
-      }
-      if(!savedViaPatch){
-        await saveHistory(toolLabel+' follow-up: '+question.slice(0,80),d.result,toolName);
-      }
+  /* Renderer for the final answer. Inlined as a closure so it captures
+     the local block, typingWrap, reassure, msgsArea, etc. Called from
+     the polling loop on status==='complete'. */
+  function renderAnswer(resultText,costUsd){
+    typingWrap.remove();
+    reassure.remove();
+    var costStr=costUsd?' \u00B7 $'+costUsd.toFixed(4):'';
+    var aMsg=document.createElement('div');
+    aMsg.className='msg msg-assistant msg-tool';
+    var aBubble=document.createElement('div');
+    aBubble.className='msg-bubble';
+    aBubble.innerHTML=renderMdWithSourceLinks(resultText);
+    aMsg.appendChild(aBubble);
+    var time=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    var meta=document.createElement('div');meta.className='msg-meta';
+    var ts=document.createElement('span');
+    ts.textContent='Ex Libris Juris \u00B7 '+(jurisdiction==='British Virgin Islands'?'BVI':jurisdiction)+' \u00B7 '+time;
+    meta.appendChild(ts);
+    var dl=document.createElement('button');dl.className='btn-dl';dl.textContent='\u2B07 Word';
+    dl.onclick=function(){downloadWord(resultText,toolLabel+' follow-up: '+question.slice(0,40));};
+    meta.appendChild(dl);
+    aMsg.appendChild(meta);
+    block.appendChild(aMsg);
+    msgsArea.scrollTop=msgsArea.scrollHeight;
+    if(toolName==='issues')buildIssuesFollowupFocusWidget(msgsArea);
+  }
 
-      var costStr=costUsd?' \u00B7 $'+costUsd.toFixed(4):'';
-
-      /* Answer bubble — mirrors the appendMsgTo 'assistant' layout, but
-         scoped inside this follow-up block so it's clearly a reply to the
-         follow-up question and not a replacement of the main result. */
-      var aMsg=document.createElement('div');
-      aMsg.className='msg msg-assistant msg-tool';
-      var aBubble=document.createElement('div');
-      aBubble.className='msg-bubble';
-      aBubble.innerHTML=renderMdWithSourceLinks(d.result);
-      aMsg.appendChild(aBubble);
-
-      /* Per-follow-up meta bar. v5.6g: cost pill hidden per Tom's preference.
-         Cost is still saved to the database for reporting. */
-      var time=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-      var meta=document.createElement('div');meta.className='msg-meta';
-      var ts=document.createElement('span');
-      ts.textContent='Ex Libris Juris \u00B7 '+(jurisdiction==='British Virgin Islands'?'BVI':jurisdiction)+' \u00B7 '+time;
-      meta.appendChild(ts);
-      var dl=document.createElement('button');dl.className='btn-dl';dl.textContent='\u2B07 Word';
-      dl.onclick=function(){downloadWord(d.result,toolLabel+' follow-up: '+question.slice(0,40));};
-      meta.appendChild(dl);
-      aMsg.appendChild(meta);
-
-      block.appendChild(aMsg);
-      msgsArea.scrollTop=msgsArea.scrollHeight;
-      /* v5.10b: After the answer renders, re-build the focus widget at
-         the bottom of the area, ready for the next follow-up. The builder
-         removes any prior widget first, so only one is on screen at a time
-         and it always sits below the latest answer. Issues only — other
-         tools never get this widget. */
-      if(toolName==='issues')buildIssuesFollowupFocusWidget(msgsArea);
-    }else{
-      var noRes=document.createElement('div');
-      noRes.style.cssText='text-align:center;font-size:.78rem;color:var(--text-faint);padding:.45rem';
-      noRes.textContent='Follow-up returned no result.';
-      block.appendChild(noRes);
-    }
-  }catch(e){
-    typing.remove();
+  function renderError(message){
+    typingWrap.remove();
+    reassure.remove();
     var errEl=document.createElement('div');
     errEl.style.cssText='text-align:center;font-size:.78rem;color:var(--error);padding:.45rem';
-    errEl.textContent='\u26A0\uFE0F Error: '+e.message;
+    errEl.textContent='\u26A0\uFE0F Error: '+(message||'Follow-up failed');
     block.appendChild(errEl);
+  }
+
+  try{
+    var body={
+      matterId:currentMatter.id,
+      matterName:currentMatter.name,
+      matterNature:currentMatter.nature||'',
+      matterIssues:currentMatter.issues||'',
+      actingFor:currentMatter.acting_for||'',
+      jurisdiction:jurisdiction,
+      originalTool:toolName,
+      question:question,
+      currentResult:currentResult,
+      mainRowId:mainRowId
+    };
+    if(focusDocNames.length>0)body.focusDocNames=focusDocNames;
+    if(subElement)body.subElement=subElement;
+
+    var dispatch=await api('/api/followup','POST',body);
+    if(!dispatch||!dispatch.jobId){throw new Error('No jobId returned');}
+    var jobId=dispatch.jobId;
+
+    /* Stash for resume-on-reload. v5.10c doesn't yet read this back on
+       page load, but writing it is cheap and gives v5.10d/e/g the hook. */
+    try{
+      var lsKey='followup:inflight:'+currentMatter.id;
+      var existing={};try{existing=JSON.parse(localStorage.getItem(lsKey)||'{}')||{};}catch(_){existing={};}
+      existing[jobId]={toolName:toolName,startedAt:Date.now()};
+      localStorage.setItem(lsKey,JSON.stringify(existing));
+    }catch(_){/* localStorage may be unavailable; non-fatal */}
+
+    function clearLs(){
+      try{
+        var lsKey2='followup:inflight:'+currentMatter.id;
+        var ex={};try{ex=JSON.parse(localStorage.getItem(lsKey2)||'{}')||{};}catch(_){ex={};}
+        delete ex[jobId];
+        localStorage.setItem(lsKey2,JSON.stringify(ex));
+      }catch(_){}
+    }
+
+    /* Polling loop. 2s interval, 360 polls = 12 minutes ceiling. After
+       10s of pending with no progress, re-fire the worker once. */
+    var pollCount=0;
+    var refired=false;
+    var pollInterval=setInterval(async function(){
+      try{
+        pollCount++;
+        var j=await api('/api/jobs?id='+jobId);
+        if(!j)return;
+
+        if(j.status==='complete'){
+          clearInterval(pollInterval);
+          clearLs();
+          var costUsd=j.usage&&typeof j.usage.costUsd==='number'?j.usage.costUsd:0;
+          if(j.result){
+            renderAnswer(j.result,costUsd);
+            /* Refresh in-memory history cache so loadHistItem sees the
+               worker-written follow-up the next time the row is replayed. */
+            if(currentMatter)try{await loadHistory(currentMatter.id);}catch(_){}
+          }else{
+            renderError('Follow-up completed but returned no result.');
+          }
+          return;
+        }
+
+        if(j.status==='failed'){
+          clearInterval(pollInterval);
+          clearLs();
+          renderError(j.error||'Follow-up failed');
+          return;
+        }
+
+        /* pending or running — re-fire once if still pending after ~10s.
+           Mirrors the launch-flow safety net. */
+        if(j.status==='pending'&&pollCount>=5&&!refired){
+          refired=true;
+          console.log('v5.10c re-fire analyseWorker after 10s pending');
+          fetch('/api/analyseWorker?jobId='+encodeURIComponent(jobId),{
+            method:'POST',
+            headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}
+          }).catch(function(e){console.log('AnalyseWorker re-fire:',e.message);});
+        }
+
+        if(pollCount>360){
+          clearInterval(pollInterval);
+          clearLs();
+          renderError('Follow-up is taking longer than expected. Check the matter\u2019s history later for the answer.');
+          return;
+        }
+      }catch(pollErr){
+        /* Transient poll failures are OK — keep going until the ceiling. */
+        console.log('Follow-up poll error:',pollErr&&pollErr.message);
+      }
+    },2000);
+  }catch(e){
+    renderError(e&&e.message?e.message:'Failed to start follow-up');
   }
 }
 

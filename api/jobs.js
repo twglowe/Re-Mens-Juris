@@ -1,7 +1,18 @@
-/* EX LIBRIS JURIS v5.8b — jobs.js
+/* EX LIBRIS JURIS v5.10c-fu1 — jobs.js
    Job status polling endpoint.
    GET /api/jobs?id=xxx        — single job status (for polling)
    GET /api/jobs?matterId=xxx  — all recent jobs for a matter (for resume on page load)
+
+   v5.10c-fu1 CHANGES (28 Apr 2026):
+   1. Removed module-scope createClient(). The Supabase client is now created
+      inside the handler on each invocation. This matches the pattern already
+      used by analyse.js, worker.js, tools.js and cron-resume.js, and removes
+      a latent bug where the cached PostgREST schema would silently strip
+      newly-migrated columns from queries until the function cold-started.
+      No behavioural change today; this is preventative.
+   2. getUser() now takes the supabase client as a second argument, since it
+      can no longer close over a module-scope variable.
+   3. No other changes. Query shapes, response shapes, auth, all unchanged.
 
    v5.8b CHANGES (25 Apr 2026):
    1. Single-job SELECT now also includes section_plan and section_results so
@@ -26,9 +37,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export const config = { maxDuration: 10 };
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-
-async function getUser(req) {
+async function getUser(req, supabase) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
   try {
@@ -38,12 +47,14 @@ async function getUser(req) {
   } catch (e) { return null; }
 }
 
-const SERVER_VERSION = "v5.8b";
+const SERVER_VERSION = "v5.10c-fu1";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " jobs handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  const user = await getUser(req);
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+  const user = await getUser(req, supabase);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
   const { id, matterId } = req.query;

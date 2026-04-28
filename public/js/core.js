@@ -234,6 +234,117 @@ async function selectMatter(id){
   renderMatterRecord();
   /* v4.4: Resume polling for any in-progress tool jobs on this matter */
   if(typeof resumeInProgressJobs==='function')resumeInProgressJobs(id);
+  /* v5.10c-fu2: Check for in-flight follow-up jobs on this matter and show a
+     background banner while they finish. Server-authoritative: queries
+     /api/jobs?matterId=<id> and filters to jobs with tool_name beginning
+     "followup:" in status pending or running. No DOM other than sysMsg
+     banners. Polls every 5s. Stops automatically on matter switch. */
+  if(typeof checkInFlightFollowUps==='function')checkInFlightFollowUps(id);
+}
+
+/* ── v5.10c-fu2: IN-FLIGHT FOLLOW-UP BANNER ON MATTER LOAD ───────────────
+   Background detection of follow-up jobs that are still running when the
+   user reloads or navigates to a matter. Distinct from resumeInProgressJobs
+   above (which handles launch jobs and opens tool tabs). This function only
+   posts banners via sysMsg and refreshes loadHistory on completion — no
+   tool-tab opening, no typing indicator, no localStorage read.
+
+   Wire:
+     1. GET /api/jobs?matterId=<id>  (existing endpoint, unchanged)
+     2. Filter jobs whose tool_name starts with "followup:" and status is
+        pending or running.
+     3. If none, return silently.
+     4. If one or more, sysMsg the in-progress banner and start a 5s poll.
+     5. Each tick polls /api/jobs?id=<jobId> for each tracked job.
+     6. When all tracked jobs reach complete or failed, sysMsg the final
+        banner, refresh loadHistory, clear the interval.
+     7. If currentMatter.id changes mid-poll, clear the interval (user
+        switched matter — the new matter's selectMatter call will re-check).
+     8. 360-tick ceiling (30 minutes) as a safety stop. */
+async function checkInFlightFollowUps(matterId){
+  if(!matterId)return;
+  try{
+    var resp=await api('/api/jobs?matterId='+matterId);
+    if(!resp||!resp.jobs||!resp.jobs.length)return;
+    var inFlight=resp.jobs.filter(function(j){
+      var tn=j.toolName||'';
+      var st=j.status||'';
+      return tn.indexOf('followup:')===0&&(st==='pending'||st==='running');
+    });
+    if(!inFlight.length)return;
+
+    sysMsg('A follow-up is in progress — it will appear in History when complete. Working in the background\u2026');
+
+    /* Track each jobId's terminal status as it lands. */
+    var tracked={};
+    inFlight.forEach(function(j){tracked[j.id]={status:j.status,terminal:false};});
+
+    var pollCount=0;
+    var pollInterval=setInterval(async function(){
+      try{
+        pollCount++;
+        /* User switched matter — abandon. */
+        if(!currentMatter||currentMatter.id!==matterId){
+          clearInterval(pollInterval);
+          return;
+        }
+        /* Safety ceiling. */
+        if(pollCount>360){
+          clearInterval(pollInterval);
+          return;
+        }
+        /* Poll every still-pending tracked job. */
+        var ids=Object.keys(tracked);
+        for(var i=0;i<ids.length;i++){
+          var jobId=ids[i];
+          if(tracked[jobId].terminal)continue;
+          try{
+            var j=await api('/api/jobs?id='+jobId);
+            if(!j)continue;
+            if(j.status==='complete'){
+              tracked[jobId].status='complete';
+              tracked[jobId].terminal=true;
+            }else if(j.status==='failed'){
+              tracked[jobId].status='failed';
+              tracked[jobId].terminal=true;
+            }
+          }catch(_){/* transient — try again next tick */}
+        }
+        /* All terminal? Wrap up. */
+        var allDone=true;
+        var anyFailed=false;
+        var anySucceeded=false;
+        for(var k=0;k<ids.length;k++){
+          var t=tracked[ids[k]];
+          if(!t.terminal){allDone=false;break;}
+          if(t.status==='failed')anyFailed=true;
+          else if(t.status==='complete')anySucceeded=true;
+        }
+        if(allDone){
+          clearInterval(pollInterval);
+          /* Refresh history so the new follow-up rows are visible. */
+          if(currentMatter&&currentMatter.id===matterId){
+            try{await loadHistory(matterId);}catch(_){}
+          }
+          if(anyFailed&&anySucceeded){
+            sysMsg('Follow-ups complete — see History for details.');
+          }else if(anyFailed){
+            sysMsg('A follow-up failed — see History for details.');
+          }else{
+            sysMsg('Follow-up complete — open History to view.');
+          }
+        }
+      }catch(e){
+        /* Transient errors are swallowed; ceiling will eventually stop us. */
+        console.log('v5.10c-fu2 checkInFlightFollowUps poll error:',e&&e.message);
+      }
+    },5000);
+  }catch(e){
+    /* Initial fetch failed — silently no banner. Worst case the user is
+       back to v5.10c behaviour: answer still lands in conversation_history
+       via the worker. */
+    console.log('v5.10c-fu2 checkInFlightFollowUps initial fetch error:',e&&e.message);
+  }
 }
 
 /* Matter left tab switching */

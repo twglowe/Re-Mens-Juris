@@ -1,4 +1,19 @@
-/* EX LIBRIS JURIS v5.10b — public/js/tools.js
+/* EX LIBRIS JURIS v5.10d — public/js/tools.js
+   v5.10d (29 Apr 2026) — Push v5.10d (Briefing Note launch document picker):
+   1. The briefing toolDef body() now renders a document picker beneath the
+      existing "Additional Instructions" textarea, mirroring the Issues
+      picker (id="briefingFocusDocList"). The picker is collapsed by
+      default; if the matter has zero documents the picker is omitted
+      entirely so only the textarea is shown.
+   2. The Run-button handler reads the picker (when pendingTool==='briefing')
+      and writes the ticked names to body.includeDocNames, OVERRIDING any
+      value set by the folder filter for this run. The briefing branch of
+      worker.js already filters chunks by includeDocNames (line ~1150),
+      so no backend change is needed for v5.10d.
+   3. With nothing ticked, the wire payload is byte-identical to v5.10c.
+   Frontend-only push. api/tools.js, api/worker.js, api/jobs.js, core.js,
+   library.js, drafting.js and diagram.js are untouched.
+
    v5.10b (27 Apr 2026) — Push v5.10b (Issues follow-up focus widget):
    1. Two one-line additions: after the polling-completion handler renders
       the Issues main bubble (line ~707), and after the in-page history
@@ -62,7 +77,14 @@ var toolDefs={
     +(documents.filter(function(d){return d.doc_type==='Case Law';}).length===0?'<div style="font-size:.84rem;color:var(--text-faint);padding:.3rem">No case law documents uploaded.</div>':'')
     +'</div>'
     +'<p style="font-size:.84rem;color:var(--text-faint)">Upload the relevant case law before running this tool.</p>';}},
-  briefing:{title:'📋 Briefing Note',body:function(){return '<p class="tool-desc">Produces a structured briefing note: sets out the issues, explains common ground and admissions, then analyses how the case can be established on disputed matters.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Written for a colleague unfamiliar with the matter"></textarea>';}},
+  briefing:{title:'📋 Briefing Note',body:function(){return '<p class="tool-desc">Produces a structured briefing note: sets out the issues, explains common ground and admissions, then analyses how the case can be established on disputed matters.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Written for a colleague unfamiliar with the matter"></textarea>'
+    +(documents.length===0?'':'<div class="focus-label" style="margin-top:.6rem">Limit to specific documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>'
+      +'<details style="border:1px solid var(--border);border-radius:6px;padding:.4rem .55rem;background:var(--surface)">'
+      +'<summary style="cursor:pointer;font-size:.84rem;color:var(--text-mid);user-select:none">Pick documents to focus on \u2026 <span style="color:var(--text-faint);font-weight:400">(leave collapsed for none)</span></summary>'
+      +'<div class="anchor-list" id="briefingFocusDocList" style="margin-top:.5rem;max-height:160px">'
+      +documents.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).map(function(d){return '<label class="anchor-item"><input type="checkbox" value="'+esc(d.name)+'"> '+esc(d.name)+' <span style="color:var(--text-faint);font-size:.72rem">['+d.doc_type+']</span></label>';}).join('')
+      +'</div></details>');
+  }},
   issueBriefing:{title:'📝 Issue Briefing',body:function(){return '<p class="tool-desc">Produces a detailed briefing on selected issues: commentary, document references, and strengths and weaknesses for each party.</p><p style="font-size:.84rem;color:var(--text-faint)">Issues are pre-selected from the Issue Tracker output.</p>';}},
   diagram:{title:'📈 Relationship Diagram',body:function(){return '<p class="tool-desc">Entity relationship diagram generated from the Dramatis Personae analysis.</p>';}}
 };
@@ -381,12 +403,26 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     var seEl=document.getElementById('issuesSubElement');if(seEl)issuesSubElement=seEl.value.trim();
     document.querySelectorAll('#issuesFocusDocList input:checked').forEach(function(cb){issuesFocusDocNames.push(cb.value);});
   }
+  /* v5.10d: Briefing Note launch document picker. Read ticked checkboxes
+     from #briefingFocusDocList. When non-empty, this list OVERRIDES the
+     folder-filter result (resolveIncludeDocNames below) for this run \u2014
+     i.e. modal selection wins per the design spec. When empty (picker
+     collapsed or no boxes ticked), the folder filter still applies as
+     normal. */
+  var briefingFocusDocNames=[];
+  if(pendingTool==='briefing'){
+    document.querySelectorAll('#briefingFocusDocList input:checked').forEach(function(cb){briefingFocusDocNames.push(cb.value);});
+  }
   /* v3.4: Collect document exclusions from filter */
   var excludeDocNames=getExcludedDocNames();
   var excludeDocTypes=getExcludedDocTypes();
   /* v5.0: Resolve folder filter selection → list of document names to include.
      Returns null when "All documents" is selected, meaning no include filter. */
   var includeDocNames=resolveIncludeDocNames();
+  /* v5.10d: modal picker overrides folder filter when documents are ticked */
+  if(briefingFocusDocNames.length>0){
+    includeDocNames=briefingFocusDocNames;
+  }
   /* v5.5a: Empty-filter guard. If the folder/document filter resolves to
      zero documents, warn the user rather than sending an empty prompt to
      Claude (which returns a useless "no documents provided" template). */

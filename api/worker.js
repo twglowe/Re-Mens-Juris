@@ -1,6 +1,22 @@
-/* EX LIBRIS JURIS v5.10a — worker.js
+/* EX LIBRIS JURIS v5.10e — worker.js
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
+
+   v5.10e CHANGES (30 Apr 2026) — Push v5.10e (Briefing Note run-parameters block):
+   1. Briefing Note output now records, at the top of the saved result, what
+      was specified at launch:
+        - "**Additional instructions:** ..." (when instructions non-empty)
+        - "**Restricted to:** doc1, doc2, doc3" (when includeDocNames non-empty)
+      Block only appears if at least one of the two parameters was set; if
+      neither, the saved result is byte-identical to v5.10d. The block is
+      built by string concatenation (worker-built, NOT model-built) so the
+      values are exactly what arrived in the job parameters.
+   2. Inserted between line 1171 (`result = r.text; ...`) and the closing
+      brace of the briefing branch. No prompt-logic changes; sectionHeaders,
+      completionMandate, briefingHeader, briefingFocus all unchanged.
+   3. Applies to launch only. Follow-ups go through a different code path
+      and are not affected.
+   4. Version banner bumped to v5.10e. No other behavioural change.
 
    v5.10a CHANGES (27 Apr 2026) — Push v5.10a (Issues focus widget):
    1. Read two new optional parameters from p: subElement, focusDocNames.
@@ -1169,6 +1185,23 @@ export default async function handler(req, res) {
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
+
+      /* v5.10e: prepend a "Run parameters" block recording what was specified
+         at launch. Worker-built (not model-built) so the values are exactly
+         what was sent. Block only appears when at least one parameter was
+         set; if neither, output is byte-identical to v5.10d. Applies to
+         launch only — follow-ups are unaffected because they go through a
+         different code path. */
+      var runParamsLines = [];
+      if (instructions && String(instructions).trim()) {
+        runParamsLines.push("**Additional instructions:** " + String(instructions).trim());
+      }
+      if (Array.isArray(includeDocNames) && includeDocNames.length > 0) {
+        runParamsLines.push("**Restricted to:** " + includeDocNames.join(", "));
+      }
+      if (runParamsLines.length > 0) {
+        result = runParamsLines.join("\n") + "\n\n" + result;
+      }
     }
 
     /* ── DRAFT GENERATOR ───────────────────────────────────────────────── */

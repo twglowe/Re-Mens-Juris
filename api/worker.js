@@ -1,6 +1,24 @@
-/* EX LIBRIS JURIS v5.10e — worker.js
+/* EX LIBRIS JURIS v5.11a — worker.js
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
+
+   v5.11a CHANGES (30 Apr 2026) — Push v5.11a (Draft Build 1):
+   1. Read two new optional draft-only fields from p:
+        matterToolHistory: array of {tool_name, question, answer} for the
+          most-recent analysis-tool result of each tool in this matter.
+        learnFromComparable: boolean, default true. Wired through but the
+          comparable-document hunt itself is built in a later push.
+      Both fields default safely; behaviour for every non-draft tool is
+      unchanged, and behaviour for any draft job that lacks them is
+      unchanged.
+   2. In the draft branch only: build toolHistoryText from
+      matterToolHistory and prepend it to systemBase as "WHAT WE ALREADY
+      KNOW ABOUT THIS MATTER", positioned between matterContext and
+      libraryText. Empty array \u2192 empty string \u2192 no behaviour change.
+   3. learnFromComparable currently only logged. The hunt is Build 3.
+   4. No prompt-logic changes for any other tool. No changes to extraction
+      or synthesis prompts. Only the system prompt for draft is touched.
+   5. Version banner bumped to v5.11a.
 
    v5.10e CHANGES (30 Apr 2026) — Push v5.10e (Briefing Note run-parameters block):
    1. Briefing Note output now records, at the top of the saved result, what
@@ -925,6 +943,15 @@ export default async function handler(req, res) {
     /* v5.0: includeDocNames is the folder filter — frontend resolves selected
        folders to document names and passes them here. Empty = no filter. */
     var includeDocNames = p.includeDocNames || [];
+    /* v5.11a (Draft Build 1): two new draft-only fields.
+       matterToolHistory: array of {tool_name, question, answer} for the
+         most-recent analysis-tool result of each tool, used as background
+         context in the draft prompt.
+       learnFromComparable: boolean flag for the cross-matter comparable-
+         document hunt. Currently only logged; the hunt is built in a later
+         build. */
+    var matterToolHistory = Array.isArray(p.matterToolHistory) ? p.matterToolHistory : [];
+    var learnFromComparable = (p.learnFromComparable !== false);
 
     /* v5.10a: Issues focus widget. Two optional fields sent by the new
        launch modal for the Issues tool. The "Question to develop"
@@ -1274,6 +1301,23 @@ export default async function handler(req, res) {
         }
       } catch (e) { console.log("Past drafts fetch skipped:", e.message); }
 
+      /* v5.11a (Draft Build 1): tool-history context. The frontend has
+         already truncated each answer; we just format. No DB call needed
+         here — the data arrives in the job parameters. */
+      var toolHistoryText = "";
+      if (matterToolHistory.length > 0) {
+        var TOOL_LABELS = { briefing: "Briefing Note", issues: "Issues", chronology: "Chronology", dramatis: "Dramatis Personae", citations: "Citations Check", inconsistency: "Inconsistency Tracker", proposition: "Proposition Tracker", issueBriefing: "Issue Briefing" };
+        var historyEntries = matterToolHistory.map(function(h) {
+          var label = TOOL_LABELS[h.tool_name] || h.tool_name;
+          return "--- " + label + " ---\n" + (h.answer || "");
+        }).join("\n\n");
+        toolHistoryText = "\n\n# WHAT WE ALREADY KNOW ABOUT THIS MATTER\n\nThe following are the most recent analysis-tool outputs from this matter. They summarise the case as it stands. Use them to orient yourself before reading the source documents below \u2014 facts, parties, issues, procedural posture, and known evidence are already laid out here. Do not contradict them unless the source documents below clearly require it.\n\n" + historyEntries;
+      }
+
+      /* v5.11a (Draft Build 1): record the comparable-document hunt flag.
+         The hunt itself is built in a later push; for now we just log. */
+      console.log("[draft] learnFromComparable =", learnFromComparable);
+
       var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
 
@@ -1281,7 +1325,7 @@ export default async function handler(req, res) {
         ? "\n\nIMPORTANT: Begin the document with this exact court heading (do not alter the heading itself):\n\n" + headingText + "\n\nThen continue with the body of the document."
         : "";
 
-      var systemBase = "You are a senior litigation counsel in " + jur + " drafting a legal document for \"" + matterName + "\". Apply " + jur + " law, procedure, and drafting conventions." + (actingFor ? " You are acting for the " + actingFor + "." : "") + "\n\nCRITICAL INSTRUCTIONS:\n1. If precedent documents are provided below, you MUST study them first. Learn their structure, standard sections, argument methods, heading hierarchy, and language style. Replicate this approach in your draft.\n2. If commentary or AI instructions are attached to a precedent, follow them precisely \u2014 they contain the author\u2019s specific guidance on how to use that document.\n3. If previous drafts for this matter exist, maintain consistency with their style, terminology, and argument structure.\n4. Apply " + jur + " court rules and conventions throughout.\n\n" + matterContext + libraryText + learningText + headingInstruction;
+      var systemBase = "You are a senior litigation counsel in " + jur + " drafting a legal document for \"" + matterName + "\". Apply " + jur + " law, procedure, and drafting conventions." + (actingFor ? " You are acting for the " + actingFor + "." : "") + "\n\nCRITICAL INSTRUCTIONS:\n1. If precedent documents are provided below, you MUST study them first. Learn their structure, standard sections, argument methods, heading hierarchy, and language style. Replicate this approach in your draft.\n2. If commentary or AI instructions are attached to a precedent, follow them precisely \u2014 they contain the author\u2019s specific guidance on how to use that document.\n3. If previous drafts for this matter exist, maintain consistency with their style, terminology, and argument structure.\n4. Apply " + jur + " court rules and conventions throughout.\n\n" + matterContext + toolHistoryText + libraryText + learningText + headingInstruction;
 
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract all facts, legal points, and arguments from batch " + batchNum + " of " + total + " relevant to: " + (instructions || "Draft a skeleton argument") + "\n\nDOCUMENTS:\n\n" + batchText; },

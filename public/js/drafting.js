@@ -1,4 +1,31 @@
 /* ── DRAFT TAB ────────────────────────────────────────────────────────────── */
+/* v5.11a (Draft Build 1) — 30 Apr 2026
+   1. Jurisdiction is read silently from the selected matter (currentMatter
+      or the matter chosen via draftMatterSelect). The global `jurisdiction`
+      variable is no longer used by the Draft tab.
+   2. draftAISuggestHeading reads up to 5 matter documents (was: 1).
+   3. New "Documents to exclude from this draft" picker; unticked matter
+      docs flow through to the worker as excludeDocNames.
+   4. Tool-history outputs (briefing / issues / chronology / etc.) for the
+      current matter are passed into the draft prompt as matterToolHistory.
+   5. New "Learn from comparable documents in other matters" checkbox,
+      default on. Wired through API as body.learnFromComparable but no
+      worker behaviour yet — that arrives in a later build. */
+
+/* draftJur — read jurisdiction from the matter currently selected in the
+   Draft tab, falling back to currentMatter, then to the global default.
+   The Draft tab does not consult the top-level jurisdiction selector. */
+function draftJur(){
+  var sel=document.getElementById('draftMatterSelect');
+  var id=sel?sel.value:'';
+  if(id){
+    var m=matters.find(function(x){return x.id===id;});
+    if(m&&m.jurisdiction)return m.jurisdiction;
+  }
+  if(currentMatter&&currentMatter.jurisdiction)return currentMatter.jurisdiction;
+  return 'Bermuda';
+}
+
 function libPopulateDraftSelects(){
   var ct=document.getElementById('draftCaseType');
   if(!ct)return;
@@ -85,7 +112,49 @@ async function loadDraftMatterDocs(matterId){
     draftSelectedDocs={src1:[],src2:[],src3:[],ctx:[]};
     draftSelectedPrecedents=[];
     renderDraftSelectedDocs('src1');renderDraftSelectedDocs('src2');renderDraftSelectedDocs('src3');renderDraftSelectedDocs('ctx');renderDraftSelectedPrecs();
+    /* v5.11a: populate "documents to exclude" picker (default: every doc ticked) */
+    populateDraftExcludePicker(docs);
   }catch(e){console.error('loadDraftMatterDocs:',e);}
+}
+
+/* v5.11a: populate the exclude picker. All docs ticked by default; unticked
+   docs flow into excludeDocNames at draft time. */
+function populateDraftExcludePicker(docs){
+  var wrap=document.getElementById('draftExcludeWrap');
+  var list=document.getElementById('draftExcludeList');
+  if(!wrap||!list)return;
+  if(!docs||!docs.length){wrap.style.display='none';return;}
+  wrap.style.display='';
+  list.innerHTML=docs.map(function(doc){
+    return '<label style="display:flex;align-items:center;gap:.4rem;padding:.15rem .25rem;cursor:pointer"><input type="checkbox" class="draft-exclude-cb" data-name="'+esc(doc.name)+'" checked onchange="updateDraftExcludeCounter()" style="margin:0"><span style="flex:1;font-size:.76rem">'+esc(doc.name)+'</span><span style="font-size:.68rem;color:var(--text-faint)">['+esc(doc.doc_type||'Other')+']</span></label>';
+  }).join('');
+  updateDraftExcludeCounter();
+}
+
+function updateDraftExcludeCounter(){
+  var counter=document.getElementById('draftExcludeCounter');
+  if(!counter)return;
+  var boxes=document.querySelectorAll('#draftExcludeList .draft-exclude-cb');
+  var total=boxes.length;
+  var ticked=0;
+  for(var i=0;i<boxes.length;i++){if(boxes[i].checked)ticked++;}
+  if(total===0){counter.textContent='';return;}
+  counter.textContent='('+ticked+' of '+total+' included)';
+}
+
+/* v5.11a: read currently-unticked doc names from the exclude picker.
+   Returns array of document names (matches the worker's excludeDocNames
+   contract — names not IDs). */
+function getDraftExcludeDocNames(){
+  var boxes=document.querySelectorAll('#draftExcludeList .draft-exclude-cb');
+  var excluded=[];
+  for(var i=0;i<boxes.length;i++){
+    if(!boxes[i].checked){
+      var name=boxes[i].getAttribute('data-name');
+      if(name)excluded.push(name);
+    }
+  }
+  return excluded;
 }
 
 function draftCaseTypeChanged(){
@@ -218,6 +287,30 @@ function getSelectedDocTypeName(){
   return '';
 }
 
+/* v5.11a: collect the most-recent analysis-tool result for each tool in
+   the current matter's history. Returns array of {tool_name, question, answer}.
+   Excludes 'draft' (worker already pulls past drafts separately) and
+   'diagram' (not useful as text context). Truncates each answer so we
+   stay inside the prompt budget. */
+function collectMatterToolHistory(){
+  if(!Array.isArray(matterHistory)||matterHistory.length===0)return [];
+  var SKIP={draft:1,diagram:1};
+  var TRUNC=4000;
+  var seen={};
+  var out=[];
+  /* matterHistory is in chronological order; walk newest-first. */
+  for(var i=matterHistory.length-1;i>=0;i--){
+    var h=matterHistory[i];
+    if(!h||!h.tool_name||SKIP[h.tool_name])continue;
+    if(seen[h.tool_name])continue;
+    seen[h.tool_name]=1;
+    var ans=h.answer||'';
+    if(ans.length>TRUNC)ans=ans.slice(0,TRUNC)+'\n\n[…truncated for context budget…]';
+    out.push({tool_name:h.tool_name,question:(h.question||'').slice(0,300),answer:ans});
+  }
+  return out;
+}
+
 /* Generate Draft */
 /* v3.4: generateDraft uses fire-and-poll background processing */
 async function generateDraft(){
@@ -231,7 +324,7 @@ async function generateDraft(){
   document.getElementById('draftGenerateBtn').disabled=true;
   var prog=document.getElementById('draftProgressMsg');prog.style.display='';prog.textContent='Submitting draft request\u2026';
   try{
-    var body={matterId:matterId,tool:'draft',instructions:instructions,jurisdiction:jurisdiction,actingFor:'',courtHeading:draftHeading};
+    var body={matterId:matterId,tool:'draft',instructions:instructions,jurisdiction:draftJur(),actingFor:'',courtHeading:draftHeading};
     if(ctId)body.caseTypeId=ctId;
     if(dtId)body.docTypeId=dtId;
     if(stId)body.subcatId=stId;
@@ -243,6 +336,16 @@ async function generateDraft(){
       var dtName='';var dt=libraryData.docTypes.find(function(d){return d.id===dtId;});if(dt)dtName=dt.name;
       body.libraryContext={selectedPrecedentIds:draftSelectedPrecedents.map(function(p){return p.id;}),caseTypeName:ctName,subcategoryName:stName,docTypeName:dtName};
     }
+    /* v5.11a: untick = exclude. Worker already supports excludeDocNames. */
+    var excluded=getDraftExcludeDocNames();
+    if(excluded.length>0)body.excludeDocNames=excluded;
+    /* v5.11a: pass most-recent analysis-tool result for each tool from this
+       matter's history into the prompt as background context. */
+    body.matterToolHistory=collectMatterToolHistory();
+    /* v5.11a: comparable-document hunt flag. Wired through; worker reads but
+       does not yet act on it (Build 3). */
+    var lcCb=document.getElementById('draftLearnComparable');
+    body.learnFromComparable=lcCb?!!lcCb.checked:true;
     var d=await api('/api/tools','POST',body);
     if(!d||!d.jobId)throw new Error('No jobId returned');
     prog.textContent='Generating draft\u2026 (processing in background, you can navigate away)';
@@ -292,7 +395,7 @@ function draftInsertAI(){
   var editor=document.getElementById('draftEditor');
   var currentContent=editor.innerText||editor.textContent;
   var matterId=document.getElementById('draftMatterSelect').value;
-  api('/api/analyse','POST',{matterId:matterId,matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are editing a legal draft document. Current draft text:\n\n'+currentContent+'\n\nInstruction: '+instruction+'\n\nReturn the complete updated document incorporating the instruction.'}],jurisdiction:jurisdiction,queryType:'Document Drafting',focusAreas:[]}).then(function(d){
+  api('/api/analyse','POST',{matterId:matterId,matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are editing a legal draft document. Current draft text:\n\n'+currentContent+'\n\nInstruction: '+instruction+'\n\nReturn the complete updated document incorporating the instruction.'}],jurisdiction:draftJur(),queryType:'Document Drafting',focusAreas:[]}).then(function(d){
     if(d&&d.result){editor.innerHTML=renderMd(d.result);showToast('AI insert applied');}
   }).catch(function(e){showToast('AI error: '+e.message);});
 }
@@ -310,8 +413,8 @@ async function draftAISuggestHeading(matterId){
       matterId:matterId,
       matterName:currentMatter?currentMatter.name:'',
       matterNature:'',matterIssues:'',
-      messages:[{role:'user',content:'Read the first document in this matter and extract the case heading information. Return ONLY a JSON object with these fields (use empty string if not found): court, caseNo, party1, party1Role, party2, party2Role, docTitle. For example: {"court":"IN THE SUPREME COURT OF BERMUDA","caseNo":"Civil Jurisdiction 2024 No. 123","party1":"SMITH","party1Role":"Plaintiff","party2":"JONES LIMITED","party2Role":"Defendant","docTitle":"SKELETON ARGUMENT"}. Return ONLY the JSON, no other text.'}],
-      jurisdiction:jurisdiction,
+      messages:[{role:'user',content:'Look across the matter documents and extract the case heading information. Look first at pleadings (writ, claim form, statement of claim, defence, petition, notice of appeal) and any case-management orders, since these usually carry the most accurate court name, case/cause number, and party titles. If those are not present, look at any covering letters, indexes, or correspondence headers. Return ONLY a JSON object with these fields (use empty string if not found): court, caseNo, party1, party1Role, party2, party2Role, docTitle. For example: {"court":"IN THE SUPREME COURT OF BERMUDA","caseNo":"Civil Jurisdiction 2024 No. 123","party1":"SMITH","party1Role":"Plaintiff","party2":"JONES LIMITED","party2Role":"Defendant","docTitle":"SKELETON ARGUMENT"}. Return ONLY the JSON, no other text.'}],
+      jurisdiction:draftJur(),
       queryType:'Factual Analysis',
       focusAreas:[]
     });
@@ -510,7 +613,7 @@ async function draftDialogueSend(){
   var matterId=document.getElementById('draftMatterSelect').value;
   showToast('Updating draft…');
   try{
-    var d=await api('/api/analyse','POST',{matterId:matterId,matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are editing a legal draft document. Current draft:\n\n'+currentContent+'\n\nFurther instruction: '+text+'\n\nReturn the complete updated document.'}],jurisdiction:jurisdiction,queryType:'Document Drafting',focusAreas:[]});
+    var d=await api('/api/analyse','POST',{matterId:matterId,matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are editing a legal draft document. Current draft:\n\n'+currentContent+'\n\nFurther instruction: '+text+'\n\nReturn the complete updated document.'}],jurisdiction:draftJur(),queryType:'Document Drafting',focusAreas:[]});
     if(d&&d.result){editor.innerHTML=renderMd(d.result);showToast('Draft updated');}
   }catch(e){showToast('Error: '+e.message);}
 }

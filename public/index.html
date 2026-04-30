@@ -842,6 +842,18 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
             </div>
             <div class="draft-sec-body" id="draftInstructionsBody" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
               <textarea class="draft-instructions-area" id="draftMainInstructions" style="flex:1;min-height:300px;resize:none" placeholder="Set out detailed instructions for the preparation of this document.&#10;&#10;Describe the structure you want, the arguments to make, the issues to address, specific points to include, and any particular approach or style.&#10;&#10;The more detail you provide here, the better the draft will be. You can reference documents from Sector 2, library precedents, and any other material the AI should consider."></textarea>
+              <!-- v5.11a (Draft Build 1): launch controls — exclude picker + comparable-learning checkbox -->
+              <details id="draftExcludeWrap" style="margin:.5rem 0;border:1px solid var(--border);border-radius:6px;background:var(--off-white);font-size:.78rem;display:none">
+                <summary style="padding:.4rem .6rem;cursor:pointer;font-weight:600;color:var(--text)">Documents the AI will read for this draft <span id="draftExcludeCounter" style="font-weight:400;color:var(--text-faint)"></span></summary>
+                <div style="padding:.3rem .6rem .55rem">
+                  <div style="font-size:.72rem;color:var(--text-faint);margin-bottom:.35rem">By default the AI reads every document in this matter. Untick any document you want the AI to ignore for this draft.</div>
+                  <div id="draftExcludeList" style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:.15rem"></div>
+                </div>
+              </details>
+              <label style="display:flex;align-items:center;gap:.45rem;margin:.35rem 0;font-size:.78rem;color:var(--text);cursor:pointer">
+                <input type="checkbox" id="draftLearnComparable" checked style="margin:0">
+                <span>Learn from comparable documents in other matters</span>
+              </label>
               <div id="draftProgressMsg" style="display:none;padding:.5rem;background:var(--blue-pale);border-radius:6px;font-size:.82rem;font-weight:600;color:var(--blue)">Generating draft… this may take several minutes.</div>
             </div>
             <div class="draft-output-wrap hidden" id="draftOutputWrap">
@@ -1160,9 +1172,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js?v=5.10e"></script>
-<script src="/js/tools.js?v=5.10e"></script>
-<script src="/js/library.js?v=5.10e"></script>
-<script src="/js/drafting.js?v=5.10e"></script>
-<script src="/js/diagram.js?v=5.10e"></script>
+<script src="/js/core.js?v=5.11a"></script>
+<script src="/js/tools.js?v=5.11a"></script>
+<script src="/js/library.js?v=5.11a"></script>
+<script src="/js/drafting.js?v=5.11a"></script>
+<script src="/js/diagram.js?v=5.11a"></script>
 </body></html>

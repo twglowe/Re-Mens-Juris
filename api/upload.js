@@ -1,9 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 
-/* v5.4: serverVersion marker. Bumped from v5.2b to v5.4 — adds file_size
-   and doc_date columns to the documents insert. The bump itself also
-   serves as a Vercel rebuild trigger per the v5.2b lesson. */
-const SERVER_VERSION = "v5.4";
+/* v5.12a: serverVersion bumped from v5.4. Fires fingerprint.js
+   asynchronously after a successful upload so the document is fingerprinted
+   without blocking the upload response. Same fire-and-forget pattern that
+   tools.js uses to call worker.js. The fingerprint endpoint itself is
+   idempotent — if it fails, the user can press the "Index N documents"
+   button in the Library tab to retry.
+   v5.4: serverVersion marker. Adds file_size and doc_date columns to the
+   documents insert. */
+const SERVER_VERSION = "v5.12a";
 
 /* ── v5.2b: Force Vercel rebuild ──────────────────────────────────────────
    v5.2 shipped with batched-upload server-side code, but Vercel's build
@@ -75,6 +80,38 @@ export const config = { maxDuration: 300, api: { bodyParser: { sizeLimit: "50mb"
    this file consistent with folders.js / documents.js / worker.js. */
 function freshClient() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+}
+
+/* v5.12a: fire-and-forget fingerprint kick-off. Called from both upload
+   finalisation paths (single-POST and last-batch). Same pattern tools.js
+   uses to fire worker.js — no await, no AbortController. If the fetch
+   doesn't reach (Vercel cold start, network hiccup, rate limit), nothing
+   breaks: the document just doesn't have a fingerprint until the user
+   presses "Index N documents" in the Library tab.
+
+   The shared secret authenticates the call. If the env var is missing the
+   fingerprinter will reject the request and the document stays unindexed
+   — fail-soft. */
+function fireFingerprint(host, documentId) {
+  try {
+    var secret = process.env.FINGERPRINT_INTERNAL_SECRET || "";
+    if (!secret) {
+      console.log("v5.12a upload: FINGERPRINT_INTERNAL_SECRET not set, skipping fingerprint fire");
+      return;
+    }
+    var url = "https://" + host + "/api/fingerprint?documentId=" + documentId;
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Secret": secret,
+      },
+    }).catch(function(e) {
+      console.log("v5.12a upload: fingerprint fire-and-forget (expected):", e.message);
+    });
+  } catch (e) {
+    console.log("v5.12a upload: fingerprint kickoff threw, ignoring:", e.message);
+  }
 }
 
 /* ── v4.3c: TEXT SANITISATION ────────────────────────────────────────────
@@ -340,6 +377,12 @@ export default async function handler(req, res) {
         await supabase.from("matters")
           .update({ document_count: matterDocCount || 0 })
           .eq("id", matterId);
+
+        /* v5.12a: fire fingerprint asynchronously on the last batch only.
+           Skipping intermediate batches — there's no document to
+           fingerprint until the bundle is complete. */
+        fireFingerprint(req.headers.host, documentId);
+
         return res.status(200).json({
           success: true, documentId: documentId,
           chunks: chunkRows.length, characters: extractedText.length,
@@ -443,6 +486,9 @@ export default async function handler(req, res) {
     await supabase.from("documents").update({ chunk_count: chunkRows.length }).eq("id", doc.id);
     const { count } = await supabase.from("documents").select("*", { count: "exact", head: true }).eq("matter_id", matterId);
     await supabase.from("matters").update({ document_count: count || 0 }).eq("id", matterId);
+
+    /* v5.12a: fire fingerprint asynchronously. Doesn't affect response. */
+    fireFingerprint(req.headers.host, doc.id);
 
     return res.status(200).json({
       success: true, documentId: doc.id,

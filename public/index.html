@@ -221,6 +221,36 @@ select.qtype{padding:.3rem .5rem;border:1.5px solid var(--border);border-radius:
 .lib-item-tags{display:flex;gap:.3rem;margin-top:.3rem;flex-wrap:wrap}
 .lib-tag{font-size:.68rem;padding:.1rem .4rem;border-radius:10px;background:var(--blue-faint);color:var(--blue);border:1px solid var(--border);font-weight:600}
 .lib-tag.section{background:#f0f8f0;color:#2d7a2d;border-color:#b0d8b0}
+/* v5.12a — Matter document index indicator */
+.lib-index-wrap{padding:.5rem .6rem 0;flex-shrink:0}
+.lib-index-block{padding:.55rem .6rem;border-radius:6px;display:flex;flex-direction:column;gap:.35rem;border:1.5px solid var(--border)}
+.lib-index-info{background:var(--blue-pale);border-color:var(--blue-light)}
+.lib-index-warning{background:#fdf3e7;border-color:var(--warning)}
+.lib-index-quiet{background:var(--off-white);border-color:var(--border)}
+.lib-index-row{display:flex;justify-content:space-between;align-items:center;gap:.5rem}
+.lib-index-title{font-size:.78rem;font-weight:700;color:var(--text-mid);letter-spacing:.02em}
+.lib-index-info .lib-index-title{color:var(--blue)}
+.lib-index-warning .lib-index-title{color:var(--warning)}
+.lib-index-count{font-size:.72rem;color:var(--text-faint);font-weight:600;white-space:nowrap}
+.lib-index-info .lib-index-count{color:var(--blue)}
+.lib-index-warning .lib-index-count{color:var(--warning)}
+.lib-index-success-text{color:var(--success)!important}
+.lib-index-explain{font-size:.72rem;color:var(--blue);line-height:1.45}
+.lib-index-progress{height:4px;background:var(--white);border-radius:2px;overflow:hidden;width:100%}
+.lib-index-progress-fill{height:100%;background:var(--blue-light);transition:width .4s}
+.lib-index-actions{display:flex;gap:.4rem;align-items:center;margin-top:.15rem}
+.lib-index-btn-primary{flex:1;padding:.35rem .55rem;border-radius:5px;border:1.5px solid var(--blue-light);background:var(--white);color:var(--blue);font-size:.78rem;font-weight:700;cursor:pointer;font-family:'Source Sans 3',sans-serif}
+.lib-index-btn-primary:hover{background:var(--blue-pale)}
+.lib-index-warning .lib-index-btn-primary{border-color:var(--warning);color:var(--warning)}
+.lib-index-warning .lib-index-btn-primary:hover{background:#fdf3e7}
+.lib-index-btn-secondary{flex:1;padding:.32rem .55rem;border-radius:5px;border:1.5px solid var(--border);background:var(--white);color:var(--text-mid);font-size:.78rem;font-weight:600;cursor:pointer;font-family:'Source Sans 3',sans-serif}
+.lib-index-btn-secondary:hover{background:var(--off-white)}
+.lib-index-btn-link{padding:.32rem .4rem;background:transparent;border:none;color:var(--warning);font-size:.72rem;text-decoration:underline;cursor:pointer;font-family:'Source Sans 3',sans-serif}
+.lib-index-fail-list{margin-top:.3rem;padding:.45rem;background:var(--white);border:1px solid var(--warning);border-radius:5px;display:flex;flex-direction:column;gap:.5rem;max-height:200px;overflow-y:auto}
+.lib-index-fail-item{font-size:.72rem;line-height:1.4}
+.lib-index-fail-name{font-weight:700;color:var(--text-dark);margin-bottom:.1rem;word-break:break-word}
+.lib-index-fail-reason{color:var(--text-mid)}
+.lib-index-fail-matter{color:var(--text-faint);font-size:.66rem;margin-top:.1rem}
 /* Library modal */
 .lib-modal-tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:1rem}
 .lib-modal-tab{padding:.5rem 1rem;border:none;background:transparent;font-family:'Source Sans 3',sans-serif;font-size:.88rem;font-weight:600;color:var(--text-faint);cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px}
@@ -577,6 +607,8 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <span class="panel-head-title">Precedent Library</span>
           <button class="btn-add" onclick="libNewPrecedent()">+ New</button>
         </div>
+        <!-- v5.12a: matter-document index indicator (states A-E rendered by libIndexRender) -->
+        <div class="lib-index-wrap"><div id="libIndexIndicator" style="display:none"></div></div>
         <div style="padding:.45rem .6rem;border-bottom:1px solid var(--border);flex-shrink:0">
           <input class="lib-search-input" id="libSearchInput" placeholder="Search precedents…" oninput="libFilterSearch()">
           <div style="display:flex;gap:.25rem;margin-bottom:.25rem;align-items:center">
@@ -1172,9 +1204,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js?v=5.11a"></script>
-<script src="/js/tools.js?v=5.11a"></script>
-<script src="/js/library.js?v=5.11a"></script>
-<script src="/js/drafting.js?v=5.11a"></script>
-<script src="/js/diagram.js?v=5.11a"></script>
+<script src="/js/core.js?v=5.12a"></script>
+<script src="/js/tools.js?v=5.12a"></script>
+<script src="/js/library.js?v=5.12a"></script>
+<script src="/js/drafting.js?v=5.12a"></script>
+<script src="/js/diagram.js?v=5.12a"></script>
 </body></html>

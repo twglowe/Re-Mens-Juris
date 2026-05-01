@@ -1,4 +1,138 @@
 /* ── LIBRARY ──────────────────────────────────────────────────────────────── */
+/* v5.12a: matter-document index indicator state machine. Lives at the top of
+   the Library left panel above the Precedent search. The whole thing is
+   driven by the status returned by GET /api/index-library?action=status,
+   which gives us {total, fingerprinted, failed, unindexed, failures}.
+
+   Five visible states, mapped from the status fields:
+     A — total > 0 AND unindexed === total                  (cold, never indexed)
+     B — _indexingInProgress flag set client-side           (running, polling)
+     C — unindexed > 0 AND fingerprinted > 0                (caught up + new docs)
+     D — unindexed === 0 AND failed === 0 AND total > 0     (fully indexed)
+     E — failed > 0                                          (has failures)
+
+   States E and D can coexist — if some failed and the rest succeeded we
+   still show E (the warning takes priority).
+
+   Polling: while state B is active, poll every 4 seconds. The button-press
+   handler sets _indexingInProgress=true, fires off /api/index-library
+   action=index, and starts the poll. Pass the response back to render. */
+
+var _libIndexState = { total: 0, fingerprinted: 0, failed: 0, unindexed: 0, failures: [] };
+var _libIndexInProgress = false;
+var _libIndexPollTimer = null;
+var _libIndexFailuresExpanded = false;
+
+async function libIndexLoadStatus(){
+  if(!token)return null;
+  try{
+    var resp=await api('/api/index-library?action=status');
+    if(resp&&resp.status){
+      _libIndexState=resp.status;
+      libIndexRender();
+      return resp.status;
+    }
+  }catch(e){
+    console.error('libIndexLoadStatus error:',e);
+  }
+  return null;
+}
+
+function libIndexRender(){
+  var wrap=document.getElementById('libIndexIndicator');
+  if(!wrap)return;
+  var s=_libIndexState;
+  var html='';
+
+  if(_libIndexInProgress){
+    /* State B — in progress */
+    var done=s.fingerprinted+s.failed;
+    var pct=s.total>0?Math.round((done/s.total)*100):0;
+    html='<div class="lib-index-block lib-index-info">'
+      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count">'+done+' of '+s.total+'</span></div>'
+      +'<div class="lib-index-progress"><div class="lib-index-progress-fill" style="width:'+pct+'%"></div></div>'
+      +'<div class="lib-index-explain">Indexing\u2026 You can keep using the app. This window updates every few seconds.</div>'
+      +'</div>';
+  }else if(s.total===0){
+    /* No documents at all — hide */
+    wrap.innerHTML='';
+    wrap.style.display='none';
+    return;
+  }else if(s.failed>0){
+    /* State E — has failures (priority over caught-up) */
+    var detailHtml='';
+    if(_libIndexFailuresExpanded&&s.failures&&s.failures.length){
+      var items=s.failures.map(function(f){
+        return '<div class="lib-index-fail-item">'
+          +'<div class="lib-index-fail-name">'+esc(f.document_name||'(unknown)')+'</div>'
+          +'<div class="lib-index-fail-reason">'+esc(f.reason||'Unknown reason.')+'</div>'
+          +'<div class="lib-index-fail-matter">Matter: '+esc(f.matter_name||'(unknown)')+'</div>'
+          +'</div>';
+      }).join('');
+      detailHtml='<div class="lib-index-fail-list">'+items+'</div>';
+    }
+    var unindexedPlusFailed=s.failed+s.unindexed;
+    var btnLabel=s.unindexed>0?('Index '+unindexedPlusFailed+' documents'):('Retry '+s.failed+' failed');
+    html='<div class="lib-index-block lib-index-warning">'
+      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count">'+s.fingerprinted+' indexed \u00b7 '+s.failed+' failed</span></div>'
+      +detailHtml
+      +'<div class="lib-index-actions">'
+      +'<button class="lib-index-btn-primary" onclick="libIndexStart('+(s.unindexed>0?'false':'true')+')">'+btnLabel+'</button>'
+      +'<button class="lib-index-btn-link" onclick="libIndexToggleFailures()">'+(_libIndexFailuresExpanded?'Hide details':'Show details')+'</button>'
+      +'</div>'
+      +'</div>';
+  }else if(s.unindexed===0){
+    /* State D — fully indexed */
+    html='<div class="lib-index-block lib-index-quiet">'
+      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count lib-index-success-text">All '+s.total+' indexed</span></div>'
+      +'</div>';
+  }else if(s.fingerprinted===0){
+    /* State A — cold start */
+    html='<div class="lib-index-block lib-index-info">'
+      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count">0 of '+s.total+'</span></div>'
+      +'<div class="lib-index-explain">Indexing your matter documents lets the AI find structural precedents from your own work when drafting.</div>'
+      +'<button class="lib-index-btn-primary" onclick="libIndexStart(false)">Index '+s.total+' documents</button>'
+      +'</div>';
+  }else{
+    /* State C — caught up with new docs */
+    html='<div class="lib-index-block lib-index-quiet">'
+      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count">'+s.fingerprinted+' of '+s.total+'</span></div>'
+      +'<button class="lib-index-btn-secondary" onclick="libIndexStart(false)">Index '+s.unindexed+' new document'+(s.unindexed===1?'':'s')+'</button>'
+      +'</div>';
+  }
+  wrap.innerHTML=html;
+  wrap.style.display='block';
+}
+
+function libIndexToggleFailures(){
+  _libIndexFailuresExpanded=!_libIndexFailuresExpanded;
+  libIndexRender();
+}
+
+async function libIndexStart(retryFailed){
+  if(_libIndexInProgress)return;
+  _libIndexInProgress=true;
+  _libIndexFailuresExpanded=false;
+  libIndexRender();
+  /* Start polling status while the long indexing call runs */
+  if(_libIndexPollTimer)clearInterval(_libIndexPollTimer);
+  _libIndexPollTimer=setInterval(libIndexLoadStatus,4000);
+  try{
+    var endpoint='/api/index-library';
+    var body={action:retryFailed?'retry':'index'};
+    if(retryFailed)body.retryFailed=true;
+    await api(endpoint,'POST',body);
+  }catch(e){
+    console.error('libIndexStart error:',e);
+    showToast('Indexing error: '+e.message);
+  }finally{
+    _libIndexInProgress=false;
+    if(_libIndexPollTimer){clearInterval(_libIndexPollTimer);_libIndexPollTimer=null;}
+    /* One final status refresh after the call returns */
+    await libIndexLoadStatus();
+  }
+}
+
 async function loadLibrary(){
   if(!token)return;
   try{
@@ -11,6 +145,8 @@ async function loadLibrary(){
     libPopulateSearchFilters();
     libFilterSearch();
     libPopulateDraftSelects();
+    /* v5.12a: refresh the matter-document index status indicator */
+    libIndexLoadStatus();
   }catch(e){console.error('Library load error:',e);}
 }
 

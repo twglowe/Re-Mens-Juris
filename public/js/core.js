@@ -240,6 +240,12 @@ async function selectMatter(id){
      "followup:" in status pending or running. No DOM other than sysMsg
      banners. Polls every 5s. Stops automatically on matter switch. */
   if(typeof checkInFlightFollowUps==='function')checkInFlightFollowUps(id);
+  /* v5.13b: if the user is currently on the Draft tab when selecting a
+     matter, refresh it so it picks up the new matter context. */
+  var draftCentre=document.getElementById('draftCentrePanel');
+  if(draftCentre&&draftCentre.style.display!=='none'&&typeof onDraftTabActivated==='function'){
+    onDraftTabActivated();
+  }
 }
 
 /* ── v5.10c-fu2: IN-FLIGHT FOLLOW-UP BANNER ON MATTER LOAD ───────────────
@@ -2447,6 +2453,8 @@ function switchMainNav(nav){
     draftCentre.style.display='flex';
     if(rightPanel)rightPanel.style.display='none';
     libPopulateDraftSelects();
+    /* v5.13b: sync Draft tab to currentMatter on every activation. */
+    if(typeof onDraftTabActivated==='function')onDraftTabActivated();
   }
 }
 

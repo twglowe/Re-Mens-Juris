@@ -192,6 +192,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { planSections as planSectionsLib, synthesiseSections as synthesiseSectionsLib } from "./lib/sectioned_synth.js";
+import { classifyDocumentForType } from "./document-classifier.js";
 
 export const config = { maxDuration: 800 };
 
@@ -901,7 +902,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
    the function alive as long as the response has not been sent.
    ══════════════════════════════════════════════════════════════════════════ */
 
-const SERVER_VERSION = "v5.9b";
+const SERVER_VERSION = "v5.13a";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " worker handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -1318,6 +1319,111 @@ export default async function handler(req, res) {
          The hunt itself is built in a later push; for now we just log. */
       console.log("[draft] learnFromComparable =", learnFromComparable);
 
+      /* v5.13a (Draft Build 3): structural-precedent hunt across all of
+         the user's matters. Gated by learnFromComparable. Wrapped in
+         outer try/catch so any failure path leaves the draft behaviour
+         identical to v5.12b. Per-candidate try/catch inside ensures one
+         bad doc doesn't kill the hunt. 45-second wall-clock budget on
+         classifier calls so cache misses can't blow the Vercel timeout.
+         The cache in document_classifications means second-and-later
+         drafts of the same doc-type return classifications in ms. */
+      var comparableText = "";
+      if (learnFromComparable && docTypeId) {
+        try {
+          /* Resolve the target type name. Prefer the name already on the
+             job (no DB call). Fall back to a single SELECT only if the
+             frontend didn't send one. */
+          var targetTypeName = (libraryContext && libraryContext.docTypeName) || null;
+          if (!targetTypeName) {
+            var dtResp = await supabase.from("doc_types").select("name").eq("id", docTypeId).single();
+            if (dtResp.data && dtResp.data.name) targetTypeName = dtResp.data.name;
+          }
+
+          if (targetTypeName) {
+            /* Pull all fingerprints belonging to this user's matters.
+               JOIN through matters for owner_id since fingerprints have
+               no owner_id of their own. is_relevant=true and failed=false
+               are mandatory filters per the locked design. */
+            var fpResp = await supabase
+              .from("document_fingerprints")
+              .select("document_id, likely_types, matters!inner(owner_id), documents!inner(name)")
+              .eq("matters.owner_id", userId)
+              .eq("is_relevant", true)
+              .eq("failed", false);
+
+            var fpRows = (fpResp.data || []);
+
+            /* Two-pass type filter: exact match first, substring fallback. */
+            var targetLower = targetTypeName.toLowerCase();
+            var exactMatches = [];
+            var substringMatches = [];
+            for (var fpi = 0; fpi < fpRows.length; fpi++) {
+              var row = fpRows[fpi];
+              var lt = Array.isArray(row.likely_types) ? row.likely_types : [];
+              var docName = (row.documents && row.documents.name) || "";
+              /* Honour excludeDocNames — never draw structural precedent
+                 from a document the user excluded for this draft. */
+              if (excludeDocNames.indexOf(docName) !== -1) continue;
+              var hitExact = false;
+              var hitSubstring = false;
+              for (var lti = 0; lti < lt.length; lti++) {
+                var ltLower = (lt[lti] || "").toLowerCase();
+                if (ltLower === targetLower) { hitExact = true; break; }
+                if (ltLower.indexOf(targetLower) !== -1 || targetLower.indexOf(ltLower) !== -1) hitSubstring = true;
+              }
+              if (hitExact) exactMatches.push(row);
+              else if (hitSubstring) substringMatches.push(row);
+            }
+
+            var candidates = exactMatches.concat(substringMatches).slice(0, 5);
+            console.log("[draft] comparable hunt: " + exactMatches.length + " exact, " + substringMatches.length + " substring, using top " + candidates.length);
+
+            /* Classify each candidate. 45s wall-clock budget. Per-call
+               try/catch. Cache hits return in ms. */
+            var huntDeadline = Date.now() + 45000;
+            var summaries = [];
+            for (var ci = 0; ci < candidates.length; ci++) {
+              if (Date.now() > huntDeadline) {
+                console.log("[draft] comparable hunt: 45s budget reached, stopping at " + summaries.length);
+                break;
+              }
+              try {
+                var rows = await classifyDocumentForType(supabase, anthropic, candidates[ci].document_id, targetTypeName);
+                /* A bundle returns multiple rows; pick the one whose
+                   classification matches our target (exact or substring),
+                   or take the first if nothing matches. */
+                var picked = null;
+                for (var ri = 0; ri < rows.length; ri++) {
+                  var cls = (rows[ri].classification || "").toLowerCase();
+                  if (cls === targetLower) { picked = rows[ri]; break; }
+                }
+                if (!picked) {
+                  for (var ri2 = 0; ri2 < rows.length; ri2++) {
+                    var cls2 = (rows[ri2].classification || "").toLowerCase();
+                    if (cls2.indexOf(targetLower) !== -1 || targetLower.indexOf(cls2) !== -1) { picked = rows[ri2]; break; }
+                  }
+                }
+                if (!picked && rows.length > 0) picked = rows[0];
+                if (picked && picked.structural_summary) {
+                  summaries.push("--- " + (picked.classification || targetTypeName) + " (from another matter) ---\n" + picked.structural_summary);
+                }
+              } catch (clsErr) {
+                console.log("[draft] classifier failed for doc " + candidates[ci].document_id + ":", clsErr.message);
+              }
+            }
+
+            if (summaries.length > 0) {
+              comparableText = "\n\n# STRUCTURAL PRECEDENTS FROM YOUR OWN MATTERS\n\nThe following are structural summaries of similar documents you have drafted or worked on in other matters. Study their structure, heading hierarchy, section ordering, and argument flow. Apply what you learn — but do NOT copy their facts; the facts of this matter are different.\n\n" + summaries.join("\n\n");
+            } else {
+              comparableText = "\n\n# STRUCTURAL PRECEDENTS FROM YOUR OWN MATTERS\n\n_No comparable precedents found in your other matters._";
+            }
+          }
+        } catch (huntErr) {
+          console.log("[draft] comparable hunt failed:", huntErr.message);
+          comparableText = "";
+        }
+      }
+
       var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
 
@@ -1325,7 +1431,7 @@ export default async function handler(req, res) {
         ? "\n\nIMPORTANT: Begin the document with this exact court heading (do not alter the heading itself):\n\n" + headingText + "\n\nThen continue with the body of the document."
         : "";
 
-      var systemBase = "You are a senior litigation counsel in " + jur + " drafting a legal document for \"" + matterName + "\". Apply " + jur + " law, procedure, and drafting conventions." + (actingFor ? " You are acting for the " + actingFor + "." : "") + "\n\nCRITICAL INSTRUCTIONS:\n1. If precedent documents are provided below, you MUST study them first. Learn their structure, standard sections, argument methods, heading hierarchy, and language style. Replicate this approach in your draft.\n2. If commentary or AI instructions are attached to a precedent, follow them precisely \u2014 they contain the author\u2019s specific guidance on how to use that document.\n3. If previous drafts for this matter exist, maintain consistency with their style, terminology, and argument structure.\n4. Apply " + jur + " court rules and conventions throughout.\n\n" + matterContext + toolHistoryText + libraryText + learningText + headingInstruction;
+      var systemBase = "You are a senior litigation counsel in " + jur + " drafting a legal document for \"" + matterName + "\". Apply " + jur + " law, procedure, and drafting conventions." + (actingFor ? " You are acting for the " + actingFor + "." : "") + "\n\nCRITICAL INSTRUCTIONS:\n1. If precedent documents are provided below, you MUST study them first. Learn their structure, standard sections, argument methods, heading hierarchy, and language style. Replicate this approach in your draft.\n2. If commentary or AI instructions are attached to a precedent, follow them precisely \u2014 they contain the author\u2019s specific guidance on how to use that document.\n3. If previous drafts for this matter exist, maintain consistency with their style, terminology, and argument structure.\n4. Apply " + jur + " court rules and conventions throughout.\n\n" + matterContext + toolHistoryText + libraryText + comparableText + learningText + headingInstruction;
 
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract all facts, legal points, and arguments from batch " + batchNum + " of " + total + " relevant to: " + (instructions || "Draft a skeleton argument") + "\n\nDOCUMENTS:\n\n" + batchText; },

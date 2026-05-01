@@ -1,27 +1,32 @@
 /* ── LIBRARY ──────────────────────────────────────────────────────────────── */
-/* v5.12a: matter-document index indicator state machine. Lives at the top of
+/* v5.12b: matter-document index indicator state machine. Lives at the top of
    the Library left panel above the Precedent search. The whole thing is
    driven by the status returned by GET /api/index-library?action=status,
-   which gives us {total, fingerprinted, failed, unindexed, failures}.
+   which gives us {total, indexed_relevant, indexed_not_relevant, failed,
+   unindexed, failures}.
 
    Five visible states, mapped from the status fields:
-     A — total > 0 AND unindexed === total                  (cold, never indexed)
-     B — _indexingInProgress flag set client-side           (running, polling)
-     C — unindexed > 0 AND fingerprinted > 0                (caught up + new docs)
-     D — unindexed === 0 AND failed === 0 AND total > 0     (fully indexed)
-     E — failed > 0                                          (has failures)
+     A — total > 0 AND no fingerprints at all                  (cold)
+     B — _indexingInProgress flag set client-side              (running)
+     C — unindexed > 0 AND some fingerprints exist             (caught up + new)
+     D — unindexed === 0 AND failed === 0 AND total > 0        (fully indexed)
+     E — failed > 0                                            (has failures)
 
-   States E and D can coexist — if some failed and the rest succeeded we
-   still show E (the warning takes priority).
+   v5.12b changes:
+     - Status response splits "fingerprinted" into indexed_relevant +
+       indexed_not_relevant. Both still count as "indexed" toward the user.
+     - Failed-row list gains per-row Retry and "Mark not relevant" links.
+     - When a user marks a document not relevant, it moves out of the
+       failed bucket into indexed_not_relevant, the warning clears, and
+       the AI hunt (Build 3) ignores rows where is_relevant=false.
 
-   Polling: while state B is active, poll every 4 seconds. The button-press
-   handler sets _indexingInProgress=true, fires off /api/index-library
-   action=index, and starts the poll. Pass the response back to render. */
+   Polling: while state B is active, poll every 4 seconds. */
 
-var _libIndexState = { total: 0, fingerprinted: 0, failed: 0, unindexed: 0, failures: [] };
+var _libIndexState = { total: 0, indexed_relevant: 0, indexed_not_relevant: 0, failed: 0, unindexed: 0, failures: [] };
 var _libIndexInProgress = false;
 var _libIndexPollTimer = null;
 var _libIndexFailuresExpanded = false;
+var _libIndexBusyDocId = null; /* doc id currently being retried/marked, if any */
 
 async function libIndexLoadStatus(){
   if(!token)return null;
@@ -42,11 +47,13 @@ function libIndexRender(){
   var wrap=document.getElementById('libIndexIndicator');
   if(!wrap)return;
   var s=_libIndexState;
+  /* "indexed" from the user's perspective = relevant + not_relevant */
+  var indexed=(s.indexed_relevant||0)+(s.indexed_not_relevant||0);
   var html='';
 
   if(_libIndexInProgress){
     /* State B — in progress */
-    var done=s.fingerprinted+s.failed;
+    var done=indexed+s.failed;
     var pct=s.total>0?Math.round((done/s.total)*100):0;
     html='<div class="lib-index-block lib-index-info">'
       +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count">'+done+' of '+s.total+'</span></div>'
@@ -54,19 +61,24 @@ function libIndexRender(){
       +'<div class="lib-index-explain">Indexing\u2026 You can keep using the app. This window updates every few seconds.</div>'
       +'</div>';
   }else if(s.total===0){
-    /* No documents at all — hide */
     wrap.innerHTML='';
     wrap.style.display='none';
     return;
   }else if(s.failed>0){
-    /* State E — has failures (priority over caught-up) */
+    /* State E — has failures */
     var detailHtml='';
     if(_libIndexFailuresExpanded&&s.failures&&s.failures.length){
       var items=s.failures.map(function(f){
+        var busy=(_libIndexBusyDocId===f.document_id);
+        var actions=busy
+          ?'<span class="lib-index-fail-busy">working\u2026</span>'
+          :('<button class="lib-index-fail-btn" onclick="libIndexRetryOne(\''+f.document_id+'\')">Retry</button>'
+            +'<button class="lib-index-fail-btn lib-index-fail-btn-grey" onclick="libIndexMarkNotRelevant(\''+f.document_id+'\')">Mark not relevant</button>');
         return '<div class="lib-index-fail-item">'
           +'<div class="lib-index-fail-name">'+esc(f.document_name||'(unknown)')+'</div>'
           +'<div class="lib-index-fail-reason">'+esc(f.reason||'Unknown reason.')+'</div>'
           +'<div class="lib-index-fail-matter">Matter: '+esc(f.matter_name||'(unknown)')+'</div>'
+          +'<div class="lib-index-fail-actions">'+actions+'</div>'
           +'</div>';
       }).join('');
       detailHtml='<div class="lib-index-fail-list">'+items+'</div>';
@@ -74,7 +86,7 @@ function libIndexRender(){
     var unindexedPlusFailed=s.failed+s.unindexed;
     var btnLabel=s.unindexed>0?('Index '+unindexedPlusFailed+' documents'):('Retry '+s.failed+' failed');
     html='<div class="lib-index-block lib-index-warning">'
-      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count">'+s.fingerprinted+' indexed \u00b7 '+s.failed+' failed</span></div>'
+      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count">'+indexed+' indexed \u00b7 '+s.failed+' failed</span></div>'
       +detailHtml
       +'<div class="lib-index-actions">'
       +'<button class="lib-index-btn-primary" onclick="libIndexStart('+(s.unindexed>0?'false':'true')+')">'+btnLabel+'</button>'
@@ -82,11 +94,12 @@ function libIndexRender(){
       +'</div>'
       +'</div>';
   }else if(s.unindexed===0){
-    /* State D — fully indexed */
+    /* State D — fully indexed (relevant + not_relevant both count) */
+    var notRelSuffix=s.indexed_not_relevant>0?(' <span class="lib-index-notrel">('+s.indexed_not_relevant+' marked not relevant)</span>'):'';
     html='<div class="lib-index-block lib-index-quiet">'
-      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count lib-index-success-text">All '+s.total+' indexed</span></div>'
+      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count lib-index-success-text">All '+s.total+' indexed'+notRelSuffix+'</span></div>'
       +'</div>';
-  }else if(s.fingerprinted===0){
+  }else if(indexed===0){
     /* State A — cold start */
     html='<div class="lib-index-block lib-index-info">'
       +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count">0 of '+s.total+'</span></div>'
@@ -96,7 +109,7 @@ function libIndexRender(){
   }else{
     /* State C — caught up with new docs */
     html='<div class="lib-index-block lib-index-quiet">'
-      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count">'+s.fingerprinted+' of '+s.total+'</span></div>'
+      +'<div class="lib-index-row"><span class="lib-index-title">Matter document index</span><span class="lib-index-count">'+indexed+' of '+s.total+'</span></div>'
       +'<button class="lib-index-btn-secondary" onclick="libIndexStart(false)">Index '+s.unindexed+' new document'+(s.unindexed===1?'':'s')+'</button>'
       +'</div>';
   }
@@ -114,7 +127,6 @@ async function libIndexStart(retryFailed){
   _libIndexInProgress=true;
   _libIndexFailuresExpanded=false;
   libIndexRender();
-  /* Start polling status while the long indexing call runs */
   if(_libIndexPollTimer)clearInterval(_libIndexPollTimer);
   _libIndexPollTimer=setInterval(libIndexLoadStatus,4000);
   try{
@@ -128,7 +140,48 @@ async function libIndexStart(retryFailed){
   }finally{
     _libIndexInProgress=false;
     if(_libIndexPollTimer){clearInterval(_libIndexPollTimer);_libIndexPollTimer=null;}
-    /* One final status refresh after the call returns */
+    await libIndexLoadStatus();
+  }
+}
+
+/* v5.12b: per-row Retry — try a single failed document again. */
+async function libIndexRetryOne(documentId){
+  if(_libIndexBusyDocId)return;
+  _libIndexBusyDocId=documentId;
+  libIndexRender();
+  try{
+    var resp=await api('/api/index-library','POST',{action:'retry_one',documentId:documentId});
+    if(resp&&resp.ok){
+      showToast('Retried successfully');
+    }else{
+      showToast('Still failed: '+((resp&&resp.reason)||'try again later'));
+    }
+  }catch(e){
+    showToast('Retry error: '+e.message);
+  }finally{
+    _libIndexBusyDocId=null;
+    await libIndexLoadStatus();
+  }
+}
+
+/* v5.12b: per-row Mark not relevant — flip the row to indexed-but-not-
+   relevant so the AI hunt ignores it and the count reconciles. */
+async function libIndexMarkNotRelevant(documentId){
+  if(_libIndexBusyDocId)return;
+  if(!confirm('Mark this document as not relevant for AI drafting?\n\nIt will still appear in your matter, but the AI will not consider it as a precedent when drafting from other matters. You can change your mind later by re-uploading the document.'))return;
+  _libIndexBusyDocId=documentId;
+  libIndexRender();
+  try{
+    var resp=await api('/api/index-library','POST',{action:'mark_not_relevant',documentId:documentId});
+    if(resp&&resp.ok){
+      showToast('Marked not relevant');
+    }else{
+      showToast('Could not mark: '+((resp&&resp.error)||'unknown error'));
+    }
+  }catch(e){
+    showToast('Error: '+e.message);
+  }finally{
+    _libIndexBusyDocId=null;
     await libIndexLoadStatus();
   }
 }

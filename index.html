@@ -317,8 +317,13 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue-light);background:var(--blue-faint)}
 .upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .uz-icon{font-size:1.5rem;opacity:.25}
-.uz-text{font-size:.84rem;font-weight:600;color:var(--text-mid);margin-top:.3rem}
+.uz-text{font-size:.84rem;font-weight:600;color:var(--text-mid)}
 .uz-hint{font-size:.7rem;color:var(--text-faint)}
+/* v5.15b2: folder browse button at right edge of upload zone. Sits above
+   the absolute-positioned file input so clicks reach it instead of the
+   file picker. */
+.uz-folder-btn{position:absolute;right:.45rem;top:50%;transform:translateY(-50%);z-index:2;background:transparent;border:1.5px solid var(--border);border-radius:6px;padding:.18rem .42rem;font-size:.95rem;line-height:1;cursor:pointer;transition:all .15s}
+.uz-folder-btn:hover{background:var(--off-white);border-color:var(--border-strong)}
 .focus-section{padding:.55rem .85rem;border-bottom:1.5px solid var(--border);flex-shrink:0}
 .focus-label{font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-light);margin-bottom:.42rem}
 #uploadFolderPicker .focus-label{display:none}
@@ -951,7 +956,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
       <div id="uploadFolderPicker" style="display:none;margin-bottom:.4rem"></div>
       <div class="upload-zone" id="uploadZone">
         <input type="file" id="fileInput" accept=".pdf,.docx" multiple>
-        <div class="uz-text">Drop PDFs here or click to upload</div>
+        <input type="file" id="folderInput" webkitdirectory directory style="display:none">
+        <div class="uz-text">Drop files or folders, or click to browse</div>
+        <button type="button" id="folderBrowseBtn" class="uz-folder-btn" title="Browse folder…" aria-label="Browse folder">📁</button>
       </div>
       <div class="upload-progress" id="uploadProg"></div>
       <div class="upload-err" id="uploadErr"></div>
@@ -1180,6 +1187,19 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
   </div>
 </div>
 
+<!-- v5.15b2: skipped-files report after a folder upload. Lists Excel files
+     and other unsupported files that were filtered out of the batch. -->
+<div class="overlay" id="skippedFilesModal" role="dialog" aria-modal="true" aria-label="Skipped Files" style="display:none">
+  <div class="modal" style="max-width:560px;width:95%">
+    <h3>Skipped files</h3>
+    <p class="tool-desc">These files were not uploaded.</p>
+    <div id="skippedFilesBody" style="max-height:420px;overflow-y:auto;margin-top:.5rem;font-size:.85rem"></div>
+    <div class="modal-btns">
+      <button class="btn-primary" onclick="closeModal('skippedFilesModal')">OK</button>
+    </div>
+  </div>
+</div>
+
 <!-- v5.0: Per-document edit modal — description + folder assignment -->
 <div class="overlay" id="documentEditModal" role="dialog" aria-modal="true" aria-label="Edit Document" style="display:none">
   <div class="modal" style="max-width:540px;width:95%">
@@ -1211,11 +1231,11 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js?v=5.15b1"></script>
-<script src="/js/tools.js?v=5.15b1"></script>
-<script src="/js/library.js?v=5.15b1"></script>
-<script src="/js/drafting.js?v=5.15b1"></script>
-<script src="/js/diagram.js?v=5.15b1"></script>
+<script src="/js/core.js?v=5.15b2"></script>
+<script src="/js/tools.js?v=5.15b2"></script>
+<script src="/js/library.js?v=5.15b2"></script>
+<script src="/js/drafting.js?v=5.15b2"></script>
+<script src="/js/diagram.js?v=5.15b2"></script>
 <!-- v5.13b: Previous Drafts modal -->
 <div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">
   <div class="modal" style="max-width:600px;max-height:80vh;display:flex;flex-direction:column">

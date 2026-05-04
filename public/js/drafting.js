@@ -1,30 +1,28 @@
 /* ── DRAFT TAB ────────────────────────────────────────────────────────────── */
-/* v5.13b — 01 May 2026
-   Draft tab matter-switching fix + Previous Drafts UI.
-   1. draftMatterChanged now actually resets state on matter switch
-      (editor, dropdowns, selected docs/precedents, currentDraftId).
-   2. New onDraftTabActivated() called from core.js switchMainNav('draft')
-      to sync the Draft tab to currentMatter on every tab activation.
-   3. New Previous Drafts modal listing all drafts for the current matter
-      with load/delete actions.
-   4. Auto-save bug fixed: was POST-on-every-keystroke creating duplicate
-      rows; now PUTs to currentDraftId if attached, or no-ops if not.
-   5. Generate Draft now creates a new row in `drafts` and attaches the
-      editor to currentDraftId so subsequent edits PUT in place.
-   6. Save button (small, only shown when editor has content but no
-      currentDraftId) lets user attach an unattached editor to a row.
-   7. Unsaved-edits flag warns before discarding manual edits on matter
-      switch. */
+/* v5.13b — 1 May 2026
+   Major rewrite of matter-switching, autosave, and draft history.
+   Changes from v5.11a (Draft Build 1):
+   1. draftMatterChanged() now resets editor, dropdowns, picker state and
+      reloads previous-drafts list. Previously it only updated the heading.
+   2. New onDraftTabActivated() called from core.js's switchMainNav('draft')
+      so the Draft tab syncs to currentMatter on every entry.
+   3. New "Previous drafts" modal: lists all drafts for current matter,
+      newest first, with click-to-load and delete-row buttons.
+   4. Autosave now PUTs to existing draft row (was POST every time, which
+      created a new row per keystroke debounce — bug fixed).
+   5. New currentDraftId / unsavedEdits state. Unsaved edits prompt before
+      switching matter.
+   6. Generate Draft now creates a new row in drafts table after worker
+      completes, so generated drafts persist and appear in Previous drafts.
+   7. New Save button (small) for attaching unsaved editor text to a row
+      without going through Generate. */
 
-/* v5.13b: shared draft-row state. currentDraftId is the row in the
-   `drafts` table that the editor is currently attached to. unsavedEdits
-   tracks whether the editor has been manually modified since the last
-   successful PUT or load. previousDraftsList caches the list for the
-   modal. */
+/* v5.13b state. Module-scope so all draft functions share. */
 var currentDraftId = null;
 var unsavedEdits = false;
 var previousDraftsList = [];
 
+/* ── DRAFT TAB (continued) ─────────────────────────────────────────────── */
 /* v5.11a (Draft Build 1) — 30 Apr 2026
    1. Jurisdiction is read silently from the selected matter (currentMatter
       or the matter chosen via draftMatterSelect). The global `jurisdiction`
@@ -84,39 +82,42 @@ function libPopulateDraftSelects(){
 }
 
 function draftMatterChanged(){
-  var sel=document.getElementById('draftMatterSelect');
-  var id=sel?sel.value:'';
+  var id=document.getElementById('draftMatterSelect').value;
   if(!id)return;
   var m=matters.find(function(x){return x.id===id;});
   if(!m)return;
-  /* v5.13b: reset all draft state on matter switch. The unsaved-edits
-     check happens in onDraftTabActivated before we get here, so by the
-     time draftMatterChanged runs, any discard has been confirmed. */
-  currentDraftId=null;
-  unsavedEdits=false;
+
+  /* v5.13c: update the always-visible matter context labels. */
+  var ctxName=document.getElementById('draftMatterContextName');
+  if(ctxName)ctxName.textContent=m.name||'(unnamed matter)';
+  var lblText=document.getElementById('draftMatterLabelText');
+  if(lblText)lblText.textContent=m.name||'(unnamed matter)';
+
+  /* v5.13b: full reset of Draft tab state for the new matter. */
+
   /* Clear editor */
   var editor=document.getElementById('draftEditor');
   if(editor)editor.innerHTML='';
-  /* Hide output wrap (which contains the editor) and show instructions body */
-  var outputWrap=document.getElementById('draftOutputWrap');
-  if(outputWrap)outputWrap.classList.add('hidden');
-  var instrBody=document.getElementById('draftInstructionsBody');
-  if(instrBody)instrBody.style.display='';
-  /* Clear instructions textarea */
-  var instr=document.getElementById('draftMainInstructions');
-  if(instr)instr.value='';
+
   /* Reset Library dropdowns */
-  var ct=document.getElementById('draftCaseType');if(ct)ct.value='';
-  var stEl=document.getElementById('draftStage');
-  if(stEl)stEl.innerHTML='<option value="">— Select —</option>';
+  var ct=document.getElementById('draftCaseType');
+  if(ct)ct.value='';
+  var st=document.getElementById('draftStage');
+  if(st){st.innerHTML='<option value="">— Select —</option>';}
   var dt=document.getElementById('draftDocType');
-  if(dt)dt.innerHTML='<option value="">— Select —</option>';
-  /* Clear selected docs and precedents */
+  if(dt){dt.innerHTML='<option value="">— Select —</option>';}
+
+  /* Reset doc picker state (used by draftSelectDoc / draftRemoveDoc) */
   draftSelectedDocs={src1:[],src2:[],src3:[],ctx:[],prec:[]};
   draftSelectedPrecedents=[];
-  if(typeof renderDraftSelectedDocs==='function')renderDraftSelectedDocs();
-  if(typeof renderDraftSelectedPrecedents==='function')renderDraftSelectedPrecedents();
-  /* Reset draftHeading from new matter */
+  if(typeof renderDraftPickedDocs==='function')renderDraftPickedDocs();
+  if(typeof renderDraftPickedPrecedents==='function')renderDraftPickedPrecedents();
+
+  /* Reset main-instructions textarea */
+  var mi=document.getElementById('draftMainInstructions');
+  if(mi)mi.value='';
+
+  /* Reset heading from matter */
   draftHeading={party1:'',party1Role:'',party2:'',party2Role:'',court:'',caseNo:'',docTitle:''};
   if(m.name){
     var parts=m.name.split(/\s+v\s+/i);
@@ -135,57 +136,77 @@ function draftMatterChanged(){
     }
   }
   updateActionHeading();
-  /* Hide the Save button (only shown when editor has unattached content) */
+
+  /* Reset draft-row state */
+  currentDraftId=null;
+  unsavedEdits=false;
+
+  /* Hide Save button (no unattached editor content yet) */
   var saveBtn=document.getElementById('saveDraftBtn');
   if(saveBtn)saveBtn.style.display='none';
-  /* Load matter docs and previous drafts list */
+
+  /* Load matter docs and previous drafts in parallel; AI heading suggestion
+     fires after matter docs are ready. */
   loadDraftMatterDocs(id).then(function(){
     draftAISuggestHeading(id);
   });
   loadDraftsForMatter(id);
 }
 
-/* v5.13b: tab-activation hook called from core.js switchMainNav('draft').
-   Syncs the Draft tab to currentMatter, with an unsaved-edits guard. */
+/* v5.13b: Sync the Draft tab to currentMatter on tab activation. Called
+   from core.js's switchMainNav('draft'). Handles the matter-switch path
+   too — if the user switched matter while already on the Draft tab and
+   then the dropdown is out of sync with currentMatter, we reconcile.
+   Also prompts about unsaved edits before discarding. */
 function onDraftTabActivated(){
   var sel=document.getElementById('draftMatterSelect');
   if(!sel)return;
-  var targetId=(typeof currentMatter!=='undefined'&&currentMatter)?currentMatter.id:'';
-  var currentId=sel.value;
-  /* If neither side has a value, nothing to do. */
-  if(!targetId&&!currentId)return;
-  /* If the select is already in sync with currentMatter, just refresh
-     the previous-drafts list count and exit. */
-  if(targetId&&currentId===targetId){
-    loadDraftsForMatter(targetId);
+  /* If currentMatter exists and the dropdown is empty or pointing at a
+     different matter, sync. */
+  var targetId=(typeof currentMatter!=='undefined'&&currentMatter)?currentMatter.id:null;
+  var currentVal=sel.value||null;
+
+  /* v5.13c: if no currentMatter, show "select from Matters tab" prompt. */
+  if(!targetId){
+    var ctxName=document.getElementById('draftMatterContextName');
+    if(ctxName)ctxName.textContent='Select a matter from the Matters tab';
+    var lblText=document.getElementById('draftMatterLabelText');
+    if(lblText)lblText.textContent='(select a matter first)';
     return;
   }
-  /* Mismatch — we need to switch the Draft tab to currentMatter. Check
-     for unsaved edits first. */
-  if(unsavedEdits){
-    var newName=targetId?(matters.find(function(x){return x.id===targetId;})||{}).name||'the new matter':'the new matter';
-    if(!confirm('You have unsaved changes in the draft editor. Discard them and switch to '+newName+'?')){
-      /* User cancelled. Restore the dropdown to the value it currently
-         points at and stop. */
-      return;
+
+  if(targetId&&targetId!==currentVal){
+    /* Unsaved edits guard */
+    if(unsavedEdits){
+      var targetName=currentMatter.name||'this matter';
+      if(!confirm('You have unsaved changes in the current draft. Discard and switch to '+targetName+'?')){
+        return;
+      }
     }
+    sel.value=targetId;
+    draftMatterChanged();
+    return;
   }
-  /* Apply the switch. */
-  if(targetId)sel.value=targetId;
-  draftMatterChanged();
+  /* Same matter, but on first entry the editor is still blank; load
+     drafts list count so the Previous drafts button shows correct N. */
+  if(targetId&&previousDraftsList.length===0){
+    loadDraftsForMatter(targetId);
+  }
 }
 
-/* v5.13b: load all drafts for a matter and update the badge count. */
+/* v5.13b: Fetch all drafts for a matter; populate previousDraftsList and
+   update the badge count on the Previous drafts button. */
 async function loadDraftsForMatter(matterId){
-  if(!matterId){previousDraftsList=[];updatePrevDraftsBadge();return;}
+  if(!matterId)return;
   try{
-    var d=await api('/api/drafts?matter_id='+matterId);
+    var d=await api('/api/drafts?matter_id='+matterId,'GET');
     previousDraftsList=(d&&d.drafts)?d.drafts:[];
+    updatePrevDraftsBadge();
   }catch(e){
-    console.log('loadDraftsForMatter:',e.message);
+    console.log('loadDraftsForMatter failed:',e.message);
     previousDraftsList=[];
+    updatePrevDraftsBadge();
   }
-  updatePrevDraftsBadge();
 }
 
 function updatePrevDraftsBadge(){
@@ -193,36 +214,35 @@ function updatePrevDraftsBadge(){
   if(span)span.textContent=previousDraftsList.length;
 }
 
-/* v5.13b: render and open the Previous Drafts modal. */
+/* v5.13b: Open the Previous drafts modal. Renders the list from current
+   previousDraftsList. Click row to load, click × to delete, click backdrop
+   or Esc to close. */
 function showPreviousDraftsModal(){
-  var matterId=document.getElementById('draftMatterSelect').value;
-  if(!matterId){showToast('Select a matter first');return;}
   var modal=document.getElementById('prevDraftsModal');
+  if(!modal)return;
   var list=document.getElementById('prevDraftsList');
-  if(!modal||!list)return;
+  if(!list)return;
   if(previousDraftsList.length===0){
-    list.innerHTML='<div style="font-size:.85rem;color:var(--text-faint);font-style:italic;padding:1rem 0">No previous drafts for this matter yet.</div>';
+    list.innerHTML='<div style="padding:1rem;color:var(--text-faint);font-style:italic;text-align:center">No previous drafts for this matter.</div>';
   }else{
-    var html='';
-    for(var i=0;i<previousDraftsList.length;i++){
-      var dr=previousDraftsList[i];
-      var when=dr.created_at?new Date(dr.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+    list.innerHTML=previousDraftsList.map(function(d){
+      var dt=d.created_at?new Date(d.created_at):null;
+      var dateStr=dt?dt.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})+', '+dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'Unknown date';
       var dtName='';
-      if(dr.doc_type_id&&typeof libraryData!=='undefined'&&libraryData.docTypes){
-        var dtRow=libraryData.docTypes.find(function(x){return x.id===dr.doc_type_id;});
+      if(d.doc_type_id&&libraryData&&libraryData.docTypes){
+        var dtRow=libraryData.docTypes.find(function(x){return x.id===d.doc_type_id;});
         if(dtRow)dtName=dtRow.name;
       }
-      var instrPreview=(dr.instructions||'').slice(0,80);
-      if((dr.instructions||'').length>80)instrPreview+='\u2026';
-      html+='<div class="prev-draft-row" style="display:flex;align-items:flex-start;gap:.5rem;padding:.6rem;border-bottom:1px solid var(--border);cursor:pointer" onclick="loadDraftIntoEditor(\''+dr.id+'\')">';
-      html+='<div style="flex:1;min-width:0">';
-      html+='<div style="font-size:.78rem;color:var(--text-faint)">'+esc(when)+(dtName?' \u00b7 '+esc(dtName):'')+'</div>';
-      html+='<div style="font-size:.85rem;color:var(--text);margin-top:.15rem">'+esc(instrPreview||'(no instructions saved)')+'</div>';
-      html+='</div>';
-      html+='<button onclick="event.stopPropagation();deleteDraftFromList(\''+dr.id+'\')" style="background:none;border:none;font-size:1.05rem;cursor:pointer;color:var(--text-faint);padding:0 .3rem" title="Delete this draft">\u00d7</button>';
-      html+='</div>';
-    }
-    list.innerHTML=html;
+      var instr=(d.instructions||'').slice(0,80);
+      if((d.instructions||'').length>80)instr+='…';
+      return '<div class="prev-draft-row" data-id="'+esc(d.id)+'" style="display:flex;gap:.6rem;align-items:flex-start;padding:.6rem;border-bottom:1px solid var(--border);cursor:pointer" onclick="loadDraftIntoEditor(\''+esc(d.id)+'\')">'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:.78rem;color:var(--text-faint)">'+esc(dateStr)+(dtName?' · '+esc(dtName):'')+'</div>'+
+          '<div style="font-size:.85rem;margin-top:.2rem;overflow:hidden;text-overflow:ellipsis">'+esc(instr||'(no instructions)')+'</div>'+
+        '</div>'+
+        '<button onclick="event.stopPropagation();deleteDraftFromList(\''+esc(d.id)+'\')" title="Delete this draft" style="background:none;border:none;font-size:1.1rem;color:var(--text-faint);cursor:pointer;padding:.2rem .4rem">×</button>'+
+      '</div>';
+    }).join('');
   }
   modal.style.display='flex';
 }
@@ -232,25 +252,24 @@ function closePreviousDraftsModal(){
   if(modal)modal.style.display='none';
 }
 
-/* v5.13b: load a previously-saved draft into the editor. Handles the
-   unsaved-edits guard before discarding current editor content. */
+/* v5.13b: Load an existing draft into the editor. Sets currentDraftId so
+   subsequent autosave PUTs to the same row. Closes the modal. */
 async function loadDraftIntoEditor(draftId){
+  if(!draftId)return;
   if(unsavedEdits){
-    if(!confirm('You have unsaved changes in the editor. Discard them and load this previous draft?')){
+    if(!confirm('You have unsaved changes. Discard and load this draft?')){
       return;
     }
   }
-  var dr=previousDraftsList.find(function(x){return x.id===draftId;});
-  if(!dr){showToast('Draft not found');return;}
-  /* Reveal the output wrapper (which contains the editor) */
-  document.getElementById('draftInstructionsBody').style.display='none';
-  document.getElementById('draftOutputWrap').classList.remove('hidden');
+  var d=previousDraftsList.find(function(x){return x.id===draftId;});
+  if(!d){showToast('Draft not found');return;}
+  /* Populate editor */
   var editor=document.getElementById('draftEditor');
-  if(editor){editor.innerHTML=dr.draft_content||'';}
-  /* Restore heading if present */
-  if(dr.heading_data){
+  if(editor)editor.innerHTML=renderMd(d.draft_content||'');
+  /* Populate heading */
+  if(d.heading_data){
     try{
-      var h=typeof dr.heading_data==='string'?JSON.parse(dr.heading_data):dr.heading_data;
+      var h=typeof d.heading_data==='string'?JSON.parse(d.heading_data):d.heading_data;
       if(h&&typeof h==='object'){
         draftHeading.party1=h.party1||'';
         draftHeading.party1Role=h.party1Role||'';
@@ -261,45 +280,50 @@ async function loadDraftIntoEditor(draftId){
         draftHeading.docTitle=h.docTitle||'';
         updateActionHeading();
       }
-    }catch(pe){console.log('heading parse:',pe.message);}
+    }catch(pe){console.log('heading_data parse skip:',pe.message);}
   }
-  /* Restore instructions */
-  var instr=document.getElementById('draftMainInstructions');
-  if(instr)instr.value=dr.instructions||'';
-  /* Restore Library dropdowns */
-  var ct=document.getElementById('draftCaseType');
-  if(ct&&dr.case_type_id){ct.value=dr.case_type_id;draftCaseTypeChanged();
-    var stEl=document.getElementById('draftStage');
-    if(stEl&&dr.subcat_id)stEl.value=dr.subcat_id;
+  /* Populate Library dropdowns. Case type populates first (which rebuilds
+     stage/doctype options), then we set stage and doctype values. */
+  if(d.case_type_id){
+    var ct=document.getElementById('draftCaseType');
+    if(ct){ct.value=d.case_type_id;draftCaseTypeChanged();}
+  }
+  if(d.subcat_id){
+    var st=document.getElementById('draftStage');
+    if(st)st.value=d.subcat_id;
+  }
+  if(d.doc_type_id){
     var dt=document.getElementById('draftDocType');
-    if(dt&&dr.doc_type_id)dt.value=dr.doc_type_id;
+    if(dt)dt.value=d.doc_type_id;
   }
+  /* Populate instructions */
+  var mi=document.getElementById('draftMainInstructions');
+  if(mi)mi.value=d.instructions||'';
   currentDraftId=draftId;
   unsavedEdits=false;
-  /* Hide save button — we're now attached to a row */
   var saveBtn=document.getElementById('saveDraftBtn');
   if(saveBtn)saveBtn.style.display='none';
   closePreviousDraftsModal();
 }
 
-/* v5.13b: delete a draft from the list. */
+/* v5.13b: Delete a draft row. If it was the currently-loaded draft, blank
+   the editor and clear currentDraftId. */
 async function deleteDraftFromList(draftId){
-  if(!confirm('Delete this draft permanently? This cannot be undone.'))return;
+  if(!draftId)return;
+  if(!confirm('Delete this draft permanently?'))return;
   try{
     await api('/api/drafts?id='+draftId,'DELETE');
-    /* If the deleted draft was the currently-loaded one, blank the editor. */
+    /* Remove locally */
+    previousDraftsList=previousDraftsList.filter(function(d){return d.id!==draftId;});
+    updatePrevDraftsBadge();
+    /* If this was the loaded draft, blank the editor */
     if(currentDraftId===draftId){
-      currentDraftId=null;
-      unsavedEdits=false;
       var editor=document.getElementById('draftEditor');
       if(editor)editor.innerHTML='';
-      document.getElementById('draftOutputWrap').classList.add('hidden');
-      document.getElementById('draftInstructionsBody').style.display='';
+      currentDraftId=null;
+      unsavedEdits=false;
     }
-    /* Refresh list */
-    var matterId=document.getElementById('draftMatterSelect').value;
-    if(matterId)await loadDraftsForMatter(matterId);
-    /* Re-render the modal if it's still open */
+    /* Refresh modal if open */
     var modal=document.getElementById('prevDraftsModal');
     if(modal&&modal.style.display!=='none')showPreviousDraftsModal();
     showToast('Draft deleted');
@@ -308,38 +332,35 @@ async function deleteDraftFromList(draftId){
   }
 }
 
-/* v5.13b: save unattached editor content as a new draft row. Only
-   reachable via the small Save button which is hidden when
-   currentDraftId is already set. */
+/* v5.13b: Save unattached editor content as a new draft row. Called by the
+   small Save button which is only visible when currentDraftId is null and
+   editor has content. */
 async function saveCurrentDraft(){
   var matterId=document.getElementById('draftMatterSelect').value;
   if(!matterId){showToast('Select a matter first');return;}
   var editor=document.getElementById('draftEditor');
-  var content=editor?editor.innerHTML:'';
-  if(!content||!content.trim()){showToast('Nothing to save');return;}
-  var ctId=document.getElementById('draftCaseType').value;
-  var dtId=document.getElementById('draftDocType').value;
-  var stId=document.getElementById('draftStage').value;
-  var instructions=document.getElementById('draftMainInstructions').value||'';
+  var content=editor?editor.innerText||'':'';
+  if(!content.trim()){showToast('Nothing to save');return;}
   try{
-    var d=await api('/api/drafts?matter_id='+matterId,'POST',{
+    var payload={
       matter_id:matterId,
-      case_type_id:ctId||null,
-      subcat_id:stId||null,
-      doc_type_id:dtId||null,
-      heading_data:draftHeading,
-      instructions:instructions,
-      draft_content:content,
-      conversation:[]
-    });
+      case_type_id:document.getElementById('draftCaseType').value||null,
+      subcat_id:document.getElementById('draftStage').value||null,
+      doc_type_id:document.getElementById('draftDocType').value||null,
+      heading_data:JSON.stringify(draftHeading),
+      instructions:document.getElementById('draftMainInstructions').value||'',
+      draft_content:content
+    };
+    var d=await api('/api/drafts','POST',payload);
     if(d&&d.draft&&d.draft.id){
       currentDraftId=d.draft.id;
-      unsavedEdits=false;
-      var saveBtn=document.getElementById('saveDraftBtn');
-      if(saveBtn)saveBtn.style.display='none';
-      await loadDraftsForMatter(matterId);
-      showToast('Draft saved');
+      previousDraftsList.unshift(d.draft);
+      updatePrevDraftsBadge();
     }
+    unsavedEdits=false;
+    var saveBtn=document.getElementById('saveDraftBtn');
+    if(saveBtn)saveBtn.style.display='none';
+    showToast('Saved');
   }catch(e){
     showToast('Save failed: '+e.message);
   }
@@ -424,36 +445,44 @@ function draftCaseTypeChanged(){
 }
 function draftStageChanged(){draftAutoSaveChoices();}
 
-/* C3: Auto-save draft left column choices to drafts table.
-   v5.13b: was POST on every keystroke, creating duplicate rows. Now
-   PUTs to currentDraftId when the editor is attached to a row. When
-   unattached, no-op — the user can use the Save button to attach. */
+/* v5.13b: Auto-save draft choices. PUT to existing currentDraftId row;
+   never spawn new rows. If currentDraftId is null, the user has typed
+   into a blank editor without generating or clicking Save — they must
+   click Save explicitly to attach the editor to a row. We mark
+   unsavedEdits so matter-switch will warn. */
 var _draftAutoSaveTimer=null;
 function draftAutoSaveChoices(){
+  unsavedEdits=true;
+  /* Show save button if we have unattached editor content */
+  var editor=document.getElementById('draftEditor');
+  var hasContent=editor&&(editor.innerText||'').trim().length>0;
+  var saveBtn=document.getElementById('saveDraftBtn');
+  if(saveBtn){
+    if(currentDraftId){
+      saveBtn.style.display='none';
+    }else if(hasContent){
+      saveBtn.style.display='';
+    }else{
+      saveBtn.style.display='none';
+    }
+  }
   if(_draftAutoSaveTimer)clearTimeout(_draftAutoSaveTimer);
   _draftAutoSaveTimer=setTimeout(function(){
+    if(!currentDraftId)return; /* Don't autosave unattached content */
     var matterId=document.getElementById('draftMatterSelect').value;
     if(!matterId)return;
-    /* v5.13b: nothing to save unless we're attached to a row. */
-    if(!currentDraftId){
-      /* Show the Save button if there's editor content the user might
-         want to keep. */
-      var editor=document.getElementById('draftEditor');
-      var hasContent=editor&&editor.innerHTML&&editor.innerHTML.trim().length>0;
-      var saveBtn=document.getElementById('saveDraftBtn');
-      if(saveBtn)saveBtn.style.display=hasContent?'':'none';
-      return;
-    }
-    var editorEl=document.getElementById('draftEditor');
-    var updates={
+    var content='';
+    var ed=document.getElementById('draftEditor');
+    if(ed)content=ed.innerText||'';
+    var payload={
       case_type_id:document.getElementById('draftCaseType').value||null,
       subcat_id:document.getElementById('draftStage').value||null,
       doc_type_id:document.getElementById('draftDocType').value||null,
-      heading_data:draftHeading,
+      heading_data:JSON.stringify(draftHeading),
       instructions:document.getElementById('draftMainInstructions').value||'',
-      draft_content:editorEl?editorEl.innerHTML:''
+      draft_content:content
     };
-    api('/api/drafts?id='+currentDraftId,'PUT',updates).then(function(){
+    api('/api/drafts?id='+currentDraftId,'PUT',payload).then(function(){
       unsavedEdits=false;
     }).catch(function(e){console.log('Draft auto-save:',e.message);});
   },1500);
@@ -471,10 +500,30 @@ if(draftDocTypeEl){draftDocTypeEl.addEventListener('change',function(){
 });}
 /* C3: Auto-save when instructions change */
 var draftInstrEl=document.getElementById('draftMainInstructions');
-if(draftInstrEl){draftInstrEl.addEventListener('input',function(){unsavedEdits=true;draftAutoSaveChoices();});}
-/* v5.13b: track manual editor edits and trigger autosave (PUT path). */
+if(draftInstrEl){draftInstrEl.addEventListener('input',function(){draftAutoSaveChoices();});}
+
+/* v5.13b: Auto-save when editor content changes. The editor is a
+   contenteditable div, so we listen for 'input' the same way. */
 var draftEditorEl=document.getElementById('draftEditor');
-if(draftEditorEl){draftEditorEl.addEventListener('input',function(){unsavedEdits=true;draftAutoSaveChoices();});}
+if(draftEditorEl){draftEditorEl.addEventListener('input',function(){draftAutoSaveChoices();});}
+
+/* v5.13b: Esc closes the Previous drafts modal. */
+document.addEventListener('keydown',function(ev){
+  if(ev.key==='Escape'){
+    var m=document.getElementById('prevDraftsModal');
+    if(m&&m.style.display!=='none')closePreviousDraftsModal();
+  }
+});
+
+/* v5.13b: Click on modal backdrop closes it. */
+document.addEventListener('DOMContentLoaded',function(){
+  var modal=document.getElementById('prevDraftsModal');
+  if(modal){
+    modal.addEventListener('click',function(ev){
+      if(ev.target===modal)closePreviousDraftsModal();
+    });
+  }
+});
 /* Heading Editor */
 function openHeadingEditor(){
   document.getElementById('hdCourt').value=draftHeading.court;
@@ -642,32 +691,29 @@ async function generateDraft(){
           document.getElementById('draftInstructionsBody').style.display='none';
           var outputWrap=document.getElementById('draftOutputWrap');outputWrap.classList.remove('hidden');
           var editor=document.getElementById('draftEditor');editor.innerHTML=renderMd(resultText);editor.focus();
-          /* v5.13b: persist a new draft row in the `drafts` table and
-             attach the editor to it via currentDraftId. Subsequent
-             manual edits will PUT to this same row (no duplicate rows). */
-          (async function(){
-            try{
-              var savePayload={
-                matter_id:matterId,
-                case_type_id:ctId||null,
-                subcat_id:stId||null,
-                doc_type_id:dtId||null,
-                heading_data:draftHeading,
-                instructions:instructions,
-                draft_content:editor.innerHTML,
-                conversation:[]
-              };
-              var sd=await api('/api/drafts?matter_id='+matterId,'POST',savePayload);
-              if(sd&&sd.draft&&sd.draft.id){
-                currentDraftId=sd.draft.id;
+          /* v5.13b: persist as a new draft row so it appears in
+             Previous drafts and subsequent edits autosave to it. */
+          try{
+            var savePayload={
+              matter_id:matterId,
+              case_type_id:ctId||null,
+              subcat_id:stId||null,
+              doc_type_id:dtId||null,
+              heading_data:JSON.stringify(draftHeading),
+              instructions:instructions,
+              draft_content:resultText
+            };
+            api('/api/drafts','POST',savePayload).then(function(saved){
+              if(saved&&saved.draft&&saved.draft.id){
+                currentDraftId=saved.draft.id;
+                previousDraftsList.unshift(saved.draft);
+                updatePrevDraftsBadge();
                 unsavedEdits=false;
-                var saveBtn=document.getElementById('saveDraftBtn');
-                if(saveBtn)saveBtn.style.display='none';
-                /* Refresh the previous-drafts list and badge */
-                await loadDraftsForMatter(matterId);
+                var sb=document.getElementById('saveDraftBtn');
+                if(sb)sb.style.display='none';
               }
-            }catch(saveErr){console.log('Draft post-generate save failed:',saveErr.message);}
-          })();
+            }).catch(function(se){console.log('Persist generated draft failed:',se.message);});
+          }catch(persErr){console.log('Persist guard:',persErr.message);}
           return;
         }
         if(j.status==='failed'){

@@ -877,6 +877,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
               <div style="display:flex;gap:.4rem;align-items:center">
                 <button class="lib-box-btn" id="prevDraftsBtn" onclick="showPreviousDraftsModal()" style="font-size:.78rem;padding:.3rem .6rem" title="Previous drafts for this matter">📋 Previous drafts (<span id="prevDraftsCount">0</span>)</button>
                 <button class="lib-box-btn" id="saveDraftBtn" onclick="saveCurrentDraft()" style="font-size:.78rem;padding:.3rem .6rem;display:none" title="Save current editor content as a new draft">💾 Save</button>
+                <button class="lib-box-btn" id="clearDraftBtn" onclick="clearDraftEditor()" style="font-size:.78rem;padding:.3rem .6rem;display:none;background:#fff;color:var(--text)" title="Clear draft from editor (saved drafts remain accessible via Previous drafts)"><span style="color:#c00;font-weight:700">✕</span> Clear Draft</button>
                 <button class="draft-generate-btn" id="draftGenerateBtn" onclick="generateDraft()" style="margin:0;padding:.3rem .9rem;font-size:.82rem">Generate Draft</button>
               </div>
             </div>
@@ -1216,11 +1217,11 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js?v=5.13b"></script>
-<script src="/js/tools.js?v=5.13b"></script>
-<script src="/js/library.js?v=5.13b"></script>
-<script src="/js/drafting.js?v=5.13b"></script>
-<script src="/js/diagram.js?v=5.13b"></script>
+<script src="/js/core.js?v=5.14a"></script>
+<script src="/js/tools.js?v=5.14a"></script>
+<script src="/js/library.js?v=5.14a"></script>
+<script src="/js/drafting.js?v=5.14a"></script>
+<script src="/js/diagram.js?v=5.14a"></script>
 <!-- v5.13b: Previous Drafts modal -->
 <div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">
   <div class="modal" style="max-width:600px;max-height:80vh;display:flex;flex-direction:column">

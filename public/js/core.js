@@ -57,6 +57,11 @@ var foldersOpen={};
    backend; used only in foldersOpen tracking and as the inFolderId passed
    to renderDocRow when rendering Unassigned children. */
 var UNASSIGNED_ID='__unassigned__';
+/* v5.15b3: track type of in-flight drag so dragover can pick the right
+   hover style (dashed for folder, solid for doc) and so folderDrop can
+   branch on it. Set in folderDragStart / docDragStart, cleared in
+   folderDragEnd and after a successful drop. */
+var dragKind=null;
 /* v5.2: State for resuming a failed batched upload. When a batched upload
    fails part-way through, the batches already uploaded are preserved in
    the database and the remaining state is stashed here so the user can
@@ -773,8 +778,10 @@ function renderDocs(){
     if(open){
       out+='<div class="folder-box" style="margin-top:.4rem;border:2px solid #8b6f47;border-radius:8px;overflow:hidden;background:#fff;box-shadow:0 1px 4px rgba(139,111,71,.2)">';
     }
-    /* Folder header row \u2014 brown */
+    /* Folder header row — brown
+       v5.15b3: real folders are draggable (Unassigned is virtual, not draggable) */
     out+='<div class="folder-row" data-folder-id="'+folderId+'"'
+      +(isUnassigned?'':' draggable="true" ondragstart="folderDragStart(event,\''+folderId+'\')" ondragend="folderDragEnd(event)"')
       +' ondragenter="folderDragOver(event,\''+dropArg+'\')"'
       +' ondragover="folderDragOver(event,\''+dropArg+'\')"'
       +' ondragleave="folderDragLeave(event)"'
@@ -868,6 +875,8 @@ async function updateDocFolders(docId,newIds){
    drop → dropEffect mismatch. */
 function docDragStart(ev,docId,fromFolderId){
   console.log('v5.1a dragstart: doc='+docId+' from='+(fromFolderId||'(uncategorised)'));
+  /* v5.15b3: mark drag kind so folderDragOver can pick the right hover style */
+  dragKind='doc';
   try{
     ev.dataTransfer.setData('text/plain',JSON.stringify({docId:docId,from:fromFolderId||''}));
     ev.dataTransfer.effectAllowed='move';
@@ -876,9 +885,12 @@ function docDragStart(ev,docId,fromFolderId){
 function folderDragOver(ev,folderId){
   ev.preventDefault();
   try{ev.dataTransfer.dropEffect='move';}catch(e){}
-  /* currentTarget is the folder-row wrapper — outline it blue */
+  /* currentTarget is the folder-row wrapper — outline it blue.
+     v5.15b3: dashed when a folder is being dragged (folder-on-folder),
+     solid when a doc is being dragged (file-on-folder, existing). */
   if(ev.currentTarget&&ev.currentTarget.style){
-    ev.currentTarget.style.outline='2px solid var(--blue)';
+    var style=(dragKind==='folder')?'dashed':'solid';
+    ev.currentTarget.style.outline='2px '+style+' var(--blue)';
     ev.currentTarget.style.outlineOffset='-2px';
   }
 }
@@ -900,6 +912,12 @@ function folderDrop(ev,targetFolderId){
   console.log('v5.1a drop: target='+(targetFolderId||'(uncategorised)')+' raw='+raw);
   if(!raw){console.log('v5.1a drop: no dataTransfer payload');return;}
   var data;try{data=JSON.parse(raw);}catch(e){console.log('v5.1a drop: parse failed');return;}
+  /* v5.15b3: branch on payload type — folderId means a folder is being
+     moved; docId means a document is being moved (existing behaviour). */
+  if(data&&data.folderId){
+    handleFolderDrop(data.folderId,targetFolderId);
+    return;
+  }
   if(!data||!data.docId){console.log('v5.1a drop: no docId');return;}
   var doc=documents.find(function(d){return d.id===data.docId;});
   if(!doc){console.log('v5.1a drop: doc not in memory');return;}
@@ -928,6 +946,99 @@ function folderDrop(ev,targetFolderId){
   if(current.indexOf(targetFolderId)===-1)current.push(targetFolderId);
   console.log('v5.1a drop: PATCH folder_ids='+JSON.stringify(current));
   updateDocFolders(doc.id,current);
+}
+
+/* ── v5.15b3: FOLDER-ON-FOLDER DRAG-DROP ───────────────────────────────────
+   folderDragStart fires when the user grabs a folder header. Sets the
+   text/plain payload to {folderId} so folderDrop can distinguish it from
+   doc drops. Also auto-collapses the folder if it was open, for visual
+   clarity during drag.
+   handleFolderDrop is the orchestrator: cycle check, confirm, server
+   PATCH, in-memory refresh, re-render. */
+function folderDragStart(ev,folderId){
+  console.log('v5.15b3 folder dragstart: id='+folderId);
+  dragKind='folder';
+  try{
+    ev.dataTransfer.setData('text/plain',JSON.stringify({folderId:folderId}));
+    ev.dataTransfer.effectAllowed='move';
+  }catch(e){console.log('v5.15b3 folderDragStart setData failed:',e);}
+  ev.stopPropagation();
+  /* Auto-collapse the dragged folder if open. Deferred to next tick so
+     the dragstart event finishes propagating before we rewrite the DOM —
+     mutating the doc tree mid-dragstart can confuse Safari's drag tracking. */
+  if(foldersOpen[folderId]){
+    foldersOpen[folderId]=false;
+    setTimeout(function(){
+      if(typeof renderDocs==='function')renderDocs();
+    },0);
+  }
+}
+
+function folderDragEnd(ev){
+  dragKind=null;
+}
+
+async function handleFolderDrop(sourceFolderId,targetFolderId){
+  var src=currentFolders.find(function(f){return f.id===sourceFolderId;});
+  if(!src){showToast('Folder not found');return;}
+  /* Empty target string = drop on Unassigned = unnest to root. */
+  var newParentId=targetFolderId||null;
+  /* Self-drop: silent no-op. */
+  if(sourceFolderId===newParentId)return;
+  /* Drop on current parent: silent no-op. */
+  var currentParent=src.parent_folder_id||null;
+  if(currentParent===newParentId)return;
+  /* Cycle check: walk ancestors of newParentId. If we hit sourceFolderId,
+     it's a cycle and we'd be moving a folder into one of its own
+     descendants. The server also catches this; we check client-side
+     to avoid the round-trip and to give a friendlier toast. */
+  if(newParentId){
+    var cursor=newParentId;
+    var hops=0;
+    while(cursor&&hops<100){
+      if(cursor===sourceFolderId){
+        showToast("Can't move a folder into one of its own subfolders");
+        return;
+      }
+      var parent=currentFolders.find(function(f){return f.id===cursor;});
+      cursor=parent?(parent.parent_folder_id||null):null;
+      hops++;
+    }
+  }
+  /* Confirmation prompt. */
+  var srcName=src.name;
+  var msg;
+  if(newParentId){
+    var dst=currentFolders.find(function(f){return f.id===newParentId;});
+    var dstName=dst?dst.name:'(folder)';
+    msg='Move folder "'+srcName+'" into folder "'+dstName+'"?';
+  }else{
+    var fromName=currentParent
+      ?((currentFolders.find(function(f){return f.id===currentParent;})||{}).name||'(folder)')
+      :null;
+    msg=fromName
+      ?'Move folder "'+srcName+'" out of "'+fromName+'" to top level?'
+      :'Move folder "'+srcName+'" to top level?';
+  }
+  if(!confirm(msg))return;
+  /* Server PATCH. */
+  try{
+    await api('/api/folders?id='+sourceFolderId,'PATCH',{parent_folder_id:newParentId});
+    /* Refresh the in-memory folder list and re-render. */
+    var d=await api('/api/folders?matter_id='+currentMatter.id,'GET');
+    currentFolders=(d&&d.folders)?d.folders:currentFolders;
+    if(typeof renderDocs==='function')renderDocs();
+    showToast('Folder moved');
+  }catch(err){
+    var emsg=(err&&err.message)||'unknown';
+    if(emsg.indexOf('cycle')!==-1){
+      showToast("Can't move a folder into one of its own subfolders");
+    }else if(emsg.indexOf('already exists')!==-1){
+      showToast('A folder with that name already exists at the destination');
+    }else{
+      showToast('Move failed: '+emsg);
+    }
+  }
 }
 
 /* v5.1c: Atomic helpers for move and copy. Both go through updateDocFolders

@@ -1341,7 +1341,9 @@ async function uploadFiles(files){
   /* Clear any previous retry state — a fresh upload session replaces it */
   pendingUploadRetry=null;
   clearUploadRetryUI();
-  var docType=document.getElementById('docTypeSelect').value;
+  /* v5.15b1: docTypeSelect element removed from UI. doc_type column on
+     documents stays in schema for backwards-compat; new uploads carry ''. */
+  var docType='';
   var prog=document.getElementById('uploadProg'),errEl=document.getElementById('uploadErr');
   errEl.classList.remove('on');
   for(var fi=0;fi<files.length;fi++){

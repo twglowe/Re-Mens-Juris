@@ -1,3 +1,6 @@
+/* v5.15b5: Vercel edge-cache purge no-op. Single-line comment to change the
+   file SHA and force a fresh deploy after b4 was correctly committed to main
+   but Vercel kept serving b3. No behavioural change. */
 /* ═══════════════════════════════════════════════════════════════════════════════
    EX LIBRIS JURIS v5.10c — JAVASCRIPT
    v5.10c (27 Apr 2026) — Push v5.10c (follow-ups survive laptop sleep):

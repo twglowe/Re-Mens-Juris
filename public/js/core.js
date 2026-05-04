@@ -2150,7 +2150,17 @@ function renderUploadFolderPicker(){
   if(!host)return;
   if(!currentMatter){host.innerHTML='';host.style.display='none';return;}
   host.style.display='';
-  var chipsHtml=currentFolders.map(function(f){
+  /* v5.15b4: show only top-level folders (parent_folder_id null) in the
+     upload picker. Subfolders are reachable via drag-drop after upload.
+     Keeps the picker column tidy and reflects the rule that uploads
+     target a top-level folder by chip selection. */
+  var rootFolders=currentFolders.filter(function(f){return !f.parent_folder_id;});
+  /* Prune any stale subfolder ids that may have been selected before
+     this filter was applied — keeps uploadSelectedFolderIds aligned
+     with what the user can actually see. */
+  var rootIds={};rootFolders.forEach(function(f){rootIds[f.id]=true;});
+  uploadSelectedFolderIds=uploadSelectedFolderIds.filter(function(id){return rootIds[id];});
+  var chipsHtml=rootFolders.map(function(f){
     var on=uploadSelectedFolderIds.indexOf(f.id)!==-1;
     return '<span class="upload-folder-chip'+(on?' on':'')+'" data-fid="'+f.id+'" onclick="toggleUploadFolder(\''+f.id+'\')" style="display:inline-block;font-size:.72rem;font-weight:600;padding:.2rem .55rem;margin:.15rem .2rem 0 0;border-radius:11px;cursor:pointer;border:1.5px solid '+(on?'var(--blue)':'var(--border)')+';background:'+(on?'var(--blue-pale)':'var(--white)')+';color:'+(on?'var(--blue)':'var(--text-mid)')+'">'+esc(f.name)+'</span>';
   }).join('');

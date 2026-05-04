@@ -1,19 +1,27 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   ELJ v5.0 — api/folders.js
+   ELJ v5.15a — api/folders.js
    ═══════════════════════════════════════════════════════════════════════════════
    Manages document folders for matters. Folders are per-matter and many-to-many
-   with documents (a document can sit in multiple folders, or none).
+   with documents (a document can sit in multiple folders, or none). As of v5.15a
+   folders also support nesting via parent_folder_id (null = root-level).
 
    Endpoints:
      GET    /api/folders?matter_id=...      List folders for a matter, with
-                                            document_count per folder.
-     POST   /api/folders                    Create a folder. Body: {matter_id,name}
+                                            document_count and parent_folder_id.
+     POST   /api/folders                    Create a folder.
+                                            Body: {matter_id, name, parent_folder_id?}
                                             Also upserts user_folder_defaults.
-     PATCH  /api/folders?id=...             Rename a folder. Body: {name}
-                                            Does NOT touch user_folder_defaults.
+     PATCH  /api/folders?id=...             Rename a folder and/or move it to a
+                                            different parent.
+                                            Body: {name?, parent_folder_id?}
+                                            parent_folder_id may be null to move
+                                            a folder back to root. Cycle and
+                                            cross-matter moves are rejected.
      DELETE /api/folders?id=...             Delete a folder. Cascades document_folders
                                             join rows; documents become uncategorised
-                                            if not in any other folder.
+                                            if not in any other folder. Children
+                                            are PROMOTED to root via ON DELETE
+                                            SET NULL on parent_folder_id.
 
      GET    /api/folders?action=defaults    Per-user folder name suggestion list,
                                             ordered by last_used_at DESC.
@@ -64,7 +72,7 @@ async function documentMatterId(supabase, documentId) {
   return data.matter_id;
 }
 
-const SERVER_VERSION = "v5.5";
+const SERVER_VERSION = "v5.15a";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " folders handler: " + (req.method || "?") + " " + (req.url || ""));
   const supabase = freshClient();
@@ -95,7 +103,7 @@ export default async function handler(req, res) {
       /* Pull folders for this matter */
       const { data: folders, error: foldersErr } = await supabase
         .from("folders")
-        .select("id, name, sort_order, created_at")
+        .select("id, name, sort_order, created_at, parent_folder_id")
         .eq("matter_id", matterId)
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true });
@@ -123,6 +131,7 @@ export default async function handler(req, res) {
           name: f.name,
           sort_order: f.sort_order,
           created_at: f.created_at,
+          parent_folder_id: f.parent_folder_id || null,
           document_count: counts[f.id] || 0
         };
       });
@@ -176,7 +185,7 @@ export default async function handler(req, res) {
 
     /* ── POST /api/folders ──────────────────────────────────────────────── */
     if (req.method === "POST") {
-      const { matter_id, name } = req.body || {};
+      const { matter_id, name, parent_folder_id } = req.body || {};
       if (!matter_id || !name || !name.trim()) {
         return res.status(400).json({ error: "matter_id and name required" });
       }
@@ -184,17 +193,34 @@ export default async function handler(req, res) {
       const { canEdit } = await canAccessMatter(supabase, user.id, matter_id);
       if (!canEdit) return res.status(403).json({ error: "No edit permission" });
 
-      /* Insert the folder. UNIQUE (matter_id, name) prevents duplicates. */
+      /* v5.15a: if parent_folder_id is provided (and not null), validate
+         that the parent exists and belongs to the same matter. Cross-matter
+         parents are rejected. parent_folder_id of null/undefined means
+         the new folder is at root. */
+      let parentId = null;
+      if (parent_folder_id !== undefined && parent_folder_id !== null) {
+        const parentMatter = await folderMatterId(supabase, parent_folder_id);
+        if (!parentMatter) {
+          return res.status(400).json({ error: "Parent folder not found" });
+        }
+        if (parentMatter !== matter_id) {
+          return res.status(400).json({ error: "Parent folder is not in the same matter" });
+        }
+        parentId = parent_folder_id;
+      }
+
+      /* Insert the folder. Partial unique indexes prevent name collisions
+         within the same parent (or among root-level folders). */
       const { data: folder, error: insErr } = await supabase
         .from("folders")
-        .insert({ matter_id: matter_id, name: cleanName })
+        .insert({ matter_id: matter_id, name: cleanName, parent_folder_id: parentId })
         .select()
         .single();
       if (insErr) {
         /* Postgres unique violation = 23505. PostgREST surfaces it as a 409
            or as a generic error message — handle by message text. */
         if (insErr.code === "23505" || (insErr.message || "").indexOf("duplicate") !== -1) {
-          return res.status(409).json({ error: "A folder with that name already exists in this matter" });
+          return res.status(409).json({ error: "A folder with that name already exists in this location" });
         }
         throw insErr;
       }
@@ -219,19 +245,67 @@ export default async function handler(req, res) {
     if (req.method === "PATCH") {
       const id = req.query.id;
       if (!id) return res.status(400).json({ error: "id required" });
-      const { name } = req.body || {};
-      if (!name || !name.trim()) return res.status(400).json({ error: "name required" });
-      const cleanName = name.trim();
+      const body = req.body || {};
+      const wantsRename = Object.prototype.hasOwnProperty.call(body, "name");
+      const wantsMove   = Object.prototype.hasOwnProperty.call(body, "parent_folder_id");
+      if (!wantsRename && !wantsMove) {
+        return res.status(400).json({ error: "name or parent_folder_id required" });
+      }
 
       const matterId = await folderMatterId(supabase, id);
       if (!matterId) return res.status(404).json({ error: "Folder not found" });
       const { canEdit } = await canAccessMatter(supabase, user.id, matterId);
       if (!canEdit) return res.status(403).json({ error: "No edit permission" });
 
-      const { error } = await supabase.from("folders").update({ name: cleanName }).eq("id", id);
+      const updates = {};
+
+      if (wantsRename) {
+        const cleanName = (body.name || "").trim();
+        if (!cleanName) return res.status(400).json({ error: "name cannot be empty" });
+        updates.name = cleanName;
+      }
+
+      if (wantsMove) {
+        const newParent = body.parent_folder_id; /* may be null = move to root */
+        if (newParent === null) {
+          updates.parent_folder_id = null;
+        } else {
+          /* Validate parent exists, is in same matter, is not the folder
+             itself, and is not one of the folder's descendants (cycle). */
+          if (newParent === id) {
+            return res.status(400).json({ error: "A folder cannot be its own parent" });
+          }
+          const parentMatter = await folderMatterId(supabase, newParent);
+          if (!parentMatter) return res.status(400).json({ error: "Parent folder not found" });
+          if (parentMatter !== matterId) {
+            return res.status(400).json({ error: "Parent folder is not in the same matter" });
+          }
+          /* Cycle check: walk up the chain of ancestors from newParent. If
+             we ever see `id`, it's a cycle. Cap at 100 hops as a safety
+             belt against corrupted data. */
+          let cursor = newParent;
+          let hops = 0;
+          while (cursor && hops < 100) {
+            if (cursor === id) {
+              return res.status(400).json({ error: "Move would create a folder cycle" });
+            }
+            const { data: up, error: upErr } = await supabase
+              .from("folders")
+              .select("parent_folder_id")
+              .eq("id", cursor)
+              .single();
+            if (upErr || !up) break;
+            cursor = up.parent_folder_id;
+            hops++;
+          }
+          updates.parent_folder_id = newParent;
+        }
+      }
+
+      const { error } = await supabase.from("folders").update(updates).eq("id", id);
       if (error) {
         if (error.code === "23505" || (error.message || "").indexOf("duplicate") !== -1) {
-          return res.status(409).json({ error: "A folder with that name already exists in this matter" });
+          return res.status(409).json({ error: "A folder with that name already exists in this location" });
         }
         throw error;
       }

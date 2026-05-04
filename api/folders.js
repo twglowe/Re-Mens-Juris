@@ -30,6 +30,20 @@
                                             Body: {document_id, folder_ids: [...]}
                                             Idempotent.
 
+     POST   /api/folders?action=ensure      v5.15b2: Idempotent folder lookup
+                                            or creation. Body:
+                                              {matter_id, name, parent_folder_id?}
+                                            Returns the existing folder if a
+                                            folder with the same matter_id +
+                                            parent_folder_id + name already
+                                            exists. Otherwise creates and
+                                            returns it. No auto-rename — the
+                                            caller is expected to pick a free
+                                            name client-side. Used by the
+                                            folder-upload flow to recursively
+                                            create nested folders without
+                                            handling 409s.
+
    Authorisation: callers must have access to the matter via canAccessMatter
    (own or shared). Edit operations require canEdit.
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -72,7 +86,7 @@ async function documentMatterId(supabase, documentId) {
   return data.matter_id;
 }
 
-const SERVER_VERSION = "v5.15a";
+const SERVER_VERSION = "v5.15b2";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " folders handler: " + (req.method || "?") + " " + (req.url || ""));
   const supabase = freshClient();
@@ -181,6 +195,83 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({ success: true, document_id: document_id, folder_ids: folder_ids });
+    }
+
+    /* ── POST /api/folders?action=ensure ─────────────────────────────────
+       v5.15b2: idempotent folder lookup-or-create. Used by the folder
+       upload flow to walk a directory tree and ensure each segment
+       exists, without the client having to handle 409 collisions.
+       Strict: same matter_id + parent_folder_id + name → same folder.
+       The caller (frontend) is responsible for picking a non-colliding
+       name at the top level if the user uploads a folder whose name
+       already exists at the destination. */
+    if (req.method === "POST" && action === "ensure") {
+      const { matter_id, name, parent_folder_id } = req.body || {};
+      if (!matter_id || !name || !name.trim()) {
+        return res.status(400).json({ error: "matter_id and name required" });
+      }
+      const cleanName = name.trim();
+      const { canEdit } = await canAccessMatter(supabase, user.id, matter_id);
+      if (!canEdit) return res.status(403).json({ error: "No edit permission" });
+
+      let parentId = null;
+      if (parent_folder_id !== undefined && parent_folder_id !== null) {
+        const parentMatter = await folderMatterId(supabase, parent_folder_id);
+        if (!parentMatter) {
+          return res.status(400).json({ error: "Parent folder not found" });
+        }
+        if (parentMatter !== matter_id) {
+          return res.status(400).json({ error: "Parent folder is not in the same matter" });
+        }
+        parentId = parent_folder_id;
+      }
+
+      /* Probe for existing folder with same matter + name + parent. Use
+         is(null) for null-parent, eq() for non-null. PostgREST treats
+         these differently. */
+      const probeBase = supabase.from("folders").select("*").eq("matter_id", matter_id).eq("name", cleanName);
+      const probe = parentId === null ? probeBase.is("parent_folder_id", null) : probeBase.eq("parent_folder_id", parentId);
+      const { data: existing, error: probeErr } = await probe.maybeSingle();
+      if (probeErr) throw probeErr;
+      if (existing) {
+        return res.status(200).json({ folder: existing, created: false });
+      }
+
+      /* Insert. */
+      const { data: folder, error: insErr } = await supabase
+        .from("folders")
+        .insert({ matter_id: matter_id, name: cleanName, parent_folder_id: parentId })
+        .select()
+        .single();
+
+      if (insErr) {
+        /* Race: another writer inserted the same matter+parent+name
+           between our probe and our insert. Re-probe and return as
+           found. */
+        if (insErr.code === "23505" || (insErr.message || "").indexOf("duplicate") !== -1) {
+          const probeBase2 = supabase.from("folders").select("*").eq("matter_id", matter_id).eq("name", cleanName);
+          const probe2 = parentId === null ? probeBase2.is("parent_folder_id", null) : probeBase2.eq("parent_folder_id", parentId);
+          const { data: raced } = await probe2.maybeSingle();
+          if (raced) {
+            return res.status(200).json({ folder: raced, created: false });
+          }
+        }
+        throw insErr;
+      }
+
+      /* Best-effort upsert into user_folder_defaults — same pattern as
+         POST /api/folders. Non-fatal if it fails. */
+      const { error: defErr } = await supabase
+        .from("user_folder_defaults")
+        .upsert(
+          { user_id: user.id, name: cleanName, last_used_at: new Date().toISOString() },
+          { onConflict: "user_id,name" }
+        );
+      if (defErr) {
+        console.log("v5.15b2 ensure user_folder_defaults upsert failed:", defErr.message);
+      }
+
+      return res.status(201).json({ folder: folder, created: true });
     }
 
     /* ── POST /api/folders ──────────────────────────────────────────────── */

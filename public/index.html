@@ -313,7 +313,7 @@ textarea#chatInput::placeholder{color:var(--text-faint);font-weight:400}
 .upload-err{margin:.45rem .85rem 0;padding:.5rem .8rem;background:#fdf0f0;border:1.5px solid #f0b0b0;border-radius:5px;font-size:.8rem;font-weight:500;color:var(--error);display:none}
 .upload-err.on{display:block}
 select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-family:'Source Sans 3',sans-serif;font-size:.82rem;font-weight:600;color:var(--text-mid);background:var(--white)}
-.upload-zone{margin:.55rem .85rem;border:2px dashed var(--border-strong);border-radius:8px;padding:1.2rem .85rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;flex-shrink:0}
+.upload-zone{margin:.55rem .85rem;border:2px dashed var(--border-strong);border-radius:8px;padding:.5rem .85rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;flex-shrink:0}
 .upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue-light);background:var(--blue-faint)}
 .upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .uz-icon{font-size:1.5rem;opacity:.25}
@@ -946,18 +946,12 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
     <!-- ═══════════ RIGHT PANEL ═══════════ -->
     <div class="right-panel" id="rightPanel" role="complementary" aria-label="Documents" style="display:none">
       <div class="panel-head"><span class="panel-head-title">Documents</span></div>
-      <select class="doc-type" id="docTypeSelect">
-        <option>Pleading</option><option>Skeleton Argument</option><option>Witness Statement</option>
-        <option>Exhibit</option><option>Case Law</option><option>Statute / Regulation</option>
-        <option>Correspondence</option><option>Expert Report</option><option>Trial Bundle</option><option>Other</option>
-      </select>
+      <!-- v5.15b1: docTypeSelect dropdown removed; redundant given folders -->
       <!-- v5.0: Folder picker populated by renderUploadFolderPicker() -->
       <div id="uploadFolderPicker" style="display:none;margin-bottom:.4rem"></div>
       <div class="upload-zone" id="uploadZone">
         <input type="file" id="fileInput" accept=".pdf,.docx" multiple>
-        <div class="uz-icon">📎</div>
         <div class="uz-text">Drop PDFs here or click to upload</div>
-        <div class="uz-hint">PDF, Word · up to 50MB per file</div>
       </div>
       <div class="upload-progress" id="uploadProg"></div>
       <div class="upload-err" id="uploadErr"></div>
@@ -1217,11 +1211,11 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js?v=5.15a"></script>
-<script src="/js/tools.js?v=5.15a"></script>
-<script src="/js/library.js?v=5.15a"></script>
-<script src="/js/drafting.js?v=5.15a"></script>
-<script src="/js/diagram.js?v=5.15a"></script>
+<script src="/js/core.js?v=5.15b1"></script>
+<script src="/js/tools.js?v=5.15b1"></script>
+<script src="/js/library.js?v=5.15b1"></script>
+<script src="/js/drafting.js?v=5.15b1"></script>
+<script src="/js/diagram.js?v=5.15b1"></script>
 <!-- v5.13b: Previous Drafts modal -->
 <div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">
   <div class="modal" style="max-width:600px;max-height:80vh;display:flex;flex-direction:column">

@@ -615,7 +615,13 @@ async function loadDocuments(matterId){try{var d=await api('/api/documents?matte
    (closed by default). A document in N folders appears as N separate child
    rows. Uncategorised documents appear in a section at the bottom. Drag-and-
    drop moves documents between folders; long-press/right-click opens a
-   context menu for move/add/edit/delete. */
+   context menu for move/add/edit/delete.
+   v5.15a: NESTED FOLDERS. Folders can have parent_folder_id set, in which
+   case they render as subfolders inside their parent's open state. The
+   render is recursive but bounded — we iterate from root-level folders down
+   only when each folder is in the open state. Empty folders still show. The
+   flat-rendering path remains identical when no folder has a parent set
+   (which is the day-one state of the v5.15a release). */
 function renderDocs(){
   var list=document.getElementById('docsList');
   var newFolderBtnRow=document.getElementById('newFolderButtonRow');
@@ -638,6 +644,21 @@ function renderDocs(){
   /* Build folder lookup and document groupings */
   var folderById={};
   currentFolders.forEach(function(f){folderById[f.id]=f;});
+  /* v5.15a: build children-by-parent map for tree traversal. A folder with
+     parent_folder_id=null is a root folder. Sorting alphabetically inside
+     each parent for stable display. */
+  var childrenByParent={};
+  childrenByParent['__root__']=[];
+  currentFolders.forEach(function(f){
+    var pid=f.parent_folder_id||'__root__';
+    if(!childrenByParent[pid])childrenByParent[pid]=[];
+    childrenByParent[pid].push(f);
+  });
+  Object.keys(childrenByParent).forEach(function(pid){
+    childrenByParent[pid].sort(function(a,b){
+      return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+    });
+  });
   /* Group documents by folder id. A doc in 2 folders lands in 2 bins. */
   var byFolder={};
   currentFolders.forEach(function(f){byFolder[f.id]=[];});
@@ -648,10 +669,6 @@ function renderDocs(){
     fids.forEach(function(fid){
       if(byFolder[fid])byFolder[fid].push(doc);
     });
-  });
-  /* Sort folders alphabetically by name for stable display */
-  var sortedFolders=currentFolders.slice().sort(function(a,b){
-    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
   });
   /* Render a single document row. inFolderId is the folder whose child row
      this is ('' if rendered under Uncategorised). Used by drag-to-move to
@@ -733,13 +750,23 @@ function renderDocs(){
      Used for both real folders and the virtual Unassigned folder. The
      `isUnassigned` flag suppresses the delete button and changes the
      drop semantics (drop on Unassigned removes from source folder only).
-     `folderId` for Unassigned is the UNASSIGNED_ID sentinel. */
+     `folderId` for Unassigned is the UNASSIGNED_ID sentinel.
+     v5.15a: when open, renders subfolders (recursively) above the docs.
+     Subfolder count contributes to the parenthesised number on the header
+     so users can tell a folder is non-empty even if it has no direct
+     documents. Visual indentation for subfolders comes from the natural
+     containment in the parent's folder-children box. */
   function renderFolderBlock(folderId,folderName,kids,isUnassigned){
     var open=!!foldersOpen[folderId];
     var glyph=open?'\u25BC':'\u25B6';
     /* The drop handler uses the empty string as the "drop on Unassigned"
        signal in folderDrop \u2014 keep that protocol for backward compat. */
     var dropArg=isUnassigned?'':folderId;
+    /* v5.15a: how many direct subfolders does this folder have? Counts go
+       into the header parenthesis alongside document count. Unassigned
+       has no subfolders by definition. */
+    var subfolders=isUnassigned?[]:(childrenByParent[folderId]||[]);
+    var totalCount=kids.length+subfolders.length;
     var out='';
     /* When open, wrap the whole thing in a brown-bordered box. When closed,
        render only the header row standalone. */
@@ -761,7 +788,7 @@ function renderDocs(){
       +'<span style="font-size:.78rem;width:.9rem;display:inline-block;text-align:center;color:rgba(255,255,255,.85)">'+glyph+'</span>'
       +'<span style="font-size:1.4rem;line-height:1">\uD83D\uDCC1</span>'
       +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff">'+esc(folderName)+'</span>'
-      +'<span style="font-size:.72rem;color:rgba(255,255,255,.8);font-weight:600">('+kids.length+')</span>'
+      +'<span style="font-size:.72rem;color:rgba(255,255,255,.8);font-weight:600">('+totalCount+')</span>'
       +'</div>';
     /* Real folders get a delete button. Unassigned does not. */
     if(!isUnassigned){
@@ -775,11 +802,19 @@ function renderDocs(){
         +' ondragover="folderDragOver(event,\''+dropArg+'\')"'
         +' ondragleave="folderDragLeave(event)"'
         +' ondrop="folderDrop(event,\''+dropArg+'\')">';
-      if(kids.length===0){
+      /* v5.15a: render subfolders FIRST, then documents. Putting subfolders
+         on top is consistent with how filesystems display directories above
+         files in the same parent. */
+      if(subfolders.length){
+        subfolders.forEach(function(sf){
+          out+=renderFolderBlock(sf.id,sf.name,byFolder[sf.id]||[],false);
+        });
+      }
+      if(kids.length===0&&subfolders.length===0){
         out+='<div style="padding:.5rem .25rem;font-size:.74rem;color:var(--text-faint);font-style:italic;text-align:center">'
           +(isUnassigned?'No unassigned documents.':'Empty folder. Drag documents here to classify them.')
           +'</div>';
-      }else{
+      }else if(kids.length){
         /* Pass the inFolderId so renderDocRow knows whether to offer
            Move-only or Move+Copy in the menu. For Unassigned children we
            pass UNASSIGNED_ID, which renderDocRow uses to pick the simple
@@ -793,9 +828,11 @@ function renderDocs(){
     return out;
   }
 
-  /* Render real folders, then Unassigned pinned to the bottom */
+  /* v5.15a: render only ROOT-LEVEL folders at the top tier. Subfolders
+     render recursively inside renderFolderBlock when their parent is open. */
   var html=header;
-  sortedFolders.forEach(function(f){
+  var rootFolders=childrenByParent['__root__']||[];
+  rootFolders.forEach(function(f){
     html+=renderFolderBlock(f.id,f.name,byFolder[f.id]||[],false);
   });
   /* v5.1c: Unassigned is now a virtual folder pinned to the bottom of the

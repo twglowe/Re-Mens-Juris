@@ -1313,11 +1313,353 @@ async function deleteDoc(id,name){if(!confirm('Remove "'+name+'"?'))return;try{a
 /* v4.5a: Rebuild trigger */
 /* ── UPLOAD ──────────────────────────────────────────────────────────────── */
 var uploadZone=document.getElementById('uploadZone'),fileInput=document.getElementById('fileInput');
+/* v5.15b2: separate input for picking a folder (webkitdirectory). Browser
+   semantics differ enough from a plain multi-file picker that it gets its
+   own input + visible 📁 button rather than overloading fileInput. */
+var folderInput=document.getElementById('folderInput'),folderBrowseBtn=document.getElementById('folderBrowseBtn');
 uploadZone.addEventListener('dragover',function(e){e.preventDefault();uploadZone.classList.add('drag-over');});
 uploadZone.addEventListener('dragleave',function(){uploadZone.classList.remove('drag-over');});
-/* v4.5: Drop handler filters by extension (.pdf/.docx) instead of MIME type */
-uploadZone.addEventListener('drop',function(e){e.preventDefault();uploadZone.classList.remove('drag-over');if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(e.dataTransfer.files).filter(function(f){var n=f.name.toLowerCase();return n.endsWith('.pdf')||n.endsWith('.docx');}));});
+/* v4.5: Drop handler filters by extension (.pdf/.docx) instead of MIME type
+   v5.15b2: drop now detects folders via DataTransferItem.webkitGetAsEntry
+   and routes them through processFolderUpload. Plain-file drops (no folder
+   entries) keep the previous fast path. */
+uploadZone.addEventListener('drop',async function(e){
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  if(!currentMatter){showToast('Select a matter first');return;}
+  var collected;
+  try{collected=await collectDropEntries(e.dataTransfer);}
+  catch(err){showToast('Drop failed: '+(err&&err.message||'unknown'));return;}
+  if(collected.hasFolder){
+    await processFolderUpload(collected.items);
+  }else{
+    /* Pure file drop — preserve the v4.5 behaviour of filtering by
+       extension. processFolderUpload would also handle this correctly,
+       but the existing code path is more battle-tested and avoids the
+       skipped-files modal for normal file drops. */
+    uploadFiles(collected.items
+      .filter(function(it){return !it.relativePath;})
+      .map(function(it){return it.file;})
+      .filter(function(f){var n=f.name.toLowerCase();return n.endsWith('.pdf')||n.endsWith('.docx');}));
+  }
+});
 fileInput.addEventListener('change',function(){if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(fileInput.files));fileInput.value='';});
+/* v5.15b2: folder-picker click. The 📁 button at the right of the upload
+   zone triggers the hidden folderInput. stopPropagation prevents the
+   click bubbling to fileInput's full-area overlay. */
+if(folderBrowseBtn){
+  folderBrowseBtn.addEventListener('click',function(e){
+    e.stopPropagation();
+    if(!currentMatter){showToast('Select a matter first');return;}
+    folderInput.click();
+  });
+}
+if(folderInput){
+  folderInput.addEventListener('change',async function(){
+    if(!currentMatter){showToast('Select a matter first');folderInput.value='';return;}
+    var files=Array.from(folderInput.files);
+    /* webkitRelativePath gives "Folder/Sub/file.pdf"; convert to the
+       same {file, relativePath} shape collectDropEntries returns. */
+    var items=files.map(function(f){return {file:f,relativePath:f.webkitRelativePath||''};});
+    folderInput.value='';
+    await processFolderUpload(items);
+  });
+}
+
+/* ── v5.15b2: FOLDER UPLOAD HELPERS ────────────────────────────────────────
+   collectDropEntries walks DataTransferItems (which include directories
+   when the user drops a folder) and produces a flat list of
+   {file, relativePath}. relativePath is "" for files dropped directly,
+   or "FolderName/Sub/file.pdf" for files inside a dropped folder.
+   ──────────────────────────────────────────────────────────────────────── */
+async function collectDropEntries(dataTransfer){
+  var items=Array.from(dataTransfer.items||[]);
+  var out={items:[],hasFolder:false};
+  for(var i=0;i<items.length;i++){
+    var it=items[i];
+    if(it.kind!=='file')continue;
+    var entry=it.webkitGetAsEntry?it.webkitGetAsEntry():null;
+    if(!entry){
+      /* Older browsers / unusual drops — fall back to getAsFile. */
+      var f=it.getAsFile();
+      if(f)out.items.push({file:f,relativePath:''});
+      continue;
+    }
+    if(entry.isFile){
+      var ff=await new Promise(function(resolve,reject){entry.file(resolve,reject);});
+      out.items.push({file:ff,relativePath:''});
+    }else if(entry.isDirectory){
+      out.hasFolder=true;
+      await walkDirectoryEntry(entry,entry.name,out.items);
+    }
+  }
+  return out;
+}
+
+/* Recursively walk a FileSystemDirectoryEntry. readEntries returns at most
+   100 children per call, so loop until it returns empty. */
+async function walkDirectoryEntry(dirEntry,relativePath,outArr){
+  var reader=dirEntry.createReader();
+  while(true){
+    var batch=await new Promise(function(resolve,reject){reader.readEntries(resolve,reject);});
+    if(!batch||batch.length===0)break;
+    for(var i=0;i<batch.length;i++){
+      var child=batch[i];
+      var childPath=relativePath+'/'+child.name;
+      if(child.isFile){
+        var f=await new Promise(function(resolve,reject){child.file(resolve,reject);});
+        outArr.push({file:f,relativePath:childPath});
+      }else if(child.isDirectory){
+        await walkDirectoryEntry(child,childPath,outArr);
+      }
+    }
+  }
+}
+
+/* Classify a file by extension. 'valid' = will upload, 'excel' = noisy
+   reject (modal lists it), 'unsupported' = silent reject (also listed
+   in the modal but in a separate section). */
+function classifyUploadFile(file){
+  var lower=(file.name||'').toLowerCase();
+  if(lower.endsWith('.pdf'))return 'valid';
+  if(lower.endsWith('.docx'))return 'valid';
+  if(lower.endsWith('.xlsx')||lower.endsWith('.xls')||lower.endsWith('.xlsm'))return 'excel';
+  return 'unsupported';
+}
+
+/* From a list of classified items, return a Set of folder paths that
+   contain at least one valid file (anywhere in their subtree). Empty
+   branches are pruned per the locked v5.15b2 spec. */
+function liveFolderPaths(classified){
+  var live={};
+  for(var i=0;i<classified.length;i++){
+    var c=classified[i];
+    if(c.klass!=='valid')continue;
+    var rel=c.relativePath;
+    if(!rel)continue;
+    var parts=rel.split('/');
+    parts.pop();
+    while(parts.length>0){
+      live[parts.join('/')]=true;
+      parts.pop();
+    }
+  }
+  return live;
+}
+
+/* Pick an unused folder name at the destination parent. Suffixes start at
+   (2) — macOS / Drive / Dropbox style. existingNames is a Set-like map
+   {lowercase name -> true} of folders already at the parent level. */
+function pickAvailableFolderName(desired,existingLowerMap){
+  var d=desired.toLowerCase();
+  if(!existingLowerMap[d])return desired;
+  var n=2;
+  while(existingLowerMap[(desired+' ('+n+')').toLowerCase()])n++;
+  return desired+' ('+n+')';
+}
+
+/* The folder-upload orchestrator. Items is an array of {file, relativePath}
+   produced by collectDropEntries or by reading folderInput.files. Plain
+   files (relativePath === '') are routed through the normal multi-folder
+   uploadFiles path and DO NOT contribute to folder creation; they go to
+   uploadSelectedFolderIds same as before.
+
+   Files inside folders go through a recursive folder-creation pass that
+   uses POST /api/folders?action=ensure. Top-level folder names that
+   collide at the destination parent are auto-renamed (2), (3) etc.
+   client-side BEFORE the server is called. */
+async function processFolderUpload(items){
+  if(!items||!items.length||!currentMatter)return;
+
+  /* Step 1: classify everything. */
+  var classified=items.map(function(it){
+    return {file:it.file,relativePath:it.relativePath||'',klass:classifyUploadFile(it.file)};
+  });
+
+  /* Step 2: split plain files off — they go through the normal path. */
+  var plainFiles=[];
+  var folderItems=[];
+  for(var i=0;i<classified.length;i++){
+    if(!classified[i].relativePath)plainFiles.push(classified[i]);
+    else folderItems.push(classified[i]);
+  }
+
+  /* Step 3: collect skipped names from folder items for the report modal. */
+  var excelSkipped=[];
+  var unsupportedSkipped=[];
+  for(var k=0;k<folderItems.length;k++){
+    if(folderItems[k].klass==='excel')excelSkipped.push(folderItems[k].relativePath);
+    else if(folderItems[k].klass==='unsupported')unsupportedSkipped.push(folderItems[k].relativePath);
+  }
+
+  /* Step 4: figure out which folder paths actually need to exist. */
+  var live=liveFolderPaths(folderItems);
+
+  /* Step 5: rename top-level folders if they collide at the destination
+     parent. The destination parent for the upload root is the FIRST
+     selected picker chip, or null (root). Files keep their normal
+     multi-folder behaviour via uploadFiles below — that's separate. */
+  var destinationParentId=uploadSelectedFolderIds.length>0?uploadSelectedFolderIds[0]:null;
+  /* Build a lowercase set of folder names already at the destination
+     parent. currentFolders is the in-memory list for the active matter. */
+  var existingAtParent={};
+  for(var ci=0;ci<currentFolders.length;ci++){
+    var ff=currentFolders[ci];
+    var ffParent=ff.parent_folder_id||null;
+    if(ffParent===destinationParentId){
+      existingAtParent[(ff.name||'').toLowerCase()]=true;
+    }
+  }
+  /* Identify unique top-level folder names in the live set. */
+  var topLevelOriginals={};
+  Object.keys(live).forEach(function(p){
+    var first=p.split('/')[0];
+    topLevelOriginals[first]=true;
+  });
+  /* Pick a free name for each top-level original. Track renames so we
+     can rewrite paths consistently. As we pick names, occupy
+     existingAtParent so two uploaded top-level folders sharing a name
+     don't both get the same suffix. */
+  var topLevelRename={};
+  Object.keys(topLevelOriginals).forEach(function(orig){
+    var newName=pickAvailableFolderName(orig,existingAtParent);
+    topLevelRename[orig]=newName;
+    existingAtParent[newName.toLowerCase()]=true;
+  });
+
+  /* Apply rename to every folderItems relativePath and every live key. */
+  function rewritePath(p){
+    var parts=p.split('/');
+    if(topLevelRename[parts[0]]&&topLevelRename[parts[0]]!==parts[0]){
+      parts[0]=topLevelRename[parts[0]];
+    }
+    return parts.join('/');
+  }
+  var renamedLive={};
+  Object.keys(live).forEach(function(p){renamedLive[rewritePath(p)]=true;});
+  for(var fi=0;fi<folderItems.length;fi++){
+    folderItems[fi].relativePath=rewritePath(folderItems[fi].relativePath);
+  }
+
+  /* Step 6: create folders, breadth-first (shorter paths first), so each
+     folder's parent UUID is known by the time its children are created. */
+  var pathsSorted=Object.keys(renamedLive).sort(function(a,b){
+    var da=a.split('/').length,db=b.split('/').length;
+    if(da!==db)return da-db;
+    return a.localeCompare(b);
+  });
+  var pathToFolderId={};
+  var prog=document.getElementById('uploadProg');
+  prog.classList.add('on');
+  for(var pi=0;pi<pathsSorted.length;pi++){
+    var path=pathsSorted[pi];
+    var segs=path.split('/');
+    var leafName=segs[segs.length-1];
+    var parentPath=segs.slice(0,-1).join('/');
+    var parentId=parentPath?pathToFolderId[parentPath]:destinationParentId;
+    prog.textContent='Creating folder: '+path+'…';
+    try{
+      var ensureBody={matter_id:currentMatter.id,name:leafName};
+      if(parentId)ensureBody.parent_folder_id=parentId;
+      var resp=await api('/api/folders?action=ensure','POST',ensureBody);
+      if(!resp||!resp.folder){
+        showToast('Folder create failed: '+path);
+        prog.classList.remove('on');
+        return;
+      }
+      pathToFolderId[path]=resp.folder.id;
+    }catch(err){
+      showToast('Folder create failed: '+path+' — '+(err&&err.message||'unknown'));
+      prog.classList.remove('on');
+      return;
+    }
+  }
+  prog.classList.remove('on');
+
+  /* Refresh the in-memory folder list so subsequent uploads see the new
+     folders, and so the doc tree renders correctly when uploads finish. */
+  try{
+    var d=await api('/api/folders?matter_id='+currentMatter.id,'GET');
+    currentFolders=(d&&d.folders)?d.folders:currentFolders;
+  }catch(_){/* non-fatal — uploads still work, render may be slightly behind */}
+
+  /* Step 7: collect the valid files into a list of {file, folderId} pairs
+     for upload. Unsupported & excel files are NOT uploaded. */
+  var validToUpload=[];
+  for(var vi=0;vi<folderItems.length;vi++){
+    var it=folderItems[vi];
+    if(it.klass!=='valid')continue;
+    var rel=it.relativePath;
+    var containingPath=rel.split('/').slice(0,-1).join('/');
+    var folderId=containingPath?pathToFolderId[containingPath]:destinationParentId;
+    if(!folderId&&containingPath){
+      /* Should not happen — every live path was created. Defensive skip. */
+      console.log('v5.15b2 missing folder id for',containingPath,'— skipping',it.file.name);
+      continue;
+    }
+    validToUpload.push({file:it.file,folderId:folderId});
+  }
+
+  /* Step 8: also push plain files (relativePath='') back through the
+     normal uploadFiles path with their existing multi-folder picker
+     behaviour. Run them BEFORE the per-folder uploads so the user sees
+     consistent ordering. */
+  if(plainFiles.length){
+    var pf=plainFiles.filter(function(c){return c.klass==='valid';}).map(function(c){return c.file;});
+    if(pf.length)await uploadFiles(pf);
+    /* Plain-file Excel/unsupported don't fall under the folder-upload
+       skipped-files modal — they would be a UX regression for normal
+       file drops. The pre-existing uploadFiles path already shows
+       per-file errors via uploadErr. */
+  }
+
+  /* Step 9: upload each file in the folder tree. We re-use uploadFiles
+     by passing single-file batches with a temporarily-set
+     uploadSelectedFolderIds = [folderId]. After the batch we restore
+     the original picker selection. This keeps uploadFileBatched logic
+     untouched. */
+  var savedPickerSelection=uploadSelectedFolderIds.slice();
+  for(var ui=0;ui<validToUpload.length;ui++){
+    var entry=validToUpload[ui];
+    uploadSelectedFolderIds=entry.folderId?[entry.folderId]:[];
+    await uploadFiles([entry.file]);
+  }
+  uploadSelectedFolderIds=savedPickerSelection;
+  /* Re-render the picker chips to reflect the restored selection. */
+  if(typeof renderUploadFolderPicker==='function')renderUploadFolderPicker();
+
+  /* Step 10: report skipped files. */
+  if(excelSkipped.length||unsupportedSkipped.length){
+    showSkippedFilesModal(excelSkipped,unsupportedSkipped);
+  }
+}
+
+/* Show the skipped-files modal. Two sections, conditionally rendered. */
+function showSkippedFilesModal(excel,unsupported){
+  var body=document.getElementById('skippedFilesBody');
+  if(!body)return;
+  var html='';
+  if(excel.length){
+    html+='<div style="margin-bottom:.85rem">'
+      +'<div style="font-weight:700;color:var(--text-dark);margin-bottom:.3rem">Excel files ('+excel.length+')</div>'
+      +'<ul style="margin:0;padding-left:1.2rem;color:var(--text-mid)">';
+    for(var i=0;i<excel.length;i++){
+      html+='<li style="margin-bottom:.15rem">'+esc(excel[i])+'</li>';
+    }
+    html+='</ul></div>';
+  }
+  if(unsupported.length){
+    html+='<div>'
+      +'<div style="font-weight:700;color:var(--text-dark);margin-bottom:.3rem">Other unsupported files ('+unsupported.length+')</div>'
+      +'<ul style="margin:0;padding-left:1.2rem;color:var(--text-mid)">';
+    for(var j=0;j<unsupported.length;j++){
+      html+='<li style="margin-bottom:.15rem">'+esc(unsupported[j])+'</li>';
+    }
+    html+='</ul></div>';
+  }
+  body.innerHTML=html||'<em style="color:var(--text-faint)">Nothing to report.</em>';
+  openModal('skippedFilesModal');
+}
 
 /* v4.5: Dispatch by extension, reject legacy .doc, support .docx via mammoth
    v5.2: Route each file through uploadFileBatched so very large files

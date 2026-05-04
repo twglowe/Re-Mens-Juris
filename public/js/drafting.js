@@ -1,4 +1,15 @@
 /* ── DRAFT TAB ────────────────────────────────────────────────────────────── */
+/* v5.14a — 04 May 2026
+   Adds Clear Draft button (white box, red ✕ icon) next to Save and Generate
+   Draft. Button is visible only when the editor has content. On click, after
+   confirmation, clears: editor content, action heading (back to "Click to
+   set action heading…"), instructions textarea, all three Library dropdowns
+   (Case Type / Subcategory / Doc Type), selected source docs and precedents,
+   currentDraftId (so next save creates a fresh row), and hides the output
+   wrap so the user is back to instructions-input state ready for a new
+   draft. Saved drafts in the `drafts` table are NOT deleted — they remain
+   accessible via the Previous drafts modal. */
+
 /* v5.13b — 01 May 2026
    Draft tab matter-switching fix + Previous Drafts UI.
    1. draftMatterChanged now actually resets state on matter switch
@@ -138,6 +149,9 @@ function draftMatterChanged(){
   /* Hide the Save button (only shown when editor has unattached content) */
   var saveBtn=document.getElementById('saveDraftBtn');
   if(saveBtn)saveBtn.style.display='none';
+  /* v5.14a: hide Clear Draft button — editor was just cleared by matter switch */
+  var clearBtn=document.getElementById('clearDraftBtn');
+  if(clearBtn)clearBtn.style.display='none';
   /* Load matter docs and previous drafts list */
   loadDraftMatterDocs(id).then(function(){
     draftAISuggestHeading(id);
@@ -279,6 +293,8 @@ async function loadDraftIntoEditor(draftId){
   /* Hide save button — we're now attached to a row */
   var saveBtn=document.getElementById('saveDraftBtn');
   if(saveBtn)saveBtn.style.display='none';
+  /* v5.14a: show Clear Draft button — editor now has loaded content */
+  updateClearDraftBtnVisibility();
   closePreviousDraftsModal();
 }
 
@@ -428,10 +444,24 @@ function draftStageChanged(){draftAutoSaveChoices();}
    v5.13b: was POST on every keystroke, creating duplicate rows. Now
    PUTs to currentDraftId when the editor is attached to a row. When
    unattached, no-op — the user can use the Save button to attach. */
+
+/* v5.14a: small helper to update visibility of the Clear Draft button.
+   Visible whenever the editor has any content, regardless of whether it
+   is attached to a draft row. Called from autosave timer, post-Generate
+   Draft, on editor input, on draft load, and on matter switch. */
+function updateClearDraftBtnVisibility(){
+  var editor=document.getElementById('draftEditor');
+  var hasContent=editor&&editor.innerHTML&&editor.innerHTML.trim().length>0;
+  var clearBtn=document.getElementById('clearDraftBtn');
+  if(clearBtn)clearBtn.style.display=hasContent?'':'none';
+}
+
 var _draftAutoSaveTimer=null;
 function draftAutoSaveChoices(){
   if(_draftAutoSaveTimer)clearTimeout(_draftAutoSaveTimer);
   _draftAutoSaveTimer=setTimeout(function(){
+    /* v5.14a: keep Clear Draft button in sync with editor content. */
+    updateClearDraftBtnVisibility();
     var matterId=document.getElementById('draftMatterSelect').value;
     if(!matterId)return;
     /* v5.13b: nothing to save unless we're attached to a row. */
@@ -457,6 +487,53 @@ function draftAutoSaveChoices(){
       unsavedEdits=false;
     }).catch(function(e){console.log('Draft auto-save:',e.message);});
   },1500);
+}
+
+/* v5.14a: clearDraftEditor — Clear Draft button handler.
+   Empties the editor, resets action heading to default, clears
+   instructions, resets Library dropdowns, drops selected source docs and
+   precedents, sets currentDraftId to null so the next save creates a
+   fresh row, and hides the output wrap so the user is back to the
+   instructions-input state. Saved drafts in the `drafts` table are NOT
+   deleted — only the on-screen editor state is cleared. */
+function clearDraftEditor(){
+  if(!confirm('Clear draft from editor?\n\nSaved drafts remain accessible via Previous drafts.'))return;
+  /* Empty the editor */
+  var editor=document.getElementById('draftEditor');
+  if(editor)editor.innerHTML='';
+  /* Hide the output wrap and show the instructions body again */
+  var outputWrap=document.getElementById('draftOutputWrap');
+  if(outputWrap)outputWrap.classList.add('hidden');
+  var instrBody=document.getElementById('draftInstructionsBody');
+  if(instrBody)instrBody.style.display='';
+  /* Clear instructions textarea */
+  var instr=document.getElementById('draftMainInstructions');
+  if(instr)instr.value='';
+  /* Reset Library dropdowns */
+  var ct=document.getElementById('draftCaseType');if(ct)ct.value='';
+  var stEl=document.getElementById('draftStage');
+  if(stEl)stEl.innerHTML='<option value="">— Select —</option>';
+  var dt=document.getElementById('draftDocType');
+  if(dt)dt.innerHTML='<option value="">— Select —</option>';
+  /* Clear selected source docs and precedents */
+  if(typeof draftSelectedDocs!=='undefined')draftSelectedDocs={src1:[],src2:[],src3:[],ctx:[],prec:[]};
+  if(typeof draftSelectedPrecedents!=='undefined')draftSelectedPrecedents=[];
+  if(typeof renderDraftSelectedDocs==='function')renderDraftSelectedDocs();
+  if(typeof renderDraftSelectedPrecedents==='function')renderDraftSelectedPrecedents();
+  /* Reset action heading to default state */
+  draftHeading={party1:'',party1Role:'',party2:'',party2Role:'',court:'',caseNo:'',docTitle:''};
+  var headingText=document.getElementById('draftHeadingText');
+  if(headingText)headingText.textContent='Click to set action heading…';
+  if(typeof updateActionHeading==='function')updateActionHeading();
+  /* Detach from saved row — next save creates a fresh row */
+  currentDraftId=null;
+  unsavedEdits=false;
+  /* Hide Save and Clear buttons */
+  var saveBtn=document.getElementById('saveDraftBtn');
+  if(saveBtn)saveBtn.style.display='none';
+  var clearBtn=document.getElementById('clearDraftBtn');
+  if(clearBtn)clearBtn.style.display='none';
+  if(typeof showToast==='function')showToast('Draft cleared');
 }
 
 /* When Doc Type changes, update the doc title in the heading if not already set manually */
@@ -642,6 +719,8 @@ async function generateDraft(){
           document.getElementById('draftInstructionsBody').style.display='none';
           var outputWrap=document.getElementById('draftOutputWrap');outputWrap.classList.remove('hidden');
           var editor=document.getElementById('draftEditor');editor.innerHTML=renderMd(resultText);editor.focus();
+          /* v5.14a: show Clear Draft button as soon as the editor has content */
+          updateClearDraftBtnVisibility();
           /* v5.13b: persist a new draft row in the `drafts` table and
              attach the editor to it via currentDraftId. Subsequent
              manual edits will PUT to this same row (no duplicate rows). */

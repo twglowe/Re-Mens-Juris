@@ -652,7 +652,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <span class="panel-head-title">Case Identification</span>
         </div>
         <div style="padding:.55rem .75rem;display:flex;flex-direction:column;gap:.5rem;overflow-y:auto;flex:1">
-          <div style="display:none">
+          <div>
             <div class="draft-field-label">Matter</div>
             <select class="draft-field-select" id="draftMatterSelect" onchange="draftMatterChanged()">
               <option value="">— Select matter —</option>
@@ -874,12 +874,14 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <div class="draft-sector draft-sector-3">
             <div class="draft-sec-head" style="display:flex;justify-content:space-between;align-items:center">
               <span>Drafting</span>
-              <button class="draft-generate-btn" id="draftGenerateBtn" onclick="generateDraft()" style="margin:0;padding:.3rem .9rem;font-size:.82rem">Generate Draft</button>
+              <div style="display:flex;gap:.4rem;align-items:center">
+                <button class="lib-box-btn" id="prevDraftsBtn" onclick="showPreviousDraftsModal()" style="font-size:.78rem;padding:.3rem .6rem" title="Previous drafts for this matter">📋 Previous drafts (<span id="prevDraftsCount">0</span>)</button>
+                <button class="lib-box-btn" id="saveDraftBtn" onclick="saveCurrentDraft()" style="font-size:.78rem;padding:.3rem .6rem;display:none" title="Save current editor content as a new draft">💾 Save</button>
+                <button class="draft-generate-btn" id="draftGenerateBtn" onclick="generateDraft()" style="margin:0;padding:.3rem .9rem;font-size:.82rem">Generate Draft</button>
+              </div>
             </div>
             <!-- Action heading at top — scrollable, editable -->
             <div id="draftActionHeading" style="padding:.5rem .75rem;border-bottom:1.5px solid var(--border);flex-shrink:0;background:var(--off-white);overflow-x:auto">
-              <!-- v5.13c: matter context label, always visible. -->
-              <div id="draftMatterContextLabel" style="font-family:sans-serif;font-size:.78rem;color:var(--text-faint);margin-bottom:.35rem">Drafting for: <span id="draftMatterContextName" style="color:var(--navy);font-weight:600">(no matter selected)</span></div>
               <div contenteditable="true" id="draftHeadingText" style="font-family:'Libre Baskerville',serif;font-size:.92rem;font-weight:700;color:var(--navy);white-space:pre-line;min-height:1.5em;outline:none;cursor:text" onclick="if(!this.textContent.trim()||this.textContent==='Click to set action heading…')this.textContent=''" onblur="if(!this.textContent.trim())this.textContent='Click to set action heading…'">Click to set action heading…</div>
             </div>
             <div class="draft-sec-body" id="draftInstructionsBody" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
@@ -899,9 +901,6 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
               <div id="draftProgressMsg" style="display:none;padding:.5rem;background:var(--blue-pale);border-radius:6px;font-size:.82rem;font-weight:600;color:var(--blue)">Generating draft… this may take several minutes.</div>
             </div>
             <div class="draft-output-wrap hidden" id="draftOutputWrap">
-              <!-- v5.13c: clear label showing which matter this draft belongs to.
-                   Replaces the now-hidden matter dropdown. -->
-              <div id="draftMatterLabel" style="font-family:'Libre Baskerville',serif;font-size:.95rem;font-weight:600;color:var(--navy);padding:.4rem .6rem;background:var(--blue-pale);border-radius:6px;margin-bottom:.6rem">Drafting for: <span id="draftMatterLabelText"></span></div>
               <div class="draft-editor-toolbar">
                 <select onchange="if(this.value){document.getElementById('draftEditor').style.fontFamily=this.value;document.execCommand('fontName',false,this.value);}this.blur()" title="Font Family" style="min-width:100px">
                   <option value="'Libre Baskerville',serif">Baskerville</option>
@@ -928,8 +927,6 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
                 <button onclick="draftInsertText()" title="Insert text">📋</button>
                 <button onclick="draftInsertAI()" title="AI Insert">🤖</button>
                 <button onclick="draftDownloadWord()" title="Download Word">⬇ Word</button>
-                <button id="prevDraftsBtn" onclick="showPreviousDraftsModal()" title="Previous drafts" style="margin-left:auto">📋 Previous (<span id="prevDraftsCount">0</span>)</button>
-                <button id="saveDraftBtn" onclick="saveCurrentDraft()" title="Save current editor content as a new draft" style="display:none">💾 Save</button>
               </div>
               <div class="draft-editor" id="draftEditor" contenteditable="true"></div>
               <div class="draft-dialogue">
@@ -1219,21 +1216,20 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-
-<!-- v5.13b: Previous drafts modal -->
-<div id="prevDraftsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;align-items:flex-start;justify-content:center;padding-top:8vh">
-  <div style="background:var(--card,#fff);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.2);max-width:600px;width:90%;max-height:80vh;display:flex;flex-direction:column;padding:1.2rem">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;padding-bottom:.6rem;border-bottom:1px solid var(--border,#e5e5e5)">
-      <h3 style="margin:0;font-size:1rem">Previous drafts</h3>
-      <button onclick="closePreviousDraftsModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-faint,#888);line-height:1;padding:0 .4rem">×</button>
+<script src="/js/core.js?v=5.13b"></script>
+<script src="/js/tools.js?v=5.13b"></script>
+<script src="/js/library.js?v=5.13b"></script>
+<script src="/js/drafting.js?v=5.13b"></script>
+<script src="/js/diagram.js?v=5.13b"></script>
+<!-- v5.13b: Previous Drafts modal -->
+<div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">
+  <div class="modal" style="max-width:600px;max-height:80vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h3 style="margin:0">Previous drafts</h3>
+      <button onclick="closePreviousDraftsModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-faint);padding:0 .3rem" title="Close" aria-label="Close">×</button>
     </div>
-    <div id="prevDraftsList" style="overflow-y:auto;flex:1"></div>
+    <div id="prevDraftsList" style="flex:1;overflow-y:auto;border-top:1px solid var(--border)"></div>
   </div>
 </div>
 
-<script src="/js/core.js?v=5.13c"></script>
-<script src="/js/tools.js?v=5.13c"></script>
-<script src="/js/library.js?v=5.13c"></script>
-<script src="/js/drafting.js?v=5.13c"></script>
-<script src="/js/diagram.js?v=5.13c"></script>
 </body></html>

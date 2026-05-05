@@ -1,4 +1,28 @@
 /* ── DRAFT TAB ────────────────────────────────────────────────────────────── */
+/* v5.16a — 05 May 2026 — Push v5.16a (Drafting tab merge + heading fixes):
+   1. Left-column merge: Sectors 1 (Case Identification) and 2 (Source
+      Documents) merged into a tabbed left column (Case + Sources). Sector 3
+      (Drafting) unchanged. Tab state persisted in localStorage.draftLastTab.
+   2. Heading-stick fix on matter switch (#1): draftMatterChanged now also
+      clobbers the contenteditable #draftHeadingText so the visible bar
+      always matches draftHeading. generateDraft re-renders before the
+      API call as a defensive belt-and-braces.
+   3. AI heading suggestion (#2): triggers on every matter switch (no longer
+      gated on empty caseNo). Worker pulls only docs whose doc_type matches
+      a heading-bearing set (Pleadings, Affidavit, Witness Statement,
+      Skeleton Argument, Notice). Suggestion validated before applying.
+   4. Doc Title is now a select populated from /api/draft_doc_titles (#3).
+      User can add/remove items via + / \u2212. First-load seeds 15 defaults.
+      Selected option becomes draftHeading.docTitle and renders centred
+      between the navy lines (existing updateActionHeading does this).
+   5. Sector 1 dropdown persistence (#4): lazy draft-row creation — the
+      first time the user changes Case Type / Stage / Doc Type and there
+      is no currentDraftId, a new drafts row is POSTed and currentDraftId
+      attached, so subsequent autosave PUTs persist these choices. Worker-
+      side use of these IDs is deferred to v5.16b.
+   6. Matter Documents list permanently hidden (#5). Exclude picker promoted
+      from Sector 3 to the Sources tab. */
+
 /* v5.14a — 04 May 2026
    Adds Clear Draft button (white box, red ✕ icon) next to Save and Generate
    Draft. Button is visible only when the editor has content. On click, after
@@ -35,6 +59,127 @@
 var currentDraftId = null;
 var unsavedEdits = false;
 var previousDraftsList = [];
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v5.16a — DRAFTING-TAB LEFT-COLUMN TABS
+   ───────────────────────────────────────────────────────────────────────────
+   The merged left column has two tabs (Case + Sources). Last-used tab
+   persists in localStorage so a user who works mostly in Sources doesn't
+   have to switch every time they re-open the Drafting workspace.
+   ═══════════════════════════════════════════════════════════════════════════ */
+var DLC_TAB_LS_KEY='draftLastTab';
+function dlcSwitchTab(which){
+  var caseTab=document.getElementById('dlcTabCase');
+  var srcTab=document.getElementById('dlcTabSources');
+  var casePane=document.getElementById('dlcPaneCase');
+  var srcPane=document.getElementById('dlcPaneSources');
+  if(!caseTab||!srcTab||!casePane||!srcPane)return;
+  var isCase=(which==='case');
+  caseTab.classList.toggle('active',isCase);
+  caseTab.setAttribute('aria-selected',isCase?'true':'false');
+  srcTab.classList.toggle('active',!isCase);
+  srcTab.setAttribute('aria-selected',isCase?'false':'true');
+  casePane.classList.toggle('hidden',!isCase);
+  srcPane.classList.toggle('hidden',isCase);
+  try{localStorage.setItem(DLC_TAB_LS_KEY,which);}catch(e){}
+}
+/* Apply remembered tab on first activation. Default to 'case' if none. */
+function dlcApplyRememberedTab(){
+  var saved=null;
+  try{saved=localStorage.getItem(DLC_TAB_LS_KEY);}catch(e){}
+  dlcSwitchTab(saved==='sources'?'sources':'case');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v5.16a — DOC-TITLE LIST (heading editor select)
+   ───────────────────────────────────────────────────────────────────────────
+   Loaded from /api/draft_doc_titles on heading-modal open and cached for
+   the session. add/remove operations roundtrip to the API and then
+   re-render the select.
+   ═══════════════════════════════════════════════════════════════════════════ */
+var draftDocTitlesCache=null;/* {id, name}[] | null */
+
+async function loadDocTitles(){
+  try{
+    var d=await api('/api/draft_doc_titles');
+    draftDocTitlesCache=(d&&Array.isArray(d.titles))?d.titles:[];
+  }catch(e){
+    console.log('loadDocTitles:',e.message);
+    draftDocTitlesCache=draftDocTitlesCache||[];
+  }
+  renderDocTitleSelect();
+}
+
+function renderDocTitleSelect(){
+  var sel=document.getElementById('hdDocTitleSelect');
+  var hidden=document.getElementById('hdDocTitle');
+  if(!sel)return;
+  var current=hidden?hidden.value:'';
+  var html='<option value="">— Select doc title —</option>';
+  if(draftDocTitlesCache&&draftDocTitlesCache.length){
+    for(var i=0;i<draftDocTitlesCache.length;i++){
+      var t=draftDocTitlesCache[i];
+      var name=t.name||'';
+      var selAttr=(name===current)?' selected':'';
+      html+='<option value="'+esc(name)+'" data-id="'+esc(t.id)+'"'+selAttr+'>'+esc(name)+'</option>';
+    }
+  }
+  sel.innerHTML=html;
+}
+
+function hdDocTitleSelectChanged(){
+  var sel=document.getElementById('hdDocTitleSelect');
+  var hidden=document.getElementById('hdDocTitle');
+  if(!sel||!hidden)return;
+  hidden.value=sel.value;
+  if(typeof updateHeadingPreview==='function')updateHeadingPreview();
+}
+
+async function hdDocTitleAdd(){
+  var name=prompt('Add doc title (e.g. NOTICE OF MOTION):');
+  if(!name)return;
+  name=name.trim();
+  if(!name)return;
+  if(name.length>120){showToast('Title too long (max 120 chars)');return;}
+  try{
+    var d=await api('/api/draft_doc_titles','POST',{name:name});
+    if(d&&d.title){
+      if(!Array.isArray(draftDocTitlesCache))draftDocTitlesCache=[];
+      draftDocTitlesCache.push(d.title);
+      renderDocTitleSelect();
+      /* Auto-select the freshly-added title for convenience. */
+      var sel=document.getElementById('hdDocTitleSelect');
+      if(sel)sel.value=d.title.name;
+      hdDocTitleSelectChanged();
+      showToast('Added: '+d.title.name);
+    }
+  }catch(e){
+    if(e&&e.message&&e.message.indexOf('already exists')!==-1){showToast('That title already exists');}
+    else{showToast('Add failed: '+e.message);}
+  }
+}
+
+async function hdDocTitleRemove(){
+  var sel=document.getElementById('hdDocTitleSelect');
+  if(!sel||!sel.value){showToast('Select a doc title first');return;}
+  var name=sel.value;
+  var opt=sel.options[sel.selectedIndex];
+  var id=opt?opt.getAttribute('data-id'):'';
+  if(!id){showToast('Cannot delete this option');return;}
+  if(!confirm('Delete "'+name+'" from your doc title list?'))return;
+  try{
+    await api('/api/draft_doc_titles?id='+id,'DELETE');
+    if(Array.isArray(draftDocTitlesCache)){
+      draftDocTitlesCache=draftDocTitlesCache.filter(function(t){return t.id!==id;});
+    }
+    /* If the deleted title was the selected one, blank the hidden value. */
+    var hidden=document.getElementById('hdDocTitle');
+    if(hidden&&hidden.value===name)hidden.value='';
+    renderDocTitleSelect();
+    if(typeof updateHeadingPreview==='function')updateHeadingPreview();
+    showToast('Deleted: '+name);
+  }catch(e){showToast('Delete failed: '+e.message);}
+}
 
 /* v5.11a (Draft Build 1) — 30 Apr 2026
    1. Jurisdiction is read silently from the selected matter (currentMatter
@@ -145,6 +290,13 @@ function draftMatterChanged(){
       draftHeading.court=courts[m.jurisdiction]||'';
     }
   }
+  /* v5.16a (Issue #1 fix): clobber the visible heading bar BEFORE rebuilding
+     it from draftHeading. The bar is contenteditable, so a manual edit can
+     leave residue that doesn't survive matter switch in draftHeading but DOES
+     survive in #draftHeadingText.innerHTML. Reset to empty here, then let
+     updateActionHeading() rebuild it from the freshly-derived draftHeading. */
+  var headingTextEl=document.getElementById('draftHeadingText');
+  if(headingTextEl)headingTextEl.innerHTML='';
   updateActionHeading();
   /* Hide the Save button (only shown when editor has unattached content) */
   var saveBtn=document.getElementById('saveDraftBtn');
@@ -162,6 +314,8 @@ function draftMatterChanged(){
 /* v5.13b: tab-activation hook called from core.js switchMainNav('draft').
    Syncs the Draft tab to currentMatter, with an unsaved-edits guard. */
 function onDraftTabActivated(){
+  /* v5.16a: apply remembered left-column tab on every activation. */
+  if(typeof dlcApplyRememberedTab==='function')dlcApplyRememberedTab();
   var sel=document.getElementById('draftMatterSelect');
   if(!sel)return;
   var targetId=(typeof currentMatter!=='undefined'&&currentMatter)?currentMatter.id:'';
@@ -457,6 +611,11 @@ function updateClearDraftBtnVisibility(){
 }
 
 var _draftAutoSaveTimer=null;
+/* v5.16a: in-flight guard — prevents two concurrent lazy-create POSTs if a
+   user clicks two dropdowns within the same debounce window before the
+   first POST returns. */
+var _draftLazyCreateInFlight=false;
+
 function draftAutoSaveChoices(){
   if(_draftAutoSaveTimer)clearTimeout(_draftAutoSaveTimer);
   _draftAutoSaveTimer=setTimeout(function(){
@@ -464,24 +623,63 @@ function draftAutoSaveChoices(){
     updateClearDraftBtnVisibility();
     var matterId=document.getElementById('draftMatterSelect').value;
     if(!matterId)return;
+    var editorEl=document.getElementById('draftEditor');
+    var ctVal=document.getElementById('draftCaseType').value||null;
+    var stVal=document.getElementById('draftStage').value||null;
+    var dtVal=document.getElementById('draftDocType').value||null;
+    var instrVal=document.getElementById('draftMainInstructions').value||'';
+    var contentVal=editorEl?editorEl.innerHTML:'';
+    var hasAnyData=!!(ctVal||stVal||dtVal||instrVal.trim()||(contentVal&&contentVal.trim()));
+
+    /* v5.16a (Issue #4 fix): lazy draft-row creation. If the user has
+       picked any dropdown / typed any instruction but there is no
+       currentDraftId yet, create an empty draft row now so the choices
+       persist (and the row carries case_type_id / subcat_id / doc_type_id
+       once we PUT below). Without this, dropdown picks evaporate on
+       matter switch. */
+    if(!currentDraftId&&hasAnyData&&!_draftLazyCreateInFlight){
+      _draftLazyCreateInFlight=true;
+      api('/api/drafts?matter_id='+matterId,'POST',{
+        matter_id:matterId,
+        case_type_id:ctVal,
+        subcat_id:stVal,
+        doc_type_id:dtVal,
+        heading_data:draftHeading,
+        instructions:instrVal,
+        draft_content:contentVal,
+        conversation:[]
+      }).then(function(d){
+        _draftLazyCreateInFlight=false;
+        if(d&&d.draft&&d.draft.id){
+          currentDraftId=d.draft.id;
+          unsavedEdits=false;
+          var saveBtn=document.getElementById('saveDraftBtn');
+          if(saveBtn)saveBtn.style.display='none';
+          loadDraftsForMatter(matterId);
+        }
+      }).catch(function(e){
+        _draftLazyCreateInFlight=false;
+        console.log('Lazy draft-row create failed:',e.message);
+      });
+      return;
+    }
+
     /* v5.13b: nothing to save unless we're attached to a row. */
     if(!currentDraftId){
       /* Show the Save button if there's editor content the user might
          want to keep. */
-      var editor=document.getElementById('draftEditor');
-      var hasContent=editor&&editor.innerHTML&&editor.innerHTML.trim().length>0;
+      var hasContent=editorEl&&editorEl.innerHTML&&editorEl.innerHTML.trim().length>0;
       var saveBtn=document.getElementById('saveDraftBtn');
       if(saveBtn)saveBtn.style.display=hasContent?'':'none';
       return;
     }
-    var editorEl=document.getElementById('draftEditor');
     var updates={
-      case_type_id:document.getElementById('draftCaseType').value||null,
-      subcat_id:document.getElementById('draftStage').value||null,
-      doc_type_id:document.getElementById('draftDocType').value||null,
+      case_type_id:ctVal,
+      subcat_id:stVal,
+      doc_type_id:dtVal,
       heading_data:draftHeading,
-      instructions:document.getElementById('draftMainInstructions').value||'',
-      draft_content:editorEl?editorEl.innerHTML:''
+      instructions:instrVal,
+      draft_content:contentVal
     };
     api('/api/drafts?id='+currentDraftId,'PUT',updates).then(function(){
       unsavedEdits=false;
@@ -560,7 +758,37 @@ function openHeadingEditor(){
   document.getElementById('hdParty1Role').value=draftHeading.party1Role;
   document.getElementById('hdParty2').value=draftHeading.party2;
   document.getElementById('hdParty2Role').value=draftHeading.party2Role;
-  document.getElementById('hdDocTitle').value=draftHeading.docTitle;
+  document.getElementById('hdDocTitle').value=draftHeading.docTitle||'';
+  /* v5.16a: load doc-titles list (cached after first load) and render the
+     select with the current value pre-selected. The select is the
+     user-facing control; the hidden #hdDocTitle is the source-of-truth
+     value read by saveHeading() and updateHeadingPreview(). */
+  if(draftDocTitlesCache===null){
+    loadDocTitles();/* fire-and-forget — renderDocTitleSelect runs when it returns */
+  }else{
+    renderDocTitleSelect();
+  }
+  /* If the current docTitle isn't in the list yet, tack it onto the select
+     so the user sees it as the selected option (won't get lost). */
+  setTimeout(function(){
+    var sel=document.getElementById('hdDocTitleSelect');
+    if(!sel)return;
+    var current=draftHeading.docTitle||'';
+    if(current){
+      var found=false;
+      for(var i=0;i<sel.options.length;i++){
+        if(sel.options[i].value===current){found=true;break;}
+      }
+      if(!found){
+        var opt=document.createElement('option');
+        opt.value=current;opt.textContent=current+' (not in list)';
+        sel.appendChild(opt);
+      }
+      sel.value=current;
+    }else{
+      sel.value='';
+    }
+  },50);
   updateHeadingPreview();
   document.getElementById('headingModal').style.display='flex';
 }
@@ -677,6 +905,11 @@ async function generateDraft(){
   var ctId=document.getElementById('draftCaseType').value;
   var dtId=document.getElementById('draftDocType').value;
   var stId=document.getElementById('draftStage').value;
+  /* v5.16a (Issue #1 belt-and-braces): re-render the action heading from
+     draftHeading immediately before the API call, so what's sent (the
+     courtHeading body field, which is exactly draftHeading) matches what
+     the user sees. Cheap and idempotent. */
+  if(typeof updateActionHeading==='function')updateActionHeading();
   document.getElementById('draftGenerateBtn').disabled=true;
   var prog=document.getElementById('draftProgressMsg');prog.style.display='';prog.textContent='Submitting draft request\u2026';
   try{
@@ -788,10 +1021,23 @@ function draftDownloadWord(){
   var content=editor.innerText||editor.textContent;
   downloadWord(content,'Draft — '+(draftHeading.docTitle||'document'));
 }
-/* ── v2.5: AI HEADING SUGGESTION (C1) ────────────────────────────────────── */
+/* ── v5.16a: AI HEADING SUGGESTION (rewritten for reliability) ───────────
+   Changes from v2.5:
+   1. No longer guarded on draftHeading.caseNo — runs on every matter switch.
+   2. Race-condition safe: ignores the response if the user has switched
+      matter while the request was in flight (compares matterId against
+      the live select value at apply-time).
+   3. Validation: rejects suggestions that don't have at least a court +
+      one of (caseNo, party1). Garbage in, no toast, no mutation.
+   4. Doesn't blindly OR over existing fields anymore — the matter-name
+      parsing in draftMatterChanged is the baseline; the AI suggestion
+      OVERWRITES the baseline only when validation passes, and only for
+      the current matter. */
 async function draftAISuggestHeading(matterId){
-  /* Only suggest if heading is still basic (from matter name parsing) */
-  if(draftHeading.caseNo)return;/* Already has detail */
+  if(!matterId)return;
+  /* Capture the matter the request is about so we can detect a switch
+     while the network request is in flight. */
+  var requestMatterId=matterId;
   try{
     var d=await api('/api/analyse','POST',{
       matterId:matterId,
@@ -802,24 +1048,43 @@ async function draftAISuggestHeading(matterId){
       queryType:'Factual Analysis',
       focusAreas:[]
     });
-    if(d&&d.result){
-      try{
-        var raw=d.result.replace(/```json|```/g,'').trim();
-        var s=raw.indexOf('{');var e=raw.lastIndexOf('}');
-        if(s>=0&&e>s){
-          var h=JSON.parse(raw.slice(s,e+1));
-          if(h.court&&!draftHeading.court)draftHeading.court=h.court;
-          if(h.caseNo)draftHeading.caseNo=h.caseNo;
-          if(h.party1)draftHeading.party1=h.party1.toUpperCase();
-          if(h.party1Role)draftHeading.party1Role=h.party1Role;
-          if(h.party2)draftHeading.party2=h.party2.toUpperCase();
-          if(h.party2Role)draftHeading.party2Role=h.party2Role;
-          if(h.docTitle)draftHeading.docTitle=h.docTitle.toUpperCase();
-          updateActionHeading();
-          showToast('Heading suggested from documents — click to edit');
-        }
-      }catch(pe){console.log('AI heading parse error:',pe);}
+    /* Race-condition guard: if the user has switched matter while we were
+       waiting, drop the response on the floor. */
+    var sel=document.getElementById('draftMatterSelect');
+    var liveId=sel?sel.value:'';
+    if(liveId!==requestMatterId){
+      console.log('AI heading suggestion: matter changed while in flight, ignoring');
+      return;
     }
+    if(!d||!d.result)return;
+    var h=null;
+    try{
+      var raw=d.result.replace(/```json|```/g,'').trim();
+      var s=raw.indexOf('{');var e=raw.lastIndexOf('}');
+      if(s>=0&&e>s)h=JSON.parse(raw.slice(s,e+1));
+    }catch(pe){console.log('AI heading parse error:',pe);return;}
+    if(!h||typeof h!=='object')return;
+    /* Validate: need a court AND (caseNo OR party1). Otherwise treat as
+       garbage and silently leave the matter-name parsing baseline. */
+    var hasCourt=h.court&&typeof h.court==='string'&&h.court.trim().length>2;
+    var hasCaseNo=h.caseNo&&typeof h.caseNo==='string'&&h.caseNo.trim().length>0;
+    var hasParty1=h.party1&&typeof h.party1==='string'&&h.party1.trim().length>0;
+    if(!hasCourt||(!hasCaseNo&&!hasParty1)){
+      console.log('AI heading suggestion: validation failed, leaving baseline');
+      return;
+    }
+    /* Apply. We OVERWRITE the baseline rather than OR'ing because the
+       baseline is only the matter-name split and the AI's view of the
+       documents is more accurate when validation has passed. */
+    if(hasCourt)draftHeading.court=h.court.trim();
+    if(hasCaseNo)draftHeading.caseNo=h.caseNo.trim();
+    if(hasParty1)draftHeading.party1=h.party1.trim().toUpperCase();
+    if(h.party1Role)draftHeading.party1Role=h.party1Role.trim();
+    if(h.party2)draftHeading.party2=h.party2.trim().toUpperCase();
+    if(h.party2Role)draftHeading.party2Role=h.party2Role.trim();
+    if(h.docTitle)draftHeading.docTitle=h.docTitle.trim().toUpperCase();
+    updateActionHeading();
+    showToast('Heading suggested from documents — click to edit');
   }catch(e){console.log('AI heading suggestion skipped:',e.message);}
 }
 

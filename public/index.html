@@ -360,7 +360,11 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .btn-secondary{padding:.65rem 1.35rem;background:transparent;border:2px solid var(--border);border-radius:7px;color:var(--text-mid);font-family:'Source Sans 3',sans-serif;font-size:.95rem;font-weight:600;cursor:pointer}
 .share-item{display:flex;align-items:center;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border);font-size:.88rem;font-weight:500}
 .share-item:last-child{border-bottom:none}
-.tool-modal{max-width:500px}
+/* v5.15c: tool-modal must cap to viewport height so the form is fully visible
+   when taller than the screen. The whole modal scrolls as one block. */
+.tool-modal{max-width:500px;max-height:calc(100vh - 2rem);overflow-y:auto;position:relative}
+.tool-modal-x{position:absolute;top:.55rem;right:.7rem;width:28px;height:28px;border:none;background:transparent;font-size:1.45rem;line-height:1;color:var(--text-faint);cursor:pointer;border-radius:6px;padding:0;font-weight:400}
+.tool-modal-x:hover{background:var(--blue-faint);color:var(--text-mid)}
 .anchor-list{max-height:160px;overflow-y:auto;border:2px solid var(--border);border-radius:6px;padding:.45rem;margin-top:.35rem}
 .anchor-item{display:flex;align-items:center;gap:.55rem;padding:.3rem .35rem;font-size:.85rem;font-weight:500;color:var(--text-dark);cursor:pointer;border-radius:4px}
 .anchor-item:hover{background:var(--blue-faint)}
@@ -1049,10 +1053,12 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 
 <div class="overlay" id="toolModal" role="dialog" aria-modal="true" aria-label="Tool Options" style="display:none">
   <div class="modal tool-modal">
+    <!-- v5.15c: X discards form state; Cancel preserves it. See closeToolModal in tools.js. -->
+    <button class="tool-modal-x" aria-label="Close and discard form" onclick="closeToolModal('x')">&times;</button>
     <h3 id="toolModalTitle"></h3>
     <div id="toolModalBody"></div>
     <div class="modal-btns">
-      <button class="btn-secondary" onclick="closeModal('toolModal')">Cancel</button>
+      <button class="btn-secondary" onclick="closeToolModal('cancel')">Cancel</button>
       <button class="btn-primary" id="toolRunBtn">Run Analysis</button>
     </div>
   </div>
@@ -1231,11 +1237,11 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js?v=5.15b5"></script>
-<script src="/js/tools.js?v=5.15b5"></script>
-<script src="/js/library.js?v=5.15b5"></script>
-<script src="/js/drafting.js?v=5.15b5"></script>
-<script src="/js/diagram.js?v=5.15b5"></script>
+<script src="/js/core.js?v=5.15c"></script>
+<script src="/js/tools.js?v=5.15c"></script>
+<script src="/js/library.js?v=5.15c"></script>
+<script src="/js/drafting.js?v=5.15c"></script>
+<script src="/js/diagram.js?v=5.15c"></script>
 <!-- v5.13b: Previous Drafts modal -->
 <div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">
   <div class="modal" style="max-width:600px;max-height:80vh;display:flex;flex-direction:column">

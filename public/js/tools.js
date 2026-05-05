@@ -1,4 +1,26 @@
-/* EX LIBRIS JURIS v5.10d — public/js/tools.js
+/* EX LIBRIS JURIS v5.15c — public/js/tools.js
+   v5.15c (04 May 2026) — Push v5.15c (Tool form modal — sizing + persistence):
+   1. Form state persistence (in-memory, per-matter, per-tool). New module-level
+      object toolFormState is keyed by `${matterId}|${toolName}` and holds the
+      typed values for each tool's form. promptTool() restores values after
+      rendering; the new closeToolModal('cancel') saves them; closeToolModal('x')
+      and the Run-button success path discard them. State is cleared on page
+      reload (in-memory only) per spec.
+   2. New closeToolModal(action) wrapper. action is 'cancel' (preserves state),
+      'x' (discards state), or 'run' (discards state). Replaces the bare
+      closeModal('toolModal') calls in the Run button handler and Cancel button
+      onclick (the latter wired in index.html).
+   3. openTool(t) now ALWAYS calls promptTool(t) so re-clicking a tool icon for
+      an already-open tab reopens the form (with previously-typed data restored
+      from toolFormState). Previously the early `if(!isNew)return` short-circuit
+      meant the form never reopened.
+   4. CSS-only modal sizing fix lives in index.html: .tool-modal now has
+      max-height: calc(100vh - 2rem) + overflow-y:auto so a tall form scrolls
+      within the dimmed page rather than clipping at top and bottom.
+   5. Generic closeModal in core.js is unchanged \u2014 it's still used by every
+      other modal in the app and should not be touched. The tool-modal-specific
+      logic is fully contained in tools.js.
+
    v5.10d (29 Apr 2026) — Push v5.10d (Briefing Note launch document picker):
    1. The briefing toolDef body() now renders a document picker beneath the
       existing "Additional Instructions" textarea, mirroring the Issues
@@ -133,8 +155,12 @@ function closeTab(toolName){
 
 function openTool(t){
   if(!currentMatter){showToast('Select a matter first');return;}
-  var isNew=getOrCreateToolTab(t);
-  if(!isNew)return;
+  /* v5.15c: Always (re)open the form. If the tab already exists,
+     getOrCreateToolTab switches to it and returns false; we no longer
+     short-circuit here because clicking the tool icon should always
+     bring the form back \u2014 with any in-progress text restored from
+     toolFormState. */
+  getOrCreateToolTab(t);
   promptTool(t);
 }
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -349,6 +375,179 @@ function updateToolButtonStates(){
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   v5.15c — TOOL FORM STATE PERSISTENCE
+   ───────────────────────────────────────────────────────────────────────────
+   In-memory store keyed by `${matterId}|${toolName}`. Holds the typed values
+   for a tool's launch form so switching tools and coming back doesn't wipe
+   the form. Cleared on page reload (this object lives in module scope only,
+   no localStorage / sessionStorage).
+
+   Lifecycle:
+     - promptTool(t)       \u2192 renders fresh HTML, then RESTORES values from
+                              toolFormState[key].
+     - closeToolModal('cancel')  \u2192 SAVES current form values to toolFormState[key].
+     - closeToolModal('x')       \u2192 DISCARDS toolFormState[key]. Next open is blank.
+     - closeToolModal('run')     \u2192 DISCARDS toolFormState[key] (called from the Run
+                                    handler after a successful submit).
+     - Click outside modal / Escape \u2192 treated as Cancel-equivalent (save).
+
+   Each tool has its own capture+restore pair. Reads are null-guarded so a
+   missing element (e.g. briefingFocusDocList omitted when documents.length===0)
+   is silently skipped.
+   ═══════════════════════════════════════════════════════════════════════════ */
+var toolFormState={};
+function _tfsKey(toolName){
+  if(!currentMatter||!toolName)return null;
+  return currentMatter.id+'|'+toolName;
+}
+
+/* Capture the current form values for `toolName` into toolFormState. Reads
+   only the fields that exist for the given tool. Mirrors the field list in
+   the Run-button handler so the two stay in lock-step. */
+function captureToolFormState(toolName){
+  var key=_tfsKey(toolName);if(!key)return;
+  var s={};
+  /* Common: toolInstructions textarea (used by inconsistency, proposition,
+     chronology, persons, issues, briefing). */
+  var ti=document.getElementById('toolInstructions');
+  if(ti)s.toolInstructions=ti.value;
+  if(toolName==='inconsistency'){
+    s.anchorList=[];
+    document.querySelectorAll('#anchorList input:checked').forEach(function(cb){s.anchorList.push(cb.value);});
+  }
+  if(toolName==='chronology'){
+    var dr=document.getElementById('chronoDateRange');if(dr)s.chronoDateRange=dr.value;
+    var en=document.getElementById('chronoEntities');if(en)s.chronoEntities=en.value;
+    var cf=document.getElementById('chronoCorresFilter');if(cf)s.chronoCorresFilter=cf.checked;
+  }
+  if(toolName==='issues'){
+    var se=document.getElementById('issuesSubElement');if(se)s.issuesSubElement=se.value;
+    s.issuesFocusDocList=[];
+    document.querySelectorAll('#issuesFocusDocList input:checked').forEach(function(cb){s.issuesFocusDocList.push(cb.value);});
+  }
+  if(toolName==='citations'){
+    var cs=document.getElementById('citationSourceSelect');if(cs)s.citationSource=cs.value;
+    s.citationTargets=[];
+    document.querySelectorAll('#citationTargetList input:checked').forEach(function(cb){s.citationTargets.push(cb.value);});
+  }
+  if(toolName==='briefing'){
+    s.briefingFocusDocList=[];
+    document.querySelectorAll('#briefingFocusDocList input:checked').forEach(function(cb){s.briefingFocusDocList.push(cb.value);});
+  }
+  toolFormState[key]=s;
+}
+
+/* Restore previously-captured values into the freshly-rendered form for
+   `toolName`. Called from promptTool right after toolModalBody.innerHTML
+   is assigned. Silently no-ops if there's no saved state for this key. */
+function restoreToolFormState(toolName){
+  var key=_tfsKey(toolName);if(!key)return;
+  var s=toolFormState[key];if(!s)return;
+  var ti=document.getElementById('toolInstructions');
+  if(ti&&typeof s.toolInstructions==='string')ti.value=s.toolInstructions;
+  if(toolName==='inconsistency'&&Array.isArray(s.anchorList)){
+    var aSet={};s.anchorList.forEach(function(v){aSet[v]=true;});
+    document.querySelectorAll('#anchorList input').forEach(function(cb){if(aSet[cb.value])cb.checked=true;});
+  }
+  if(toolName==='chronology'){
+    var dr=document.getElementById('chronoDateRange');if(dr&&typeof s.chronoDateRange==='string')dr.value=s.chronoDateRange;
+    var en=document.getElementById('chronoEntities');if(en&&typeof s.chronoEntities==='string')en.value=s.chronoEntities;
+    var cf=document.getElementById('chronoCorresFilter');if(cf&&typeof s.chronoCorresFilter==='boolean')cf.checked=s.chronoCorresFilter;
+  }
+  if(toolName==='issues'){
+    var se=document.getElementById('issuesSubElement');if(se&&typeof s.issuesSubElement==='string')se.value=s.issuesSubElement;
+    if(Array.isArray(s.issuesFocusDocList)&&s.issuesFocusDocList.length){
+      var iSet={};s.issuesFocusDocList.forEach(function(v){iSet[v]=true;});
+      var anyChecked=false;
+      document.querySelectorAll('#issuesFocusDocList input').forEach(function(cb){if(iSet[cb.value]){cb.checked=true;anyChecked=true;}});
+      /* Open the <details> wrapper if any boxes were restored, so the user
+         can see them. The details element is the closest ancestor of
+         #issuesFocusDocList. */
+      if(anyChecked){
+        var det=document.getElementById('issuesFocusDocList');
+        if(det){var p=det.parentElement;if(p&&p.tagName==='DETAILS')p.open=true;}
+      }
+    }
+  }
+  if(toolName==='citations'){
+    var cs=document.getElementById('citationSourceSelect');if(cs&&typeof s.citationSource==='string')cs.value=s.citationSource;
+    if(Array.isArray(s.citationTargets)){
+      /* Citation target list defaults to all-checked (see toolDefs.citations).
+         Restore = override the defaults with the saved selection. */
+      var cSet={};s.citationTargets.forEach(function(v){cSet[v]=true;});
+      document.querySelectorAll('#citationTargetList input').forEach(function(cb){cb.checked=!!cSet[cb.value];});
+    }
+  }
+  if(toolName==='briefing'&&Array.isArray(s.briefingFocusDocList)&&s.briefingFocusDocList.length){
+    var bSet={};s.briefingFocusDocList.forEach(function(v){bSet[v]=true;});
+    var bAnyChecked=false;
+    document.querySelectorAll('#briefingFocusDocList input').forEach(function(cb){if(bSet[cb.value]){cb.checked=true;bAnyChecked=true;}});
+    if(bAnyChecked){
+      var bDet=document.getElementById('briefingFocusDocList');
+      if(bDet){var bp=bDet.parentElement;if(bp&&bp.tagName==='DETAILS')bp.open=true;}
+    }
+  }
+}
+
+/* Discard saved state for a tool (called by X close and after Run). */
+function discardToolFormState(toolName){
+  var key=_tfsKey(toolName);if(!key)return;
+  delete toolFormState[key];
+}
+
+/* Wrapper around closeModal('toolModal') that handles state save/discard.
+   action: 'cancel' \u2192 save | 'x' \u2192 discard | 'run' \u2192 discard.
+   Falls through to the generic closeModal in core.js for the actual hide. */
+function closeToolModal(action){
+  var tool=pendingTool;
+  if(action==='cancel'&&tool)captureToolFormState(tool);
+  else if(action==='x'&&tool)discardToolFormState(tool);
+  else if(action==='run'&&tool)discardToolFormState(tool);
+  closeModal('toolModal');
+}
+
+/* v5.15c: Click outside the toolModal overlay should be treated as Cancel
+   (save state). The generic .overlay click handler in core.js calls
+   closeModal directly, which would skip our save step. We attach a
+   higher-priority handler at the capture phase that intercepts clicks on
+   the toolModal overlay specifically and routes them through closeToolModal.
+   The generic handler then sees display:none and does nothing.
+   Same approach for the Escape key. */
+(function wireToolModalDismissals(){
+  function attach(){
+    var overlay=document.getElementById('toolModal');
+    if(!overlay){setTimeout(attach,200);return;}
+    overlay.addEventListener('click',function(e){
+      if(e.target===overlay&&overlay.style.display!=='none'){
+        /* Stop the generic .overlay listener from also running. */
+        e.stopImmediatePropagation();
+        closeToolModal('cancel');
+      }
+    },true);
+    document.addEventListener('keydown',function(e){
+      if(e.key!=='Escape')return;
+      if(overlay.style.display==='none'||!overlay.style.display)return;
+      /* If toolModal is the topmost open modal, intercept Escape so we save
+         state. The generic Escape handler in core.js then sees display:none
+         and skips. */
+      var others=document.querySelectorAll('.overlay');
+      var thisZ=parseInt(getComputedStyle(overlay).zIndex)||200;
+      var isTop=true;
+      others.forEach(function(o){
+        if(o===overlay)return;
+        if(o.style.display!=='none'&&o.style.display!==''){
+          var z=parseInt(getComputedStyle(o).zIndex)||200;
+          if(z>thisZ)isTop=false;
+        }
+      });
+      if(isTop){e.stopImmediatePropagation();e.preventDefault();closeToolModal('cancel');}
+    },true);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',attach);
+  else attach();
+})();
+
 function promptTool(t){
   if(!currentMatter){showToast('Select a matter first');return;}
   if(rtIsLocked(t)){
@@ -359,6 +558,9 @@ function promptTool(t){
   var cfg=toolDefs[t];
   document.getElementById('toolModalTitle').textContent=cfg.title;
   document.getElementById('toolModalBody').innerHTML=cfg.body()+folderFilterHtml()+docFilterHtml();
+  /* v5.15c: After rendering the fresh body, restore any previously-typed
+     values for this (matter, tool) pair. Silent no-op if first open. */
+  restoreToolFormState(t);
   document.getElementById('toolModal').style.display='flex';
 }
 function getActiveMessagesArea(){
@@ -378,7 +580,9 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   if(!pendingTool||!currentMatter)return;
   if(rtIsLocked(pendingTool)){
     showToast(toolDefs[pendingTool].title+' is already running \u2014 please wait');
-    closeModal('toolModal');
+    /* v5.15c: Treat the lock-collision close as a cancel (preserve state) so
+       the user doesn't lose their typed input when the second click bounces. */
+    closeToolModal('cancel');
     return;
   }
   /* v5.5: Lock BEFORE any await so a fast double-click can't slip through. */
@@ -431,7 +635,9 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     rtUnlock(v55LockedTool);
     return;
   }
-  closeModal('toolModal');
+  /* v5.15c: Successful submission \u2014 discard the saved form state so a
+     subsequent reopen of this tool starts blank. */
+  closeToolModal('run');
   var toolName=pendingTool;
   var toolLabel=toolDefs[toolName]?toolDefs[toolName].title:toolName;
   switchTab(toolName);

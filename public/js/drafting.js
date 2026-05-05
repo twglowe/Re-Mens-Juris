@@ -1,4 +1,26 @@
 /* ── DRAFT TAB ────────────────────────────────────────────────────────────── */
+/* v5.16b — 05 May 2026 — Push v5.16b (heading rendering for non-two-party cases):
+   1. Shared heading renderer (renderHeadingHtml) used by both the live action
+      heading bar and the modal preview. Replaces the two divergent renderers
+      that previously gated on (party1 && party2).
+   2. Three case shapes handled: BETWEEN two-party (existing), IN THE MATTER OF
+      single-party (Cayman ELP / company petitions etc.), and BETWEEN with
+      single party. The connector word is chosen by checking docTitle/docType
+      and party1Role for "in the matter of" \u2014 if any contains it, the
+      connector is IN THE MATTER OF; otherwise BETWEEN.
+   3. Layout per Tom's spec: court is bold + uppercase + underlined, sits on
+      the LEFT of the top row with caseNo on the RIGHT (capitalised words);
+      connector centred; parties centred; doc title between two navy lines.
+   4. Heading editor modal (.heading-popup) gets max-height: calc(100vh-2rem)
+      + overflow-y:auto so it scrolls when too tall (same fix pattern as
+      v5.15c for tool forms).
+   5. saveHeading no longer prompts to rename the matter to "A v B" when
+      the case is in-the-matter-of \u2014 that prompt was nonsensical for
+      single-party cases.
+   Files changed: public/js/drafting.js, index.html (CSS only).
+   No DB changes, no new API endpoints. Continues v5.16a's draft_doc_titles
+   and tab-merge work. */
+
 /* v5.16a — 05 May 2026 — Push v5.16a (Drafting tab merge + heading fixes):
    1. Left-column merge: Sectors 1 (Case Identification) and 2 (Source
       Documents) merged into a tabbed left column (Case + Sources). Sector 3
@@ -792,26 +814,134 @@ function openHeadingEditor(){
   updateHeadingPreview();
   document.getElementById('headingModal').style.display='flex';
 }
-function updateHeadingPreview(){
-  var court=document.getElementById('hdCourt').value.trim();
-  var caseNo=document.getElementById('hdCaseNo').value.trim();
-  var p1=document.getElementById('hdParty1').value.trim();
-  var p1r=document.getElementById('hdParty1Role').value.trim();
-  var p2=document.getElementById('hdParty2').value.trim();
-  var p2r=document.getElementById('hdParty2Role').value.trim();
-  var title=document.getElementById('hdDocTitle').value.trim();
-  var lines=[];
-  if(court)lines.push(court);
-  if(caseNo)lines.push(caseNo);
-  lines.push('');
-  lines.push('BETWEEN:');
-  lines.push('');
-  if(p1)lines.push(p1+(p1r?'          '+p1r:''));
-  lines.push('— and —');
-  if(p2)lines.push(p2+(p2r?'          '+p2r:''));
-  if(title){lines.push('');lines.push('════════════════════════════════');lines.push(title);lines.push('════════════════════════════════');}
-  document.getElementById('headingPreview').textContent=lines.join('\n');
+/* ═══════════════════════════════════════════════════════════════════════════
+   v5.16b — SHARED HEADING RENDERER
+   ───────────────────────────────────────────────────────────────────────────
+   Used by both the action heading bar (above the editor) and the heading
+   preview inside the modal. Handles three case shapes:
+   - "BETWEEN" two-party: party1 + party2 both present.
+   - "IN THE MATTER OF" single-party: docTitle starts with "IN THE MATTER OF"
+     OR party1Role contains "in the matter of".
+   - Single-party "BETWEEN": party1 present, party2 absent, no IN THE
+     MATTER OF signal \u2014 still rendered, just without the party2 row.
+   Layout per Tom's spec: court left + caseNo right on the top row;
+   connector word centred (BETWEEN or IN THE MATTER OF); parties centred;
+   doc title centred between two navy lines.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function _hdgIsInTheMatter(headingObj){
+  /* Decide between BETWEEN and IN THE MATTER OF based on docTitle/docType.
+     Per Tom's spec: 'Always look at the docTitle/docType \u2014 if it includes
+     IN THE MATTER OF, use that connector; otherwise BETWEEN.' */
+  var dt=(headingObj&&headingObj.docTitle)?headingObj.docTitle:'';
+  if(/in the matter of/i.test(dt))return true;
+  /* Fallback: also check the selected Doc Type from Sector 1 (Case tab),
+     in case the user hasn't set a docTitle explicitly yet. */
+  var dtSel=document.getElementById('draftDocType');
+  if(dtSel&&dtSel.value&&dtSel.selectedIndex>0){
+    var dtName=dtSel.options[dtSel.selectedIndex].text||'';
+    if(/in the matter of/i.test(dtName))return true;
+  }
+  /* And party1Role \u2014 if the AI suggestion put 'In the Matter of' there. */
+  var p1r=(headingObj&&headingObj.party1Role)?headingObj.party1Role:'';
+  if(/in the matter of/i.test(p1r))return true;
+  return false;
 }
+
+function renderHeadingHtml(headingObj){
+  if(!headingObj)return '';
+  var court=(headingObj.court||'').trim();
+  var caseNo=(headingObj.caseNo||'').trim();
+  var p1=(headingObj.party1||'').trim();
+  var p1r=(headingObj.party1Role||'').trim();
+  var p2=(headingObj.party2||'').trim();
+  var p2r=(headingObj.party2Role||'').trim();
+  var docTitle=(headingObj.docTitle||'').trim();
+  /* If absolutely nothing is set, return empty so callers can fall back to
+     placeholder text. */
+  if(!court&&!caseNo&&!p1&&!p2&&!docTitle)return '';
+
+  var inMatter=_hdgIsInTheMatter(headingObj);
+
+  var html='<div style="font-family:\'Libre Baskerville\',serif;line-height:1.7;color:var(--navy)">';
+
+  /* Top row: court left, caseNo right. Use flex so they sit on a single
+     conceptual row even when court has multiple lines. */
+  if(court||caseNo){
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:.5rem">';
+    if(court){
+      /* Court is bold + uppercase + underlined per Tom's spec. White-space:pre-line
+         lets multi-line court names (e.g. with FINANCIAL SERVICES DIVISION on a
+         second line) render with line breaks if the AI returned them that way. */
+      html+='<div style="font-size:.88rem;font-weight:700;text-transform:uppercase;text-decoration:underline;text-align:left;white-space:pre-line">'+esc(court)+'</div>';
+    }else{
+      html+='<div></div>';
+    }
+    if(caseNo){
+      html+='<div style="font-size:.85rem;text-align:right;white-space:nowrap">'+esc(caseNo)+'</div>';
+    }
+    html+='</div>';
+  }
+
+  /* Connector + parties block, centred. */
+  if(p1||p2){
+    html+='<div style="text-align:center">';
+    if(inMatter){
+      html+='<div style="font-size:.85rem;font-weight:700;letter-spacing:.04em;margin:.4rem 0 .2rem">IN THE MATTER OF</div>';
+      if(p1)html+='<div style="font-size:.92rem;font-weight:700">'+esc(p1)+'</div>';
+      if(p2){
+        html+='<div style="font-size:.82rem;margin:.2rem 0">\u2014 and \u2014</div>';
+        html+='<div style="font-size:.92rem;font-weight:700">'+esc(p2)+'</div>';
+      }
+    }else{
+      html+='<div style="font-size:.85rem;font-weight:700;letter-spacing:.04em;margin:.4rem 0 .2rem">BETWEEN:</div>';
+      if(p1){
+        html+='<div style="font-size:.92rem;font-weight:700">'+esc(p1);
+        if(p1r)html+='<span style="font-weight:400;margin-left:2rem">'+esc(p1r)+'</span>';
+        html+='</div>';
+      }
+      if(p2){
+        html+='<div style="font-size:.82rem;margin:.2rem 0">\u2014 and \u2014</div>';
+        html+='<div style="font-size:.92rem;font-weight:700">'+esc(p2);
+        if(p2r)html+='<span style="font-weight:400;margin-left:2rem">'+esc(p2r)+'</span>';
+        html+='</div>';
+      }
+    }
+    html+='</div>';
+  }
+
+  /* Doc title centred between two navy lines. */
+  var displayDocTitle=docTitle||getSelectedDocTypeName();
+  if(displayDocTitle){
+    html+='<div style="text-align:center">';
+    html+='<div style="margin:.6rem auto .2rem;width:80%;border-top:3px solid var(--navy)"></div>';
+    html+='<div style="font-size:1rem;font-weight:700;letter-spacing:.08em">'+esc(displayDocTitle.toUpperCase())+'</div>';
+    html+='<div style="margin:.2rem auto .4rem;width:80%;border-top:3px solid var(--navy)"></div>';
+    html+='</div>';
+  }
+
+  html+='</div>';
+  return html;
+}
+
+function updateHeadingPreview(){
+  /* v5.16b: build a temporary heading object from the modal inputs and
+     render with the shared renderer. */
+  var temp={
+    court:document.getElementById('hdCourt').value.trim(),
+    caseNo:document.getElementById('hdCaseNo').value.trim(),
+    party1:document.getElementById('hdParty1').value.trim(),
+    party1Role:document.getElementById('hdParty1Role').value.trim(),
+    party2:document.getElementById('hdParty2').value.trim(),
+    party2Role:document.getElementById('hdParty2Role').value.trim(),
+    docTitle:document.getElementById('hdDocTitle').value.trim()
+  };
+  var html=renderHeadingHtml(temp);
+  var preview=document.getElementById('headingPreview');
+  if(preview){
+    preview.innerHTML=html||'<div style="text-align:center;color:var(--text-faint);font-style:italic;font-size:.85rem;padding-top:1rem">Preview will appear here as you fill in the fields.</div>';
+  }
+}
+
 function saveHeading(){
   draftHeading.court=document.getElementById('hdCourt').value.trim();
   draftHeading.caseNo=document.getElementById('hdCaseNo').value.trim();
@@ -823,9 +953,11 @@ function saveHeading(){
   closeModal('headingModal');
   updateHeadingBtnText();
   showToast('Heading saved');
-  /* C2: If party names form a case name, offer to update the matter */
+  /* C2: If party names form a case name, offer to update the matter.
+     v5.16b: only prompt for two-party BETWEEN cases \u2014 'A v B' isn't a
+     sensible matter name for an in-the-matter-of single-party case. */
   var matterId=document.getElementById('draftMatterSelect').value;
-  if(matterId&&draftHeading.party1&&draftHeading.party2){
+  if(matterId&&draftHeading.party1&&draftHeading.party2&&!_hdgIsInTheMatter(draftHeading)){
     var m=matters.find(function(x){return x.id===matterId;});
     if(m){
       var newName=draftHeading.party1+' v '+draftHeading.party2;
@@ -835,31 +967,35 @@ function saveHeading(){
     }
   }
 }
+
 function updateActionHeading(){
+  /* v5.16b: shared renderer. The old version required both party1 AND
+     party2 to render anything; now we render whatever's present. The
+     button label still summarises briefly. */
   var btn=document.getElementById('draftHeadingBtn');
   var inlineHeading=document.getElementById('draftHeadingText');
-  if(draftHeading.party1&&draftHeading.party2){
-    btn.textContent=draftHeading.party1+' v '+draftHeading.party2;
-    /* Build formatted heading HTML for the action heading area */
-    var html='<div style="text-align:center;font-family:\'Libre Baskerville\',serif;line-height:1.7">';
-    if(draftHeading.court)html+='<div style="font-size:.88rem;font-weight:700">'+esc(draftHeading.court)+'</div>';
-    if(draftHeading.caseNo)html+='<div style="font-size:.85rem">'+esc(draftHeading.caseNo)+'</div>';
-    html+='<div style="margin:.4rem 0;font-size:.85rem">BETWEEN:</div>';
-    html+='<div style="font-size:.9rem;font-weight:700">'+esc(draftHeading.party1)+(draftHeading.party1Role?'<span style="font-weight:400;margin-left:2rem">'+esc(draftHeading.party1Role)+'</span>':'')+'</div>';
-    html+='<div style="font-size:.82rem;margin:.2rem 0">— and —</div>';
-    html+='<div style="font-size:.9rem;font-weight:700">'+esc(draftHeading.party2)+(draftHeading.party2Role?'<span style="font-weight:400;margin-left:2rem">'+esc(draftHeading.party2Role)+'</span>':'')+'</div>';
-    /* Doc title in CAPS between bold bars */
-    var docTitle=draftHeading.docTitle||getSelectedDocTypeName();
-    if(docTitle){
-      html+='<div style="margin:.6rem auto .2rem;width:80%;border-top:3px solid var(--navy)"></div>';
-      html+='<div style="font-size:1rem;font-weight:700;letter-spacing:.08em">'+esc(docTitle.toUpperCase())+'</div>';
-      html+='<div style="margin:.2rem auto .4rem;width:80%;border-top:3px solid var(--navy)"></div>';
-    }
-    html+='</div>';
-    if(inlineHeading){inlineHeading.innerHTML=html;}
+  var p1=draftHeading.party1||'';
+  var p2=draftHeading.party2||'';
+  var hasAnything=!!(p1||p2||draftHeading.court||draftHeading.caseNo||draftHeading.docTitle);
+
+  /* Button label: "P1 v P2" for two-party, "P1" alone for single, otherwise placeholder. */
+  if(p1&&p2&&!_hdgIsInTheMatter(draftHeading)){
+    btn.textContent=p1+' v '+p2;
+  }else if(p1){
+    btn.textContent=p1;
+  }else if(draftHeading.court){
+    btn.textContent='[heading set]';
   }else{
-    btn.textContent='Click to set heading…';
-    if(inlineHeading)inlineHeading.textContent='Click to set action heading…';
+    btn.textContent='Click to set heading\u2026';
+  }
+
+  if(inlineHeading){
+    if(hasAnything){
+      var html=renderHeadingHtml(draftHeading);
+      inlineHeading.innerHTML=html||'Click to set action heading\u2026';
+    }else{
+      inlineHeading.textContent='Click to set action heading\u2026';
+    }
   }
 }
 /* Alias for backward compatibility */

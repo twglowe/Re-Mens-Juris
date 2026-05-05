@@ -1,28 +1,13 @@
-/* ELJ v5.16c — api/extract_heading.js
+/* ELJ v5.16d — api/extract_heading.js
    ───────────────────────────────────────────────────────────────────
-   Dedicated heading-extraction endpoint. Bypasses /api/analyse's
-   keyword-search retrieval (which was unreliable for headings because
-   the search prompt contained words like 'pleadings', 'court', 'case'
-   that don't appear in the heading text itself).
+   Same logic as v5.16c, but every step pushes onto a `steps` array
+   that is returned in every response (success, validation_failed,
+   error, timeout). Vercel logs unnecessary \u2014 the browser console
+   reveals exactly where the request got stuck.
 
-   How it works:
-   1. Auth (same pattern as drafts.js / draft_doc_titles.js).
-   2. Fetch chunk_index IN (0,1) for the matter \u2014 i.e. the first 1\u20132
-      chunks of every document. Court headings sit on page 1.
-   3. Regex prefilter: keep only chunks containing BOTH a court-name
-      shape AND an action-number shape. Misses skip the Claude call.
-   4. Send up to 5 matching chunks to Claude with a tight prompt.
-      Return the heading JSON if validation passes, else 200 with
-      heading=null.
-   5. No usage logging (heading extraction is a small, infrequent call;
-      we can add later if it matters).
-
-   Failure modes:
-   - No matter_id  \u2192 400.
-   - No matching chunks (no court doc) \u2192 200 { heading: null }.
-   - Claude call fails    \u2192 500.
-   - Claude returns something \u2192 validate (court + caseNo + party1
-                                            non-empty); else 200 { heading: null }.
+   Also: hard 50-second self-imposed timeout. If anything hangs
+   longer than that, we return an error with the steps so far rather
+   than letting the client hang indefinitely.
 */
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -41,33 +26,25 @@ async function getUser(supabase, req) {
   } catch (e) { return null; }
 }
 
-/* Action-number patterns. Tom's two examples are 'FSD 253 OF 2026 (RPJ)'
-   (Cayman) and 'Civil Jurisdiction 2024 No. 123' (Bermuda style). We also
-   accept BVI-style 'BVIHC ...' / 'Claim No. ...' and Bermuda 'Cause No. ...'.
-   The check is intentionally loose \u2014 misses are cheap (just one less
-   chunk in the candidate set) and false positives are filtered later by
-   Claude's structured extraction. */
 const ACTION_NUMBER_PATTERNS = [
-  /\bFSD\s*\d+\s*OF\s*\d{4}/i,                           /* Cayman FSD */
-  /\b(?:Civil|Cause|Commercial|Companies?)\s+(?:Jurisdiction|Cause)?\s*\d{4}\s*No\.?\s*\d+/i, /* Bermuda Civil Jurisdiction 2024 No. 123 */
-  /\b\d{4}\s*:?\s*No\.?\s*\d+/i,                         /* '2024: No. 123' or '2024 No 123' */
-  /\bBVIHC[\s\(\)A-Z\d]+\d+/i,                           /* BVI High Court e.g. BVIHC (COM) 0123 of 2024 */
-  /\bClaim\s+No\.?\s*\d+\s*of\s*\d{4}/i,                  /* 'Claim No. 123 of 2024' */
-  /\bCause\s+No\.?\s*\d+\s*of\s*\d{4}/i,                  /* 'Cause No. 123 of 2024' */
+  /\bFSD\s*\d+\s*OF\s*\d{4}/i,
+  /\b(?:Civil|Cause|Commercial|Companies?)\s+(?:Jurisdiction|Cause)?\s*\d{4}\s*No\.?\s*\d+/i,
+  /\b\d{4}\s*:?\s*No\.?\s*\d+/i,
+  /\bBVIHC[\s\(\)A-Z\d]+\d+/i,
+  /\bClaim\s+No\.?\s*\d+\s*of\s*\d{4}/i,
+  /\bCause\s+No\.?\s*\d+\s*of\s*\d{4}/i,
 ];
 
 const COURT_PATTERNS = [
-  /grand\s+court/i,                /* Cayman Grand Court */
-  /supreme\s+court/i,              /* Bermuda Supreme Court */
-  /high\s+court/i,                 /* BVI High Court */
+  /grand\s+court/i,
+  /supreme\s+court/i,
+  /high\s+court/i,
   /court\s+of\s+appeal/i,
   /privy\s+council/i,
 ];
 
 function isHeadingCandidate(text) {
   if (!text || typeof text !== "string") return false;
-  /* Only check the first ~2000 chars \u2014 headings sit at the very top of
-     a chunk. Saves regex work on long chunks. */
   const head = text.slice(0, 2000);
   const hasCourt = COURT_PATTERNS.some(re => re.test(head));
   if (!hasCourt) return false;
@@ -75,43 +52,108 @@ function isHeadingCandidate(text) {
   return hasActionNo;
 }
 
-const SERVER_VERSION = "v5.16c";
-export default async function handler(req, res) {
-  console.log(SERVER_VERSION + " extract_heading handler: " + (req.method || "?") + " " + (req.url || ""));
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+const SERVER_VERSION = "v5.16d";
 
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-  const user = await getUser(supabase, req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+/* withTimeout wraps a promise with a hard timeout that races to settle
+   first. If the inner promise hasn't resolved by `ms` milliseconds, the
+   wrapper rejects with a Timeout error tagged with the step name. */
+function withTimeout(promise, ms, stepName) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error("Timeout in step: " + stepName + " (" + ms + "ms)")), ms))
+  ]);
+}
+
+export default async function handler(req, res) {
+  const t0 = Date.now();
+  const steps = [];
+  const step = (name, extra) => {
+    const dt = Date.now() - t0;
+    const entry = { t: dt, step: name };
+    if (extra !== undefined) entry.extra = extra;
+    steps.push(entry);
+    console.log(`${SERVER_VERSION} extract_heading [+${dt}ms] ${name}` + (extra !== undefined ? " " + JSON.stringify(extra).slice(0, 200) : ""));
+  };
+
+  step("start", { method: req.method, url: req.url });
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed", steps });
+
+  let supabase;
+  try {
+    supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+    step("supabase_client_created");
+  } catch (e) {
+    step("supabase_client_error", { err: e.message });
+    return res.status(500).json({ error: "Supabase init failed: " + e.message, step: "supabase_client", steps });
+  }
+
+  let user;
+  try {
+    user = await withTimeout(getUser(supabase, req), 5000, "getUser");
+    step("getUser_done", { hasUser: !!user });
+  } catch (e) {
+    step("getUser_error", { err: e.message });
+    return res.status(500).json({ error: "Auth check failed: " + e.message, step: "getUser", steps });
+  }
+  if (!user) return res.status(401).json({ error: "Unauthorized", steps });
 
   const { matterId } = req.body || {};
-  if (!matterId) return res.status(400).json({ error: "matterId required" });
+  if (!matterId) return res.status(400).json({ error: "matterId required", steps });
+  step("matter_id_received", { matterId });
 
   try {
-    /* Step 1: Fetch first 1\u20132 chunks of every document in the matter.
-       Verify the matter belongs to this user via a separate matters check
-       before pulling the chunks (chunks table has no owner_id; security
-       is enforced by checking the matter ownership). */
-    const { data: m, error: mErr } = await supabase
-      .from("matters").select("id").eq("id", matterId).eq("owner_id", user.id).single();
-    if (mErr || !m) return res.status(403).json({ error: "Matter not found or not yours" });
-
-    const { data: chunks, error: cErr } = await supabase
-      .from("chunks")
-      .select("content, document_name, doc_type, chunk_index")
-      .eq("matter_id", matterId)
-      .in("chunk_index", [0, 1])
-      .order("document_name", { ascending: true })
-      .order("chunk_index", { ascending: true })
-      .limit(200);   /* hard cap \u2014 even with 100 docs at 2 chunks each, 200 covers it */
-    if (cErr) throw cErr;
-    if (!chunks || chunks.length === 0) {
-      console.log("extract_heading: no chunks found for matter", matterId);
-      return res.status(200).json({ heading: null, reason: "no_chunks" });
+    /* Step 1: matter ownership check. */
+    step("matter_ownership_query_start");
+    let m, mErr;
+    try {
+      const result = await withTimeout(
+        supabase.from("matters").select("id").eq("id", matterId).eq("owner_id", user.id).single(),
+        8000, "matter_ownership"
+      );
+      m = result.data; mErr = result.error;
+    } catch (e) {
+      step("matter_ownership_timeout", { err: e.message });
+      return res.status(500).json({ error: e.message, step: "matter_ownership_timeout", steps });
+    }
+    step("matter_ownership_done", { ownsIt: !!m, err: mErr ? mErr.message : null });
+    if (mErr || !m) {
+      return res.status(403).json({
+        error: "Matter not found or not yours",
+        step: "matter_ownership",
+        details: mErr ? mErr.message : "no_match",
+        steps
+      });
     }
 
-    /* Step 2: Regex prefilter \u2014 keep chunks that look like court doc
-       headings. Stop after we've collected 5 candidates. */
+    /* Step 2: chunks query. */
+    step("chunks_query_start");
+    let chunks, cErr;
+    try {
+      const result = await withTimeout(
+        supabase.from("chunks")
+          .select("content, document_name, doc_type, chunk_index")
+          .eq("matter_id", matterId)
+          .in("chunk_index", [0, 1])
+          .order("document_name", { ascending: true })
+          .order("chunk_index", { ascending: true })
+          .limit(200),
+        15000, "chunks_query"
+      );
+      chunks = result.data; cErr = result.error;
+    } catch (e) {
+      step("chunks_query_timeout", { err: e.message });
+      return res.status(500).json({ error: e.message, step: "chunks_query_timeout", steps });
+    }
+    step("chunks_query_done", { chunkCount: chunks ? chunks.length : 0, err: cErr ? cErr.message : null });
+    if (cErr) {
+      return res.status(500).json({ error: "Chunks query failed: " + cErr.message, step: "chunks_query", steps });
+    }
+    if (!chunks || chunks.length === 0) {
+      return res.status(200).json({ heading: null, reason: "no_chunks", steps });
+    }
+
+    /* Step 3: regex prefilter. */
+    step("regex_filter_start", { totalChunks: chunks.length });
     const candidates = [];
     for (const c of chunks) {
       if (isHeadingCandidate(c.content)) {
@@ -119,14 +161,23 @@ export default async function handler(req, res) {
         if (candidates.length >= 5) break;
       }
     }
+    step("regex_filter_done", { candidatesFound: candidates.length });
     if (candidates.length === 0) {
-      console.log("extract_heading: no heading-shaped chunks for matter", matterId);
-      return res.status(200).json({ heading: null, reason: "no_heading_shaped_chunks" });
+      /* Capture the document names we scanned and a small text snippet
+         from the first one so the diagnostic is informative. */
+      return res.status(200).json({
+        heading: null,
+        reason: "no_heading_shaped_chunks",
+        diagnostics: {
+          chunksScanned: chunks.length,
+          docsScanned: [...new Set(chunks.map(c => c.document_name))].slice(0, 10),
+          firstChunkPreview: chunks[0] ? (chunks[0].content || "").slice(0, 300) : null
+        },
+        steps
+      });
     }
 
-    /* Step 3: Send to Claude. Keep the prompt very tight and the chunks
-       trimmed to the first ~3000 chars each \u2014 that's where the heading
-       lives. */
+    /* Step 4: Claude call. */
     const candText = candidates.map((c, i) => {
       const head = (c.content || "").slice(0, 3000);
       return `--- CANDIDATE ${i+1}: ${c.document_name} ---\n${head}`;
@@ -148,38 +199,53 @@ Return ONLY valid JSON. No prose, no markdown, no code fences.
 PASSAGES:
 ${candText}`;
 
-    const response = await anthropic.messages.create({
-      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-      max_tokens: 800,
-      messages: [{ role: "user", content: prompt }]
-    });
+    step("claude_call_start", { promptLength: prompt.length, candidateCount: candidates.length });
+    let response;
+    try {
+      response = await withTimeout(
+        anthropic.messages.create({
+          model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+          max_tokens: 800,
+          messages: [{ role: "user", content: prompt }]
+        }),
+        40000, "claude_call"
+      );
+      step("claude_call_done", { stopReason: response.stop_reason });
+    } catch (claudeErr) {
+      step("claude_call_error", { err: claudeErr.message });
+      return res.status(500).json({
+        error: "Claude API call failed: " + claudeErr.message,
+        step: "claude_call",
+        candidateCount: candidates.length,
+        steps
+      });
+    }
 
     const text = response.content?.find(b => b.type === "text")?.text?.trim() || "";
+    step("claude_response_extracted", { length: text.length, preview: text.slice(0, 100) });
+
     let heading = null;
     try {
-      /* Be lenient about extra whitespace or stray code-fence characters. */
       const cleaned = text.replace(/^```json\s*|^```\s*|```$/g, "").trim();
       const s = cleaned.indexOf("{");
       const e = cleaned.lastIndexOf("}");
       if (s >= 0 && e > s) heading = JSON.parse(cleaned.slice(s, e + 1));
     } catch (parseErr) {
-      console.log("extract_heading: parse failed:", parseErr.message);
-      return res.status(200).json({ heading: null, reason: "parse_failed" });
+      step("parse_error", { err: parseErr.message });
+      return res.status(200).json({ heading: null, reason: "parse_failed", raw: text.slice(0, 500), steps });
     }
 
     if (!heading || typeof heading !== "object") {
-      return res.status(200).json({ heading: null, reason: "no_object" });
+      return res.status(200).json({ heading: null, reason: "no_object", raw: text.slice(0, 500), steps });
     }
-    /* Validation: need court non-empty AND (caseNo non-empty OR party1 non-empty). */
     const hasCourt = typeof heading.court === "string" && heading.court.trim().length > 2;
     const hasCaseNo = typeof heading.caseNo === "string" && heading.caseNo.trim().length > 0;
     const hasParty1 = typeof heading.party1 === "string" && heading.party1.trim().length > 0;
     if (!hasCourt || (!hasCaseNo && !hasParty1)) {
-      console.log("extract_heading: validation failed", { hasCourt, hasCaseNo, hasParty1 });
-      return res.status(200).json({ heading: null, reason: "validation_failed", raw: heading });
+      step("validation_failed", { hasCourt, hasCaseNo, hasParty1 });
+      return res.status(200).json({ heading: null, reason: "validation_failed", raw: heading, steps });
     }
 
-    /* Normalise: trim whitespace and uppercase party names. */
     const out = {
       court: String(heading.court || "").trim(),
       caseNo: String(heading.caseNo || "").trim(),
@@ -189,10 +255,15 @@ ${candText}`;
       party2Role: String(heading.party2Role || "").trim(),
       docTitle: String(heading.docTitle || "").trim().toUpperCase(),
     };
-
-    return res.status(200).json({ heading: out, candidatesUsed: candidates.length });
+    step("success", { court: out.court.slice(0, 30), caseNo: out.caseNo });
+    return res.status(200).json({ heading: out, candidatesUsed: candidates.length, totalMs: Date.now() - t0, steps });
   } catch (err) {
-    console.error("extract_heading error:", err);
-    return res.status(500).json({ error: err.message || "Heading extraction failed" });
+    step("unhandled_error", { err: err.message, stack: err.stack ? err.stack.slice(0, 300) : null });
+    return res.status(500).json({
+      error: err.message || "Heading extraction failed",
+      step: "unhandled",
+      stack: err.stack ? err.stack.slice(0, 500) : null,
+      steps
+    });
   }
 }

@@ -1,4 +1,22 @@
 /* ── DRAFT TAB ────────────────────────────────────────────────────────────── */
+/* v5.16c — 05 May 2026 — Push v5.16c (heading extraction reliability):
+   draftAISuggestHeading now calls a dedicated /api/extract_heading endpoint
+   instead of /api/analyse. The new endpoint:
+   - Pulls first 1\u20132 chunks of every document in the matter (chunk_index 0/1).
+   - Regex-prefilters for both a court-name shape AND an action-number shape.
+   - Sends only matching chunks (max 5) to Claude with a tight prompt.
+   - Validates and normalises before returning.
+   This bypasses /api/analyse's keyword-search retrieval, which was
+   unreliable for headings because the search prompt's keywords (pleadings,
+   court, case, etc.) don't appear in the heading text itself \u2014 the search
+   either returned chunks discussing those concepts (not heading text) or
+   nothing, falling back to 30 random recent chunks.
+   Also doesn't filter on doc_type because Tom flagged that the upload
+   labels are unreliable. Court documents are recognised by what's at the
+   top of page 1, not by their classification.
+   Files changed: public/js/drafting.js (one function), api/extract_heading.js (NEW).
+   No DB changes, no markup changes. */
+
 /* v5.16b — 05 May 2026 — Push v5.16b (heading rendering for non-two-party cases):
    1. Shared heading renderer (renderHeadingHtml) used by both the live action
       heading bar and the modal preview. Replaces the two divergent renderers
@@ -1171,19 +1189,13 @@ function draftDownloadWord(){
       the current matter. */
 async function draftAISuggestHeading(matterId){
   if(!matterId)return;
-  /* Capture the matter the request is about so we can detect a switch
-     while the network request is in flight. */
+  /* v5.16c: dedicated endpoint /api/extract_heading replaces /api/analyse for
+     this call. The new endpoint pulls first 1\u20132 chunks per document, regex-
+     prefilters for court+action-number, and sends only matching chunks to
+     Claude. Faster, deterministic, and doesn't depend on doc_type labels. */
   var requestMatterId=matterId;
   try{
-    var d=await api('/api/analyse','POST',{
-      matterId:matterId,
-      matterName:currentMatter?currentMatter.name:'',
-      matterNature:'',matterIssues:'',
-      messages:[{role:'user',content:'Look across the matter documents and extract the case heading information. Look first at pleadings (writ, claim form, statement of claim, defence, petition, notice of appeal) and any case-management orders, since these usually carry the most accurate court name, case/cause number, and party titles. If those are not present, look at any covering letters, indexes, or correspondence headers. Return ONLY a JSON object with these fields (use empty string if not found): court, caseNo, party1, party1Role, party2, party2Role, docTitle. For example: {"court":"IN THE SUPREME COURT OF BERMUDA","caseNo":"Civil Jurisdiction 2024 No. 123","party1":"SMITH","party1Role":"Plaintiff","party2":"JONES LIMITED","party2Role":"Defendant","docTitle":"SKELETON ARGUMENT"}. Return ONLY the JSON, no other text.'}],
-      jurisdiction:draftJur(),
-      queryType:'Factual Analysis',
-      focusAreas:[]
-    });
+    var d=await api('/api/extract_heading','POST',{matterId:matterId});
     /* Race-condition guard: if the user has switched matter while we were
        waiting, drop the response on the floor. */
     var sel=document.getElementById('draftMatterSelect');
@@ -1192,35 +1204,26 @@ async function draftAISuggestHeading(matterId){
       console.log('AI heading suggestion: matter changed while in flight, ignoring');
       return;
     }
-    if(!d||!d.result)return;
-    var h=null;
-    try{
-      var raw=d.result.replace(/```json|```/g,'').trim();
-      var s=raw.indexOf('{');var e=raw.lastIndexOf('}');
-      if(s>=0&&e>s)h=JSON.parse(raw.slice(s,e+1));
-    }catch(pe){console.log('AI heading parse error:',pe);return;}
-    if(!h||typeof h!=='object')return;
-    /* Validate: need a court AND (caseNo OR party1). Otherwise treat as
-       garbage and silently leave the matter-name parsing baseline. */
-    var hasCourt=h.court&&typeof h.court==='string'&&h.court.trim().length>2;
-    var hasCaseNo=h.caseNo&&typeof h.caseNo==='string'&&h.caseNo.trim().length>0;
-    var hasParty1=h.party1&&typeof h.party1==='string'&&h.party1.trim().length>0;
-    if(!hasCourt||(!hasCaseNo&&!hasParty1)){
-      console.log('AI heading suggestion: validation failed, leaving baseline');
+    /* Endpoint returns either {heading: {...}} on success or
+       {heading: null, reason: '...'} when no court doc was found / validation
+       failed. We just leave the baseline untouched in the null case. */
+    if(!d||!d.heading){
+      var why=(d&&d.reason)?d.reason:'no_heading';
+      console.log('AI heading suggestion: '+why+' \u2014 leaving baseline');
       return;
     }
-    /* Apply. We OVERWRITE the baseline rather than OR'ing because the
-       baseline is only the matter-name split and the AI's view of the
-       documents is more accurate when validation has passed. */
-    if(hasCourt)draftHeading.court=h.court.trim();
-    if(hasCaseNo)draftHeading.caseNo=h.caseNo.trim();
-    if(hasParty1)draftHeading.party1=h.party1.trim().toUpperCase();
-    if(h.party1Role)draftHeading.party1Role=h.party1Role.trim();
-    if(h.party2)draftHeading.party2=h.party2.trim().toUpperCase();
-    if(h.party2Role)draftHeading.party2Role=h.party2Role.trim();
-    if(h.docTitle)draftHeading.docTitle=h.docTitle.trim().toUpperCase();
+    var h=d.heading;
+    /* Endpoint already validates and normalises (uppercase parties, trimmed,
+       court + caseNo|party1 guaranteed) so we apply directly. */
+    if(h.court)draftHeading.court=h.court;
+    if(h.caseNo)draftHeading.caseNo=h.caseNo;
+    if(h.party1)draftHeading.party1=h.party1;
+    if(h.party1Role)draftHeading.party1Role=h.party1Role;
+    if(h.party2)draftHeading.party2=h.party2;
+    if(h.party2Role)draftHeading.party2Role=h.party2Role;
+    if(h.docTitle)draftHeading.docTitle=h.docTitle;
     updateActionHeading();
-    showToast('Heading suggested from documents — click to edit');
+    showToast('Heading suggested from documents \u2014 click to edit');
   }catch(e){console.log('AI heading suggestion skipped:',e.message);}
 }
 

@@ -352,20 +352,30 @@ function draftMatterChanged(){
 }
 
 /* v5.13b: tab-activation hook called from core.js switchMainNav('draft').
-   Syncs the Draft tab to currentMatter, with an unsaved-edits guard. */
+   Syncs the Draft tab to currentMatter, with an unsaved-edits guard.
+   v5.16e Push A: after the matter-sync block, attempt to reattach a
+   poll loop to any in-flight draft job stashed by tools.js
+   resumeInProgressJobs. Safe no-op if no stash. */
 function onDraftTabActivated(){
   /* v5.16a: apply remembered left-column tab on every activation. */
   if(typeof dlcApplyRememberedTab==='function')dlcApplyRememberedTab();
   var sel=document.getElementById('draftMatterSelect');
-  if(!sel)return;
+  if(!sel){
+    if(typeof attachDraftPoll==='function')attachDraftPoll();
+    return;
+  }
   var targetId=(typeof currentMatter!=='undefined'&&currentMatter)?currentMatter.id:'';
   var currentId=sel.value;
   /* If neither side has a value, nothing to do. */
-  if(!targetId&&!currentId)return;
+  if(!targetId&&!currentId){
+    if(typeof attachDraftPoll==='function')attachDraftPoll();
+    return;
+  }
   /* If the select is already in sync with currentMatter, just refresh
      the previous-drafts list count and exit. */
   if(targetId&&currentId===targetId){
     loadDraftsForMatter(targetId);
+    if(typeof attachDraftPoll==='function')attachDraftPoll();
     return;
   }
   /* Mismatch — we need to switch the Draft tab to currentMatter. Check
@@ -381,6 +391,7 @@ function onDraftTabActivated(){
   /* Apply the switch. */
   if(targetId)sel.value=targetId;
   draftMatterChanged();
+  if(typeof attachDraftPoll==='function')attachDraftPoll();
 }
 
 /* v5.13b: load all drafts for a matter and update the badge count. */
@@ -1050,7 +1061,126 @@ function collectMatterToolHistory(){
 }
 
 /* Generate Draft */
-/* v3.4: generateDraft uses fire-and-poll background processing */
+/* v5.16e Push A: shared poll-body for both fresh and resumed draft jobs.
+   Runs the 10-second poll loop, renders the result into the editor on
+   completion, and persists a new drafts row. Behaviour for both call sites
+   is now guaranteed identical because they share this function.
+   ctxSource='generate' for a freshly-submitted job, 'resume' for a job
+   reattached on tab activation; only used in toast/log strings. */
+function _runDraftPoll(jobId,matterId,ctId,stId,dtId,instructions,prog,ctxSource){
+  var pollCount=0;
+  var draftPoll=setInterval(async function(){
+    try{
+      pollCount++;
+      var j=await api('/api/jobs?id='+jobId);
+      if(!j)return;
+      if(j.batchesTotal>0&&j.batchesDone>0){prog.textContent='Generating draft\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;}
+      if(j.status==='complete'||j.status==='partial'){
+        clearInterval(draftPoll);
+        document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';
+        /* v5.16e: clear the in-flight stash so a later tab activation
+           doesn't try to reattach to a now-finished job. */
+        if(window._inflightDraftJob&&window._inflightDraftJob.jobId===jobId)window._inflightDraftJob=null;
+        var resultText=j.result||'';
+        document.getElementById('draftInstructionsBody').style.display='none';
+        var outputWrap=document.getElementById('draftOutputWrap');outputWrap.classList.remove('hidden');
+        var editor=document.getElementById('draftEditor');editor.innerHTML=renderMd(resultText);editor.focus();
+        /* v5.14a: show Clear Draft button as soon as the editor has content */
+        updateClearDraftBtnVisibility();
+        /* v5.13b: persist a new draft row in the `drafts` table and
+           attach the editor to it via currentDraftId. Subsequent
+           manual edits will PUT to this same row (no duplicate rows).
+           v5.16e: this is the SAME save path for both fresh and resumed
+           jobs, which is why the resume path goes through this helper
+           rather than relying on the worker. Push C will move this
+           server-side, after which this client save becomes a no-op
+           when the row already exists. */
+        (async function(){
+          try{
+            var savePayload={
+              matter_id:matterId,
+              case_type_id:ctId||null,
+              subcat_id:stId||null,
+              doc_type_id:dtId||null,
+              heading_data:draftHeading,
+              instructions:instructions,
+              draft_content:editor.innerHTML,
+              conversation:[]
+            };
+            var sd=await api('/api/drafts?matter_id='+matterId,'POST',savePayload);
+            if(sd&&sd.draft&&sd.draft.id){
+              currentDraftId=sd.draft.id;
+              unsavedEdits=false;
+              var saveBtn=document.getElementById('saveDraftBtn');
+              if(saveBtn)saveBtn.style.display='none';
+              /* Refresh the previous-drafts list and badge */
+              await loadDraftsForMatter(matterId);
+            }
+          }catch(saveErr){console.log('Draft post-'+ctxSource+' save failed:',saveErr.message);}
+        })();
+        return;
+      }
+      if(j.status==='failed'){
+        clearInterval(draftPoll);
+        document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';
+        if(window._inflightDraftJob&&window._inflightDraftJob.jobId===jobId)window._inflightDraftJob=null;
+        showToast('Draft error: '+(j.error||'Unknown error'));return;
+      }
+      if(pollCount>360){
+        clearInterval(draftPoll);
+        document.getElementById('draftGenerateBtn').disabled=false;
+        prog.textContent='Draft is taking longer than expected. Check History later.';
+        if(window._inflightDraftJob&&window._inflightDraftJob.jobId===jobId)window._inflightDraftJob=null;
+      }
+    }catch(pollErr){console.log('Draft poll error:',pollErr.message);}
+  },10000);
+}
+
+/* v5.16e Push A: reattach a poll loop to an in-flight draft job that was
+   stashed by tools.js resumeInProgressJobs. Called from onDraftTabActivated.
+   Reads the job's parameters from /api/jobs?id= so we render with the same
+   case-type/stage/doc-type/instructions the worker is using.
+   Guarded so it can only run once per stashed job: we null the stash before
+   starting the poll, and the poll's completion handler also nulls it.
+   If the matter the user is currently viewing on the Drafting tab differs
+   from the in-flight job's matter, we do NOT reattach silently \u2014 the
+   user would see a draft from a different matter appear in the editor.
+   Instead we show a hint in the progress message and leave the stash alone
+   so a later tab activation on the right matter can pick it up. */
+async function attachDraftPoll(){
+  if(!window._inflightDraftJob)return;
+  var stash=window._inflightDraftJob;
+  var draftMatterId=document.getElementById('draftMatterSelect').value;
+  if(stash.matterId&&draftMatterId&&stash.matterId!==draftMatterId){
+    console.log('v5.16e in-flight draft is for matter '+stash.matterId+' but Drafting tab is on '+draftMatterId+' \u2014 not reattaching');
+    return;
+  }
+  /* Pull the job's parameters so the eventual save uses the right ids. */
+  var j;try{j=await api('/api/jobs?id='+stash.jobId);}catch(e){console.log('attachDraftPoll fetch failed:',e.message);return;}
+  if(!j||j.status==='complete'||j.status==='partial'||j.status==='failed'){
+    /* Already finished or not findable \u2014 clear the stash and bail. */
+    window._inflightDraftJob=null;
+    return;
+  }
+  var p=j.parameters||{};
+  var matterId=stash.matterId||j.matter_id||draftMatterId;
+  var ctId=p.caseTypeId||'';
+  var stId=p.subcatId||'';
+  var dtId=p.docTypeId||'';
+  var instructions=j.instructions||'';
+  /* Clear the stash NOW so a second activation doesn't double-attach. */
+  window._inflightDraftJob=null;
+  /* Surface the resume in the UI. */
+  document.getElementById('draftGenerateBtn').disabled=true;
+  var prog=document.getElementById('draftProgressMsg');
+  if(prog){prog.style.display='';prog.textContent='Resuming in-flight draft generation\u2026';}
+  console.log('v5.16e attachDraftPoll: reattaching to job '+stash.jobId+' on matter '+matterId);
+  _runDraftPoll(stash.jobId,matterId,ctId,stId,dtId,instructions,prog,'resume');
+}
+
+/* v3.4: generateDraft uses fire-and-poll background processing.
+   v5.16e Push A: poll body extracted to _runDraftPoll so the resume path
+   uses the same code. */
 async function generateDraft(){
   var matterId=document.getElementById('draftMatterSelect').value;
   if(!matterId){showToast('Select a matter first');return;}
@@ -1092,62 +1222,11 @@ async function generateDraft(){
     var d=await api('/api/tools','POST',body);
     if(!d||!d.jobId)throw new Error('No jobId returned');
     prog.textContent='Generating draft\u2026 (processing in background, you can navigate away)';
-    var jobId=d.jobId;var pollCount=0;
-    var draftPoll=setInterval(async function(){
-      try{
-        pollCount++;
-        var j=await api('/api/jobs?id='+jobId);
-        if(!j)return;
-        if(j.batchesTotal>0&&j.batchesDone>0){prog.textContent='Generating draft\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;}
-        if(j.status==='complete'||j.status==='partial'){
-          clearInterval(draftPoll);
-          document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';
-          var resultText=j.result||'';
-          document.getElementById('draftInstructionsBody').style.display='none';
-          var outputWrap=document.getElementById('draftOutputWrap');outputWrap.classList.remove('hidden');
-          var editor=document.getElementById('draftEditor');editor.innerHTML=renderMd(resultText);editor.focus();
-          /* v5.14a: show Clear Draft button as soon as the editor has content */
-          updateClearDraftBtnVisibility();
-          /* v5.13b: persist a new draft row in the `drafts` table and
-             attach the editor to it via currentDraftId. Subsequent
-             manual edits will PUT to this same row (no duplicate rows). */
-          (async function(){
-            try{
-              var savePayload={
-                matter_id:matterId,
-                case_type_id:ctId||null,
-                subcat_id:stId||null,
-                doc_type_id:dtId||null,
-                heading_data:draftHeading,
-                instructions:instructions,
-                draft_content:editor.innerHTML,
-                conversation:[]
-              };
-              var sd=await api('/api/drafts?matter_id='+matterId,'POST',savePayload);
-              if(sd&&sd.draft&&sd.draft.id){
-                currentDraftId=sd.draft.id;
-                unsavedEdits=false;
-                var saveBtn=document.getElementById('saveDraftBtn');
-                if(saveBtn)saveBtn.style.display='none';
-                /* Refresh the previous-drafts list and badge */
-                await loadDraftsForMatter(matterId);
-              }
-            }catch(saveErr){console.log('Draft post-generate save failed:',saveErr.message);}
-          })();
-          return;
-        }
-        if(j.status==='failed'){
-          clearInterval(draftPoll);
-          document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';
-          showToast('Draft error: '+(j.error||'Unknown error'));return;
-        }
-        if(pollCount>360){
-          clearInterval(draftPoll);
-          document.getElementById('draftGenerateBtn').disabled=false;
-          prog.textContent='Draft is taking longer than expected. Check History later.';
-        }
-      }catch(pollErr){console.log('Draft poll error:',pollErr.message);}
-    },10000);
+    /* v5.16e: stash this fresh job too, so reload-then-tab-activation
+       reattaches without losing the draft. The poll completion handler
+       clears the stash. */
+    window._inflightDraftJob={jobId:d.jobId,matterId:matterId};
+    _runDraftPoll(d.jobId,matterId,ctId,stId,dtId,instructions,prog,'generate');
   }catch(e){document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';showToast('Draft error: '+e.message);}
 }
 

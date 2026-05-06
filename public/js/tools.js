@@ -1052,6 +1052,16 @@ async function resumeInProgressJobs(matterId){
     var progressFill=document.getElementById('progressFill');
     active.forEach(function(job){
       var toolName=job.tool_name||job.toolName;
+      /* v5.16e Push A: draft jobs aren't in toolDefs (Drafting is its own
+         tab, not an analysis tool). Stash the in-flight job id on window
+         so onDraftTabActivated() can pick it up and reattach a poll loop.
+         Do NOT try to drive the Drafting tab from here — the user may be
+         on a different tab and we shouldn't switch them. */
+      if(toolName==='draft'){
+        window._inflightDraftJob={jobId:job.id,matterId:matterId};
+        console.log('v5.16e in-flight draft job '+job.id+' stashed for matter '+matterId);
+        return;
+      }
       if(!toolName||!toolDefs[toolName]){
         console.log('v4.4 skipping job '+job.id+' \u2014 unknown tool name:',toolName);
         return;

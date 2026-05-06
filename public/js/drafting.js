@@ -1191,24 +1191,30 @@ async function generateDraft(){
      is server-side (not just window._inflightDraftJob) because that stash
      only knows about jobs this tab has seen. A job submitted in another
      tab, or one that survived a tab close, will only show up in /api/jobs.
-     Statuses we treat as "in flight": pending, running, paused, synthesising. */
+     Statuses we treat as "in flight": pending, running, paused, synthesising.
+     v5.16g (06 May): /api/jobs returns toolName (camelCase), not tool_name.
+     Confirmed by console inspection: Object.keys returned
+     id,toolName,status,batchesTotal,batchesDone,createdAt,startedAt,
+     completedAt,instructions. The earlier guard's ||jj.toolName check should
+     have matched but didn't, suggesting Safari served cached drafting.js
+     for the test. This version logs whether the guard ran so cache misses
+     are visible in the console. */
   try{
     var inflight=await api('/api/jobs?matterId='+matterId);
-    if(inflight&&inflight.jobs){
-      var existing=inflight.jobs.find(function(jj){
-        return (jj.tool_name==='draft'||jj.toolName==='draft')&&
-               (jj.status==='pending'||jj.status==='running'||jj.status==='paused'||jj.status==='synthesising');
-      });
-      if(existing){
-        showToast('A draft is already being generated for this matter \u2014 please wait for it to finish');
-        /* If we don't already have a poll attached, stash and attach so the
-           result lands in the editor instead of being lost. */
-        if(!window._inflightDraftJob){
-          window._inflightDraftJob={jobId:existing.id,matterId:matterId};
-          if(typeof attachDraftPoll==='function')attachDraftPoll();
-        }
-        return;
+    var draftJobs=(inflight&&inflight.jobs)?inflight.jobs.filter(function(jj){return jj.toolName==='draft';}):[];
+    var existing=draftJobs.find(function(jj){
+      return jj.status==='pending'||jj.status==='running'||jj.status==='paused'||jj.status==='synthesising';
+    });
+    console.log('v5.16g guard: '+draftJobs.length+' draft jobs total, '+(existing?'1 in-flight ('+existing.status+')':'0 in-flight')+' for matter '+matterId);
+    if(existing){
+      showToast('A draft is already being generated for this matter \u2014 please wait for it to finish');
+      /* If we don't already have a poll attached, stash and attach so the
+         result lands in the editor instead of being lost. */
+      if(!window._inflightDraftJob){
+        window._inflightDraftJob={jobId:existing.id,matterId:matterId};
+        if(typeof attachDraftPoll==='function')attachDraftPoll();
       }
+      return;
     }
   }catch(guardErr){
     /* Server unreachable \u2014 fall through and let the normal error path

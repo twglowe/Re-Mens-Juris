@@ -1186,6 +1186,36 @@ async function generateDraft(){
   if(!matterId){showToast('Select a matter first');return;}
   var instructions=document.getElementById('draftMainInstructions').value.trim();
   if(!instructions){showToast('Please enter drafting instructions');return;}
+  /* v5.16f Push B: duplicate-job guard. Before kicking off a new draft job,
+     check the server for any in-flight draft job on this matter. The check
+     is server-side (not just window._inflightDraftJob) because that stash
+     only knows about jobs this tab has seen. A job submitted in another
+     tab, or one that survived a tab close, will only show up in /api/jobs.
+     Statuses we treat as "in flight": pending, running, paused, synthesising. */
+  try{
+    var inflight=await api('/api/jobs?matterId='+matterId);
+    if(inflight&&inflight.jobs){
+      var existing=inflight.jobs.find(function(jj){
+        return (jj.tool_name==='draft'||jj.toolName==='draft')&&
+               (jj.status==='pending'||jj.status==='running'||jj.status==='paused'||jj.status==='synthesising');
+      });
+      if(existing){
+        showToast('A draft is already being generated for this matter \u2014 please wait for it to finish');
+        /* If we don't already have a poll attached, stash and attach so the
+           result lands in the editor instead of being lost. */
+        if(!window._inflightDraftJob){
+          window._inflightDraftJob={jobId:existing.id,matterId:matterId};
+          if(typeof attachDraftPoll==='function')attachDraftPoll();
+        }
+        return;
+      }
+    }
+  }catch(guardErr){
+    /* Server unreachable \u2014 fall through and let the normal error path
+       surface anything that goes wrong. The guard is defensive, not a hard
+       gate. */
+    console.log('Draft duplicate-job guard skipped:',guardErr.message);
+  }
   var ctId=document.getElementById('draftCaseType').value;
   var dtId=document.getElementById('draftDocType').value;
   var stId=document.getElementById('draftStage').value;

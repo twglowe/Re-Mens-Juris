@@ -1066,8 +1066,16 @@ function collectMatterToolHistory(){
    completion, and persists a new drafts row. Behaviour for both call sites
    is now guaranteed identical because they share this function.
    ctxSource='generate' for a freshly-submitted job, 'resume' for a job
-   reattached on tab activation; only used in toast/log strings. */
-function _runDraftPoll(jobId,matterId,ctId,stId,dtId,instructions,prog,ctxSource){
+   reattached on tab activation; only used in toast/log strings.
+   v5.17 Push C: signature gains draftRowId. The drafts row is now created
+   server-side at job-start by api/tools.js v5.17 (or by the worker on
+   completion of an older job); the client no longer POSTs a new row on
+   completion. Instead, we refresh the previous-drafts list and use the
+   refreshed data to attach currentDraftId. draftRowId can be null for
+   jobs created before v5.17 deploys \u2014 in that case the refresh still
+   finds the row (worker creates it via the legacy path) but we don't
+   pre-attach currentDraftId here. */
+function _runDraftPoll(jobId,matterId,ctId,stId,dtId,instructions,prog,ctxSource,draftRowId){
   var pollCount=0;
   var draftPoll=setInterval(async function(){
     try{
@@ -1090,33 +1098,35 @@ function _runDraftPoll(jobId,matterId,ctId,stId,dtId,instructions,prog,ctxSource
         /* v5.13b: persist a new draft row in the `drafts` table and
            attach the editor to it via currentDraftId. Subsequent
            manual edits will PUT to this same row (no duplicate rows).
-           v5.16e: this is the SAME save path for both fresh and resumed
-           jobs, which is why the resume path goes through this helper
-           rather than relying on the worker. Push C will move this
-           server-side, after which this client save becomes a no-op
-           when the row already exists. */
+           v5.17 Push C: client-side save REMOVED. The worker now writes
+           draft_content to a drafts row created at job-start by
+           api/tools.js v5.17 (or, for older jobs without draftRowId,
+           the legacy server path that doesn't yet exist \u2014 those
+           jobs lose persistence and the user sees an empty drafts list,
+           but they're a one-time deployment-window concern, expected to
+           be rare). Instead of POSTing a new row, we refresh the
+           previous-drafts list (which now includes the worker-saved
+           row) and attach currentDraftId from the row whose id matches
+           draftRowId. Diagnostic console.log is part of the safety net
+           agreed with Tom: if the refresh doesn't find the row, the log
+           makes it visible. */
         (async function(){
           try{
-            var savePayload={
-              matter_id:matterId,
-              case_type_id:ctId||null,
-              subcat_id:stId||null,
-              doc_type_id:dtId||null,
-              heading_data:draftHeading,
-              instructions:instructions,
-              draft_content:editor.innerHTML,
-              conversation:[]
-            };
-            var sd=await api('/api/drafts?matter_id='+matterId,'POST',savePayload);
-            if(sd&&sd.draft&&sd.draft.id){
-              currentDraftId=sd.draft.id;
+            await loadDraftsForMatter(matterId);
+            if(draftRowId){
+              currentDraftId=draftRowId;
               unsavedEdits=false;
               var saveBtn=document.getElementById('saveDraftBtn');
               if(saveBtn)saveBtn.style.display='none';
-              /* Refresh the previous-drafts list and badge */
-              await loadDraftsForMatter(matterId);
+              console.log('v5.17 draft row '+draftRowId+' attached as currentDraftId; '+ctxSource+' completion');
+            } else {
+              /* No draftRowId means this job was created before v5.17 deploys.
+                 The worker has no row to update, so no drafts row exists for
+                 this generation. Don't attach currentDraftId; user can copy
+                 the editor content out manually if needed. */
+              console.log('v5.17 '+ctxSource+' completion with no draftRowId (legacy job) \u2014 no drafts row attached');
             }
-          }catch(saveErr){console.log('Draft post-'+ctxSource+' save failed:',saveErr.message);}
+          }catch(refreshErr){console.log('Draft post-'+ctxSource+' refresh failed:',refreshErr.message);}
         })();
         return;
       }
@@ -1168,14 +1178,19 @@ async function attachDraftPoll(){
   var stId=p.subcatId||'';
   var dtId=p.docTypeId||'';
   var instructions=j.instructions||'';
+  /* v5.17 Push C: pull draftRowId from job parameters so on completion the
+     refresh can attach currentDraftId to the row the worker is updating.
+     Null/missing for jobs created before v5.17 \u2014 those follow the
+     legacy "no drafts row attached" branch in _runDraftPoll. */
+  var draftRowId=p.draftRowId||null;
   /* Clear the stash NOW so a second activation doesn't double-attach. */
   window._inflightDraftJob=null;
   /* Surface the resume in the UI. */
   document.getElementById('draftGenerateBtn').disabled=true;
   var prog=document.getElementById('draftProgressMsg');
   if(prog){prog.style.display='';prog.textContent='Resuming in-flight draft generation\u2026';}
-  console.log('v5.16e attachDraftPoll: reattaching to job '+stash.jobId+' on matter '+matterId);
-  _runDraftPoll(stash.jobId,matterId,ctId,stId,dtId,instructions,prog,'resume');
+  console.log('v5.16e attachDraftPoll: reattaching to job '+stash.jobId+' on matter '+matterId+(draftRowId?' (drafts row '+draftRowId+')':' (legacy, no drafts row)'));
+  _runDraftPoll(stash.jobId,matterId,ctId,stId,dtId,instructions,prog,'resume',draftRowId);
 }
 
 /* v3.4: generateDraft uses fire-and-poll background processing.
@@ -1257,12 +1272,22 @@ async function generateDraft(){
     body.learnFromComparable=lcCb?!!lcCb.checked:true;
     var d=await api('/api/tools','POST',body);
     if(!d||!d.jobId)throw new Error('No jobId returned');
+    /* v5.17 Push C: api/tools.js v5.17 now returns draftRowId for draft
+       jobs \u2014 the id of the drafts row created at job-start. We pass
+       it into _runDraftPoll so on completion currentDraftId attaches
+       to the worker-updated row. Null if the deployed api/tools.js is
+       still older than v5.17 \u2014 _runDraftPoll handles that gracefully. */
+    var freshDraftRowId=d.draftRowId||null;
+    if(freshDraftRowId){
+      currentDraftId=freshDraftRowId;
+      console.log('v5.17 generateDraft: drafts row '+freshDraftRowId+' pre-created server-side, attached as currentDraftId');
+    }
     prog.textContent='Generating draft\u2026 (processing in background, you can navigate away)';
     /* v5.16e: stash this fresh job too, so reload-then-tab-activation
        reattaches without losing the draft. The poll completion handler
        clears the stash. */
     window._inflightDraftJob={jobId:d.jobId,matterId:matterId};
-    _runDraftPoll(d.jobId,matterId,ctId,stId,dtId,instructions,prog,'generate');
+    _runDraftPoll(d.jobId,matterId,ctId,stId,dtId,instructions,prog,'generate',freshDraftRowId);
   }catch(e){document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';showToast('Draft error: '+e.message);}
 }
 

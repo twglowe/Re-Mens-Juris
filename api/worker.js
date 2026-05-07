@@ -902,7 +902,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
    the function alive as long as the response has not been sent.
    ══════════════════════════════════════════════════════════════════════════ */
 
-const SERVER_VERSION = "v5.13a";
+const SERVER_VERSION = "v5.17";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " worker handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -961,6 +961,14 @@ export default async function handler(req, res) {
        that field. All harmless defaults for every other tool. */
     var subElement = p.subElement || "";
     var focusDocNames = Array.isArray(p.focusDocNames) ? p.focusDocNames : [];
+
+    /* v5.17 Push C: server-side draft persistence. For draft jobs created
+       by api/tools.js v5.17 or later, p.draftRowId is the id of a drafts
+       row created at job-start. The worker UPDATEs that row on completion
+       (see completion block far below). Null/missing for every non-draft
+       tool and for draft jobs created before v5.17 \u2014 the latter fall
+       back to the old client-side save behaviour. Backward-compatible. */
+    var draftRowId = p.draftRowId || null;
 
     /* v5.10a: Build focusBlock once, reused across the three Issues prompt
        fragments below. Each contributor only adds to the block when
@@ -1533,6 +1541,34 @@ export default async function handler(req, res) {
     }
     await logUsage(matterId, userId, tool, inputTokens, outputTokens, cost);
     await saveHistory(matterId, userId, (toolLabels[tool] || tool) + (instructions ? ": " + instructions : ""), result, tool);
+
+    /* v5.17 Push C: server-side draft persistence. For draft jobs created
+       by api/tools.js v5.17 or later, draftRowId points at a drafts row
+       created at job-start. UPDATE that row with the final draft content
+       BEFORE marking the tool_jobs row complete \u2014 if the drafts UPDATE
+       fails, the catch block below fails the whole job rather than leaving
+       a "complete" tool_jobs row with no corresponding drafts row.
+       Backward-compatible: jobs without draftRowId (older jobs, or any
+       non-draft tool) skip this entirely. */
+    if (tool === "draft" && draftRowId) {
+      var draftUpdate = await supabase.from("drafts")
+        .update({
+          draft_content: result,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", draftRowId)
+        .select("id");
+      if (draftUpdate.error) {
+        console.error("v5.17 drafts row UPDATE failed for " + draftRowId + ":", draftUpdate.error.message);
+        throw new Error("Drafts persistence failed: " + draftUpdate.error.message);
+      }
+      if (!draftUpdate.data || draftUpdate.data.length === 0) {
+        console.error("v5.17 drafts row UPDATE returned no rows for " + draftRowId + " \u2014 row missing or RLS blocking");
+        throw new Error("Drafts persistence returned no rows for " + draftRowId);
+      }
+      console.log("v5.17 drafts row " + draftRowId + " updated with " + result.length + " chars of draft_content");
+    }
+
     await updateJob(jobId, {
       status: "complete",
       result: result,

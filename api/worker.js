@@ -220,22 +220,64 @@ const OUTPUT_COST_PER_M = 15.00;
 const TIME_LIMIT_MS = 700000;
 const PARALLEL = 6;
 
+/* ──────────────────────────────────────────────────────────────────────────
+   v5.18 PUSH 1 — fetch-cap removal (feature-flagged).
+   When FULL_FETCH is true, getAllChunks pages through EVERY passage for the
+   matter instead of stopping at the old 1500-row cap. To revert to the exact
+   previous behaviour, set FULL_FETCH = false and re-push this one file — no
+   other change is needed. FETCH_PAGE is the per-request page size; 1000 is the
+   PostgREST default ceiling.
+   ────────────────────────────────────────────────────────────────────────── */
+const FULL_FETCH = true;
+const FETCH_PAGE = 1000;
+
 /* ══════════════════════════════════════════════════════════════════════════
    SHARED HELPERS (moved from tools.js v3.3 — identical logic)
    ══════════════════════════════════════════════════════════════════════════ */
 
 async function getAllChunks(matterId, docTypes, limit) {
   docTypes = docTypes || null;
-  limit = limit || 1500;
-  var query = supabase.from("chunks")
-    .select("content, document_name, doc_type, chunk_index, page_number")
-    .eq("matter_id", matterId)
-    .order("chunk_index", { ascending: true })
-    .limit(limit);
-  if (docTypes && docTypes.length > 0) query = query.in("doc_type", docTypes);
-  var resp = await query;
-  if (resp.error) throw new Error("Chunk fetch failed: " + resp.error.message);
-  return resp.data || [];
+
+  /* Original capped path — used when the flag is off OR a caller passes an
+     explicit limit. Byte-for-byte the pre-Push-1 behaviour. All real callers
+     pass only matterId, so with FULL_FETCH on they take the paging path below. */
+  if (!FULL_FETCH || limit != null) {
+    var capQuery = supabase.from("chunks")
+      .select("content, document_name, doc_type, chunk_index, page_number")
+      .eq("matter_id", matterId)
+      .order("chunk_index", { ascending: true })
+      .limit(limit || 1500);
+    if (docTypes && docTypes.length > 0) capQuery = capQuery.in("doc_type", docTypes);
+    var capResp = await capQuery;
+    if (capResp.error) throw new Error("Chunk fetch failed: " + capResp.error.message);
+    return capResp.data || [];
+  }
+
+  /* FULL_FETCH path: page through every passage for the matter.
+     Ordered by (document_id, chunk_index) — the unique key the ingestion
+     guarantees (chunk_index continues from the per-document max) — so range
+     paging never drops or duplicates a row at a page boundary. Within each
+     document the order stays chunk_index ascending, identical to before; the
+     only change is that the silent tail-truncation at 1500 rows is gone. */
+  var all = [];
+  var offset = 0;
+  for (;;) {
+    var pageQuery = supabase.from("chunks")
+      .select("content, document_name, doc_type, chunk_index, page_number, document_id")
+      .eq("matter_id", matterId)
+      .order("document_id", { ascending: true })
+      .order("chunk_index", { ascending: true })
+      .range(offset, offset + FETCH_PAGE - 1);
+    if (docTypes && docTypes.length > 0) pageQuery = pageQuery.in("doc_type", docTypes);
+    var pageResp = await pageQuery;
+    if (pageResp.error) throw new Error("Chunk fetch failed: " + pageResp.error.message);
+    var rows = pageResp.data || [];
+    for (var r = 0; r < rows.length; r++) all.push(rows[r]);
+    if (rows.length < FETCH_PAGE) break;
+    offset += FETCH_PAGE;
+  }
+  console.log("v5.18 getAllChunks FULL_FETCH: matter " + matterId + " fetched " + all.length + " passages in " + (offset / FETCH_PAGE + 1) + " page(s)");
+  return all;
 }
 
 /* v3.4: Filter out excluded documents */

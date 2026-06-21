@@ -1,5 +1,27 @@
-/* EX LIBRIS JURIS v5.10c — cron-resume.js
+/* EX LIBRIS JURIS v5.19 — cron-resume.js
    Vercel Cron job. Fires every 2 minutes (configured in vercel.json).
+
+   v5.19 CHANGES (21 Jun 2026) — Step 3 (cron-resume hardening):
+   The rescue cron used to stamp updated_at after firing the worker WITHOUT
+   checking whether the fire landed. A bounced fire (e.g. a 401 from Vercel
+   Deployment Protection) therefore marked the job "fresh", so it was never
+   retried — a silent permanent freeze that looked healthy (this is what
+   froze Thalassa). The 20 Jun config fix (PUBLIC_BASE_URL) removed that
+   fire's cause; this change closes the TRAP so any FUTURE bounce cannot
+   freeze a job silently.
+     - The fire is now awaited with a short timeout so a bounced (non-2xx)
+       response is seen instead of ignored.
+     - updated_at is stamped ONLY when the fire landed (fast 2xx) or the
+       worker accepted the job and went busy (no reply within the timeout —
+       the v4.3a warm-up cooldown case). A bounced or network-failed fire is
+       left stale on purpose, so the next cron cycle retries it.
+     - We must not wait for the worker's real response (worker maxDuration
+       800s vs this cron's 10s). A time budget keeps the loop well under 10s;
+       jobs past the budget are deferred to the next cycle (safe — the
+       staleness threshold is already 240s). Aborting our wait never stops
+       the worker: once Vercel has invoked it, it runs to its own
+       maxDuration independently (proven by closed-laptop completions).
+   No worker.js change. One logical change, confined to the fire-and-stamp loop.
 
    v5.10c CHANGES (27 Apr 2026) — Push v5.10c (follow-ups survive sleep):
    1. SELECT now includes tool_name so we can route the resume call to
@@ -72,7 +94,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export const config = { maxDuration: 10 };
 
-const SERVER_VERSION = "v5.10c";
+const SERVER_VERSION = "v5.19";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " cron-resume handler: " + (req.method || "?") + " " + (req.url || ""));
   /* Allow GET (Vercel Cron sends GET) and POST (for manual testing) */
@@ -119,15 +141,41 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "No base URL configured" });
   }
 
-  /* Fire-and-forget worker for each stale job. Stagger by 200ms so we don't
-     hammer Vercel or the Anthropic API at exactly the same instant.
+  /* Fire the worker for each stale job, then decide whether to stamp updated_at
+     based on whether the fire actually LANDED. (v5.19 — Step 3.)
 
-     v4.3a: After firing, immediately stamp the row's updated_at so the
-     next cron cycle won't refire while the just-fired worker is starting
-     up. This is the per-job cooldown layer. */
+     The old code fired fire-and-forget and stamped unconditionally, so a fire
+     that bounced (e.g. a 401 from Deployment Protection) still marked the job
+     fresh — a silent permanent freeze. We now await the fire briefly:
+
+       - fast 2xx          -> fire landed            -> stamp
+       - fast non-2xx      -> fire BOUNCED (the trap) -> DO NOT stamp; retry next cycle
+       - no reply in time  -> worker accepted & busy  -> stamp (v4.3a warm-up cooldown)
+       - network error     -> fire did not land       -> DO NOT stamp; retry next cycle
+
+     Why only a SHORT wait: a busy worker holds its connection open while it
+     works (worker maxDuration 800s) but this cron's maxDuration is only 10s, so
+     we must NOT wait for the worker's real response. Aborting our wait does not
+     stop the worker — once Vercel has invoked it, it runs to its own
+     maxDuration independently (proven by closed-laptop completions); the abort
+     only ends OUR wait so we can read the status quickly.
+
+     TIME_BUDGET_MS keeps the whole loop well under the 10s ceiling. If many
+     jobs are stale at once (rare for a single user), jobs past the budget are
+     left for the next cron cycle — they stay stale, so they are picked up in
+     ~2 minutes. Deferring is safe: the staleness threshold is already 240s. */
+  var FIRE_TIMEOUT_MS = 2000;
+  var TIME_BUDGET_MS = 7500;
+  var loopStart = Date.now();
   var fired = [];
-  var nowIso = new Date().toISOString();
+  var deferred = 0;
   for (var i = 0; i < jobs.length; i++) {
+    if (Date.now() - loopStart > TIME_BUDGET_MS) {
+      deferred = jobs.length - i;
+      console.log(SERVER_VERSION + " cron-resume: time budget reached — deferring " + deferred + " job(s) to next cycle");
+      break;
+    }
+
     var job = jobs[i];
     /* v5.10c: branch the worker URL by tool_name. Follow-up jobs
        (tool_name starts with 'followup:') go to /api/analyseWorker;
@@ -136,32 +184,59 @@ export default async function handler(req, res) {
     var workerPath = isFollowup ? "/api/analyseWorker" : "/api/worker";
     var url = baseUrl + workerPath + "?jobId=" + encodeURIComponent(job.id);
 
-    /* Fire the worker (no await — fire and forget) */
-    fetch(url, { method: "POST" }).catch(function(err) {
-      console.error("v4.3a cron-resume: fire failed for " + job.id + ":", err && err.message);
-    });
+    var shouldStamp = true;   /* default: stamp, preserving the v4.3a cooldown */
+    var fireNote = "";
 
-    /* v4.3a: Stamp the row's updated_at so we don't refire on the next cycle.
-       Awaited so we know the stamp landed before reporting success. If the
-       stamp fails, log it but don't abort — the worker may still rescue itself. */
+    var controller = new AbortController();
+    var timer = setTimeout(function() { controller.abort(); }, FIRE_TIMEOUT_MS);
     try {
-      var stampResp = await supabase
-        .from("tool_jobs")
-        .update({ updated_at: nowIso })
-        .eq("id", job.id);
-      if (stampResp.error) {
-        console.error("v4.3a cron-resume: stamp failed for " + job.id + ": " + stampResp.error.message);
+      var fireResp = await fetch(url, { method: "POST", signal: controller.signal });
+      clearTimeout(timer);
+      if (fireResp.status >= 200 && fireResp.status < 300) {
+        fireNote = "fire ok (" + fireResp.status + ")";
+      } else {
+        /* The trap this change exists to close: a bounced fire must NOT mark
+           the job fresh, or it freezes silently. Leave it stale for retry. */
+        shouldStamp = false;
+        fireNote = "fire BOUNCED (" + fireResp.status + ") — not stamping; will retry next cycle";
+        console.error(SERVER_VERSION + " cron-resume: worker fire returned " + fireResp.status + " for job " + job.id + " at " + url + " — leaving job stale for retry");
       }
-    } catch (stampErr) {
-      console.error("v4.3a cron-resume: stamp threw for " + job.id + ":", stampErr && stampErr.message);
+    } catch (fireErr) {
+      clearTimeout(timer);
+      if (fireErr && fireErr.name === "AbortError") {
+        /* No reply within FIRE_TIMEOUT_MS: the worker accepted the job and is
+           busy. Healthy warm-up case — stamp to apply the v4.3a cooldown. */
+        fireNote = "no reply in " + FIRE_TIMEOUT_MS + "ms — worker accepted & busy; stamping";
+      } else {
+        /* A real network error reaching the worker: the fire did not land. */
+        shouldStamp = false;
+        fireNote = "fire network error (" + (fireErr && fireErr.message) + ") — not stamping; will retry next cycle";
+        console.error(SERVER_VERSION + " cron-resume: worker fire network error for job " + job.id + ": " + (fireErr && fireErr.message));
+      }
     }
 
-    fired.push({ id: job.id, status: job.status, lastUpdate: job.updated_at });
+    if (shouldStamp) {
+      try {
+        var stampResp = await supabase
+          .from("tool_jobs")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", job.id);
+        if (stampResp.error) {
+          console.error(SERVER_VERSION + " cron-resume: stamp failed for " + job.id + ": " + stampResp.error.message);
+        }
+      } catch (stampErr) {
+        console.error(SERVER_VERSION + " cron-resume: stamp threw for " + job.id + ":", stampErr && stampErr.message);
+      }
+    }
+
+    console.log(SERVER_VERSION + " cron-resume: job " + job.id + " (" + job.tool_name + ") — " + fireNote);
+    fired.push({ id: job.id, status: job.status, lastUpdate: job.updated_at, fire: fireNote, stamped: shouldStamp });
+
     if (i < jobs.length - 1) {
       await new Promise(function(r) { setTimeout(r, 200); });
     }
   }
 
-  console.log("v4.3a cron-resume: fired " + fired.length + " worker invocation(s)");
-  return res.status(200).json({ resumed: fired.length, jobs: fired, threshold: STALE_SECONDS });
+  console.log(SERVER_VERSION + " cron-resume: fired " + fired.length + " worker invocation(s); deferred " + deferred);
+  return res.status(200).json({ resumed: fired.length, deferred: deferred, jobs: fired, threshold: STALE_SECONDS });
 }

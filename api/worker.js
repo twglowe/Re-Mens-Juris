@@ -1,6 +1,23 @@
-/* EX LIBRIS JURIS v5.11a — worker.js
+/* EX LIBRIS JURIS v5.20 — worker.js
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
+
+   v5.20 CHANGES (21 Jun 2026) - Push v5.20 (Chronology shaping, engine half):
+   1. Chronology synthesis prompt gains an optional RELEVANCE ANCHOR and an
+      optional CONSOLIDATE instruction, both read from p:
+        chronologyAnchorText  : text the chronology should be made relevant to
+        chronologyAnchorLabel : short label for that anchor (used in the heading)
+        chronologyConsolidate : boolean; merge/group/trim without losing substance
+      All three default safely. With no anchor text and consolidate not true,
+      the chronology produces output identical to pre-v5.20.
+   2. Applied at SYNTHESIS only. Extraction stays exhaustive (no event dropped
+      early). The shared condense stage is NOT touched, so no other tool is
+      affected. The sleep-survival/resume path is NOT touched.
+   3. When an anchor is present the output prints "Relevant to: <label>" under
+      the heading, so the chronology records its own scope. The anchor also
+      lives in p (job.parameters), so it is stored and queryable already.
+   4. Relevance beats consolidation: an event that bears on the anchor is kept
+      even if it would otherwise be trimmed as routine.
 
    v5.11a CHANGES (30 Apr 2026) — Push v5.11a (Draft Build 1):
    1. Read two new optional draft-only fields from p:
@@ -1166,9 +1183,25 @@ export default async function handler(req, res) {
       var entityTitle = (p.chronologyEntities && p.chronologyEntities.trim()) ? "Documents Relevant to " + p.chronologyEntities.trim() : "Chronology \u2014 " + matterName;
 
       var systemBase = "You are a senior litigation counsel constructing a comprehensive chronology for \"" + matterName + "\" in " + jur + ".\n" + matterContext;
+      /* v5.20 (Chronology shaping, engine half). Anchor + consolidation are
+         applied at SYNTHESIS only; extraction stays exhaustive. Both are inert
+         when their parameters are absent, so a run with no anchor and consolidate
+         not true yields a synthesis prompt identical to pre-v5.20. The shared
+         condense stage and the resume/sleep path are untouched. Relevance beats
+         consolidation: an anchored event is kept even if otherwise trimmed. */
+      var anchorText = (typeof p.chronologyAnchorText === "string") ? p.chronologyAnchorText.trim() : "";
+      var anchorLabel = (typeof p.chronologyAnchorLabel === "string" && p.chronologyAnchorLabel.trim()) ? p.chronologyAnchorLabel.trim() : "the selected anchor";
+      var consolidate = p.chronologyConsolidate === true;
+      var anchorBlock = anchorText
+        ? "RELEVANCE ANCHOR \u2014 build this chronology to be relevant to the anchor below. Include every event that bears on it. Where you are uncertain whether an event is relevant, INCLUDE it: for a chronology that may go before a court, over-inclusion is safer than omission. There is no length limit and no fixed number of entries; length should follow from relevance to this anchor.\n\nANCHOR (" + anchorLabel + "):\n" + anchorText + "\n\n"
+        : "";
+      var consolidateBlock = consolidate
+        ? "CONSOLIDATE for usability without losing substance: merge near-duplicate events into a single entry; group a run of closely-related dates into one line where that aids readability; omit purely trivial procedural entries UNLESS they bear on the anchor. Never silently drop a substantive event, and always keep the full source references (document, page, paragraph) on every entry, including consolidated ones. Where an event bears on the anchor, keep it even if it would otherwise be trimmed as routine.\n\n"
+        : "";
+      var relevanceLine = anchorText ? "*Relevant to: " + anchorLabel + "*\n\n" : "";
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract EVERY date and event from batch " + batchNum + " of " + total + ". Be exhaustive.\n\n**[DATE]** \u2014 [Event] *(Source: [document], p.[page number] \u00b6[paragraph])* \n\nInclude page and paragraph references where available. Flag conflicts: **[DATE] (DISPUTED)**\n\n" + focusBlock + "DOCUMENTS:\n\n" + batchText + pageIndex; },
-        function(combined, numBatches) { return numBatches ? "Synthesise chronology from " + numBatches + " batches into a single de-duplicated chronology sorted by date.\n\n## " + entityTitle + "\n\n**[DATE]** \u2014 [Event] *(Source: [document], p.[page] \u00b6[paragraph])*\n\nGroup by year. Flag disputed dates. Include page and paragraph references.\n\n## Key Dates Summary\nThe 10-15 most significant dates.\n\n" + focusBlock + "EXTRACTS:\n\n" + combined : "Construct a complete chronology. Be exhaustive.\n\n## " + entityTitle + "\n\n**[DATE]** \u2014 [Event] *(Source: [document], p.[page] \u00b6[paragraph])*\n\nAll date formats. Flag disputed dates. Include page and paragraph references where available.\n\n## Key Dates Summary\n\n" + focusBlock + "DOCUMENTS:\n\n" + combined + pageIndex; },
+        function(combined, numBatches) { return numBatches ? "Synthesise chronology from " + numBatches + " batches into a single de-duplicated chronology sorted by date.\n\n" + anchorBlock + consolidateBlock + "## " + entityTitle + "\n\n" + relevanceLine + "**[DATE]** \u2014 [Event] *(Source: [document], p.[page] \u00b6[paragraph])*\n\nGroup by year. Flag disputed dates. Include page and paragraph references.\n\n## Key Dates Summary\nThe 10-15 most significant dates.\n\n" + focusBlock + "EXTRACTS:\n\n" + combined : "Construct a complete chronology. Be exhaustive.\n\n" + anchorBlock + consolidateBlock + "## " + entityTitle + "\n\n" + relevanceLine + "**[DATE]** \u2014 [Event] *(Source: [document], p.[page] \u00b6[paragraph])*\n\nAll date formats. Flag disputed dates. Include page and paragraph references where available.\n\n## Key Dates Summary\n\n" + focusBlock + "DOCUMENTS:\n\n" + combined + pageIndex; },
         byDoc, hostUrl
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });

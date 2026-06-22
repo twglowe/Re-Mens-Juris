@@ -65,12 +65,16 @@
 var toolDefs={
   inconsistency:{title:'🔍 Inconsistency Tracker',body:function(){return '<p class="tool-desc">Select anchor documents (your baseline factual position). The system finds all contradictions in the remaining documents.</p><div class="focus-label">Anchor Documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to compare all)</span></div><div class="anchor-list" id="anchorList">'+documents.map(function(d){return '<label class="anchor-item"><input type="checkbox" value="'+esc(d.name)+'"> '+esc(d.name)+' <span style="color:var(--text-faint);font-size:.72rem">['+d.doc_type+']</span></label>';}).join('')+'</div><div class="focus-label" style="margin-top:.85rem">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the dates of payments"></textarea>';}},
   proposition:{title:'🎯 Proposition Evidence Finder',body:function(){return '<p class="tool-desc">State a proposition or factual assertion. The system finds all evidence supporting or contradicting it and grades each reference by strength.</p><div class="focus-label">Proposition or Statement</div><textarea id="toolInstructions" placeholder="e.g. The defendant had knowledge of the transactions before 1 January 2023" style="min-height:80px"></textarea>';}},
-  chronology:{title:'📅 Chronology Builder',body:function(){return '<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology with page and paragraph references.</p>'
+  chronology:{title:'📅 Chronology Builder',body:function(){var anchorOpts=(typeof matterHistory!=='undefined'&&matterHistory?matterHistory:[]).filter(function(h){return h.tool_name==='issues';}).map(function(h){return '<option value="'+esc(h.id)+'">Issue Tracker — '+esc(h.question.slice(0,60))+(h.question.length>60?'…':'')+' ('+new Date(h.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'})+')</option>';}).join('');return '<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology with page and paragraph references.</p>'
     +'<div class="focus-label">Date Range <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional — any format)</span></div>'
     +'<input type="text" id="chronoDateRange" class="f-input" style="margin-bottom:.6rem;padding:.5rem .7rem;font-size:.88rem" placeholder="e.g. January 2020 to March 2023, or after 1 Jan 2022">'
     +'<div class="focus-label">Focus on Individuals or Entities <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>'
     +'<input type="text" id="chronoEntities" class="f-input" style="margin-bottom:.6rem;padding:.5rem .7rem;font-size:.88rem" placeholder="e.g. John Smith, Acme Ltd — comma-separated">'
     +'<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem"><input type="checkbox" id="chronoCorresFilter" style="width:16px;height:16px;accent-color:var(--blue)"><label for="chronoCorresFilter" style="font-size:.82rem;color:var(--text-mid);font-weight:500;cursor:pointer">Only include correspondence if referenced in a pleading or affidavit</label></div>'
+    +'<div class="focus-label" style="margin-top:.6rem">Relevance anchor <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional \u2014 build the chronology relevant to this)</span></div>'
+    +'<select id="chronoAnchorSource" class="f-input" style="margin-bottom:.6rem;padding:.5rem .7rem;font-size:.88rem" onchange="var t=document.getElementById(\'chronoAnchorTextWrap\');if(t)t.style.display=this.value===\'__text__\'?\'block\':\'none\';"><option value="">No anchor</option><option value="__text__">Type a focus note\u2026</option>'+anchorOpts+'</select>'
+    +'<div id="chronoAnchorTextWrap" style="display:none;margin-bottom:.6rem"><textarea id="chronoAnchorText" placeholder="e.g. the issues pleaded in the Statement of Claim; or the matters dealt with in the first affidavit"></textarea></div>'
+    +'<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem"><input type="checkbox" id="chronoConsolidate" checked style="width:16px;height:16px;accent-color:var(--blue)"><label for="chronoConsolidate" style="font-size:.82rem;color:var(--text-mid);font-weight:500;cursor:pointer">Consolidate \u2014 merge duplicate events and group routine procedural runs (substantive and anchor-relevant events are always kept)</label></div>'
     +'<div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>'
     +'<textarea id="toolInstructions" placeholder="e.g. Focus on the share transfer events"></textarea>';}},
   persons:{title:'👥 Dramatis Personae',body:function(){return '<p class="tool-desc">Identifies every person and entity across all documents with descriptions and references. Excludes attorneys and judges. References are ordered: first in pleadings/petitions, then in affidavits.</p><div class="focus-label">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the directors and shareholders"></textarea>';}},
@@ -420,6 +424,9 @@ function captureToolFormState(toolName){
     var dr=document.getElementById('chronoDateRange');if(dr)s.chronoDateRange=dr.value;
     var en=document.getElementById('chronoEntities');if(en)s.chronoEntities=en.value;
     var cf=document.getElementById('chronoCorresFilter');if(cf)s.chronoCorresFilter=cf.checked;
+    var asrc=document.getElementById('chronoAnchorSource');if(asrc)s.chronoAnchorSource=asrc.value;
+    var atx=document.getElementById('chronoAnchorText');if(atx)s.chronoAnchorText=atx.value;
+    var con=document.getElementById('chronoConsolidate');if(con)s.chronoConsolidate=con.checked;
   }
   if(toolName==='issues'){
     var se=document.getElementById('issuesSubElement');if(se)s.issuesSubElement=se.value;
@@ -454,6 +461,9 @@ function restoreToolFormState(toolName){
     var dr=document.getElementById('chronoDateRange');if(dr&&typeof s.chronoDateRange==='string')dr.value=s.chronoDateRange;
     var en=document.getElementById('chronoEntities');if(en&&typeof s.chronoEntities==='string')en.value=s.chronoEntities;
     var cf=document.getElementById('chronoCorresFilter');if(cf&&typeof s.chronoCorresFilter==='boolean')cf.checked=s.chronoCorresFilter;
+    var asrc=document.getElementById('chronoAnchorSource');if(asrc&&typeof s.chronoAnchorSource==='string'){asrc.value=s.chronoAnchorSource;var aw=document.getElementById('chronoAnchorTextWrap');if(aw)aw.style.display=(asrc.value==='__text__')?'block':'none';}
+    var atx=document.getElementById('chronoAnchorText');if(atx&&typeof s.chronoAnchorText==='string')atx.value=s.chronoAnchorText;
+    var con=document.getElementById('chronoConsolidate');if(con&&typeof s.chronoConsolidate==='boolean')con.checked=s.chronoConsolidate;
   }
   if(toolName==='issues'){
     var se=document.getElementById('issuesSubElement');if(se&&typeof s.issuesSubElement==='string')se.value=s.issuesSubElement;
@@ -591,11 +601,15 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   var instructions=document.getElementById('toolInstructions')?document.getElementById('toolInstructions').value.trim():'';
   var anchorDocNames=[];
   if(pendingTool==='inconsistency'){document.querySelectorAll('#anchorList input:checked').forEach(function(cb){anchorDocNames.push(cb.value);});}
-  var chronologyDateRange='';var chronologyEntities='';var chronologyCorrespondenceFilter=false;
+  var chronologyDateRange='';var chronologyEntities='';var chronologyCorrespondenceFilter=false;var chronologyAnchorText='';var chronologyAnchorLabel='';var chronologyConsolidate=false;
   if(pendingTool==='chronology'){
     var drEl=document.getElementById('chronoDateRange');if(drEl)chronologyDateRange=drEl.value.trim();
     var enEl=document.getElementById('chronoEntities');if(enEl)chronologyEntities=enEl.value.trim();
     var cfEl=document.getElementById('chronoCorresFilter');if(cfEl)chronologyCorrespondenceFilter=cfEl.checked;
+    var asEl=document.getElementById('chronoAnchorSource');var anchorSrc=asEl?asEl.value:'';
+    if(anchorSrc==='__text__'){var atEl=document.getElementById('chronoAnchorText');var atv=atEl?atEl.value.trim():'';if(atv){chronologyAnchorText=atv.slice(0,12000);chronologyAnchorLabel='focus note';}}
+    else if(anchorSrc){var hit=null;if(typeof matterHistory!=='undefined'&&matterHistory){for(var hi=0;hi<matterHistory.length;hi++){if(String(matterHistory[hi].id)===String(anchorSrc)){hit=matterHistory[hi];break;}}}if(hit&&hit.answer){chronologyAnchorText=String(hit.answer).slice(0,12000);var hq=(hit.question||'').slice(0,60);chronologyAnchorLabel='Issue Tracker: '+(hq||'saved');}}
+    var conEl=document.getElementById('chronoConsolidate');chronologyConsolidate=conEl?!!conEl.checked:true;
   }
   /* v5.10a: Issues focus widget. Three optional fields. Same null-safe
      pattern as the chronology block above. The "Question to develop"
@@ -658,6 +672,8 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
     if(chronologyDateRange)body.chronologyDateRange=chronologyDateRange;
     if(chronologyEntities)body.chronologyEntities=chronologyEntities;
     if(chronologyCorrespondenceFilter)body.chronologyCorrespondenceFilter=true;
+    if(chronologyAnchorText){body.chronologyAnchorText=chronologyAnchorText;body.chronologyAnchorLabel=chronologyAnchorLabel;}
+    if(pendingTool==='chronology'&&chronologyConsolidate)body.chronologyConsolidate=true;
     /* v5.10a: Issues focus fields. Each only added when non-empty so that
        a no-focus run produces a body byte-identical to v5.9b. Note that
        the "Question to develop" textarea reuses id="toolInstructions" and

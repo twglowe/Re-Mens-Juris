@@ -1,6 +1,19 @@
-/* EX LIBRIS JURIS v5.20 — worker.js
+/* EX LIBRIS JURIS v5.21 — worker.js
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
+
+   v5.21 CHANGES (22 Jun 2026) - Push v5.21 (Chronology: surface gaps + conflicts):
+   1. Chronology SYNTHESIS prompt only. Two always-on additions (no parameter;
+      applies to every chronology, anchored or not):
+        a. Conflict flagging broadened from dates to facts: where sources
+           conflict on a date OR a material fact, the conflict is flagged and
+           each version attributed to its source, rather than chosen silently.
+        b. A short "## Gaps and Contradictions" section lists (i) documents,
+           exhibits or events referred to / relied upon but not produced in the
+           materials, and (ii) material contradictions between sources, each
+           with source references; "None identified." when there are none.
+   2. Extraction, condense, resume path, and every other tool are untouched.
+      The v5.20 anchor/consolidate behaviour is unchanged.
 
    v5.20 CHANGES (21 Jun 2026) - Push v5.20 (Chronology shaping, engine half):
    1. Chronology synthesis prompt gains an optional RELEVANCE ANCHOR and an
@@ -1201,7 +1214,7 @@ export default async function handler(req, res) {
       var relevanceLine = anchorText ? "*Relevant to: " + anchorLabel + "*\n\n" : "";
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract EVERY date and event from batch " + batchNum + " of " + total + ". Be exhaustive.\n\n**[DATE]** \u2014 [Event] *(Source: [document], p.[page number] \u00b6[paragraph])* \n\nInclude page and paragraph references where available. Flag conflicts: **[DATE] (DISPUTED)**\n\n" + focusBlock + "DOCUMENTS:\n\n" + batchText + pageIndex; },
-        function(combined, numBatches) { return numBatches ? "Synthesise chronology from " + numBatches + " batches into a single de-duplicated chronology sorted by date.\n\n" + anchorBlock + consolidateBlock + "## " + entityTitle + "\n\n" + relevanceLine + "**[DATE]** \u2014 [Event] *(Source: [document], p.[page] \u00b6[paragraph])*\n\nGroup by year. Flag disputed dates. Include page and paragraph references.\n\n## Key Dates Summary\nThe 10-15 most significant dates.\n\n" + focusBlock + "EXTRACTS:\n\n" + combined : "Construct a complete chronology. Be exhaustive.\n\n" + anchorBlock + consolidateBlock + "## " + entityTitle + "\n\n" + relevanceLine + "**[DATE]** \u2014 [Event] *(Source: [document], p.[page] \u00b6[paragraph])*\n\nAll date formats. Flag disputed dates. Include page and paragraph references where available.\n\n## Key Dates Summary\n\n" + focusBlock + "DOCUMENTS:\n\n" + combined + pageIndex; },
+        function(combined, numBatches) { return numBatches ? "Synthesise chronology from " + numBatches + " batches into a single de-duplicated chronology sorted by date.\n\n" + anchorBlock + consolidateBlock + "## " + entityTitle + "\n\n" + relevanceLine + "**[DATE]** \u2014 [Event] *(Source: [document], p.[page] \u00b6[paragraph])*\n\nGroup by year. Where sources conflict on a date or on a material fact, flag the conflict and attribute each version to its source rather than choosing between them silently. Include page and paragraph references.\n\n## Key Dates Summary\nThe 10-15 most significant dates.\n\n## Gaps and Contradictions\nState here, with source references: (a) any document, exhibit, agreement, letter or event referred to or relied upon in the materials but not itself produced in them \u2014 marked as referred to but not produced; and (b) any material contradiction between sources, with each version attributed to its source. If none are identified, state \"None identified.\"\n\n" + focusBlock + "EXTRACTS:\n\n" + combined : "Construct a complete chronology. Be exhaustive.\n\n" + anchorBlock + consolidateBlock + "## " + entityTitle + "\n\n" + relevanceLine + "**[DATE]** \u2014 [Event] *(Source: [document], p.[page] \u00b6[paragraph])*\n\nAll date formats. Where sources conflict on a date or on a material fact, flag the conflict and attribute each version to its source rather than choosing between them silently. Include page and paragraph references where available.\n\n## Key Dates Summary\n\n## Gaps and Contradictions\nState here, with source references: (a) any document, exhibit, agreement, letter or event referred to or relied upon in the materials but not itself produced in them \u2014 marked as referred to but not produced; and (b) any material contradiction between sources, with each version attributed to its source. If none are identified, state \"None identified.\"\n\n" + focusBlock + "DOCUMENTS:\n\n" + combined + pageIndex; },
         byDoc, hostUrl
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });

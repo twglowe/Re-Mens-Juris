@@ -52,7 +52,7 @@ function isHeadingCandidate(text) {
   return hasActionNo;
 }
 
-const SERVER_VERSION = "v5.16d";
+const SERVER_VERSION = "v5.23";
 
 /* withTimeout wraps a promise with a hard timeout that races to settle
    first. If the inner promise hasn't resolved by `ms` milliseconds, the
@@ -97,9 +97,9 @@ export default async function handler(req, res) {
   }
   if (!user) return res.status(401).json({ error: "Unauthorized", steps });
 
-  const { matterId } = req.body || {};
+  const { matterId, documentId } = req.body || {};
   if (!matterId) return res.status(400).json({ error: "matterId required", steps });
-  step("matter_id_received", { matterId });
+  step("matter_id_received", { matterId, documentId: documentId || null });
 
   try {
     /* Step 1: matter ownership check. */
@@ -129,16 +129,17 @@ export default async function handler(req, res) {
     step("chunks_query_start");
     let chunks, cErr;
     try {
-      const result = await withTimeout(
-        supabase.from("chunks")
-          .select("content, document_name, doc_type, chunk_index")
-          .eq("matter_id", matterId)
-          .in("chunk_index", [0, 1])
-          .order("document_name", { ascending: true })
-          .order("chunk_index", { ascending: true })
-          .limit(200),
-        15000, "chunks_query"
-      );
+      /* v5.23: when the user picks a specific document (Simple heading
+         mode) scope the query to that document's opening chunks. */
+      let q = supabase.from("chunks")
+        .select("content, document_name, doc_type, chunk_index")
+        .eq("matter_id", matterId)
+        .in("chunk_index", [0, 1])
+        .order("document_name", { ascending: true })
+        .order("chunk_index", { ascending: true })
+        .limit(200);
+      if (documentId) q = q.eq("document_id", documentId);
+      const result = await withTimeout(q, 15000, "chunks_query");
       chunks = result.data; cErr = result.error;
     } catch (e) {
       step("chunks_query_timeout", { err: e.message });
@@ -162,6 +163,13 @@ export default async function handler(req, res) {
       }
     }
     step("regex_filter_done", { candidatesFound: candidates.length });
+    /* v5.23: if the user explicitly chose this document, trust them —
+       send its opening chunks to Claude even when the regex prefilter
+       found nothing heading-shaped. */
+    if (candidates.length === 0 && documentId && chunks.length) {
+      for (const c of chunks.slice(0, 2)) candidates.push(c);
+      step("regex_filter_fallback_single_doc", { used: candidates.length });
+    }
     if (candidates.length === 0) {
       /* Capture the document names we scanned and a small text snippet
          from the first one so the diagnostic is informative. */

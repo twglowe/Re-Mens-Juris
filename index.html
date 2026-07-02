@@ -787,6 +787,10 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
             <div class="draft-src-box">
               <div class="draft-src-box-title">Context Documents</div>
               <p style="font-size:.75rem;color:var(--text-faint);margin-bottom:.25rem">Tag documents the AI should read for relevance:</p>
+              <!-- v5.31: folder → file two-step. Folder select filters the document select. -->
+              <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
+                <select class="draft-field-select" id="draftCtxFolder" style="flex:1;font-size:.8rem" onchange="draftCtxFolderChanged()"><option value="">— All documents —</option></select>
+              </div>
               <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
                 <select class="draft-field-select" id="draftCtxDoc" style="flex:1;font-size:.8rem"><option value="">— Select from matter —</option></select>
                 <button class="lib-box-btn" onclick="draftSelectDoc('draftCtxDoc','ctx')" title="Add as context" style="min-width:26px">✓</button>
@@ -1313,7 +1317,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <script src="/js/core.js?v=5.28"></script>
 <script src="/js/tools.js?v=5.22"></script>
 <script src="/js/library.js?v=5.16c"></script>
-<script src="/js/drafting.js?v=5.30"></script>
+<script src="/js/drafting.js?v=5.31"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->
 <div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">

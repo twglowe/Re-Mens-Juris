@@ -1,3 +1,13 @@
+/* v5.31 — 02 Jul 2026 — Push v5.31 (Context Documents folder navigation):
+   Box 5 is now a folder → file two-step. A folder select (All documents /
+   Uncategorised / folder tree from GET /api/folders, children indented)
+   filters the document select client-side via the folder_ids array that
+   /api/documents already returns. Exact-folder-only: a parent folder shows
+   its own documents, a subfolder's appear when the subfolder is chosen.
+   ✓ button and selected-chips behaviour unchanged. worker.js untouched.
+   Files changed: public/js/drafting.js, index.html + public/index.html
+   (Box 5 folder select + cache-bust). */
+
 /* v5.30 — 02 Jul 2026 — Push v5.30 (rejoinder directives):
    buildDraftDirectives now recognises a rejoinder (Document Type name
    contains "rejoinder", or a responsive skeleton answering a document
@@ -705,7 +715,17 @@ async function loadDraftMatterDocs(matterId){
     var docOpts=docs.map(function(doc){return '<option value="'+doc.id+'">'+esc(doc.name)+' ['+esc(doc.doc_type)+']</option>';}).join('');
     document.getElementById('draftSrcDoc1').innerHTML='<option value="">— Select from matter —</option>'+docOpts;
     document.getElementById('draftSrcDoc2').innerHTML='<option value="">— Select from matter —</option>'+docOpts;
-    document.getElementById('draftCtxDoc').innerHTML='<option value="">— Select from matter —</option>'+docOpts;
+    /* v5.31: Box 5 (Context Documents) is now folder → file. Cache the doc
+       list, load the folder list, populate the folder select, then populate
+       the doc select unfiltered (All documents). Folder-fetch failure is
+       non-fatal — the folder select simply stays on All documents. */
+    draftCtxDocsCache=docs;
+    try{
+      var fd=await api('/api/folders?matter_id='+matterId);
+      draftCtxFoldersCache=(fd&&fd.folders)?fd.folders:[];
+    }catch(fe){draftCtxFoldersCache=[];}
+    populateDraftCtxFolderSelect();
+    populateDraftCtxDocSelect('');
     /* Background select — matter docs + tool outputs from history */
     var histDocs=[];
     try{var hd=await api('/api/history?matter_id='+matterId);histDocs=(hd&&hd.history?hd.history:[]).filter(function(h){return h.tool_name;});}catch(e){}
@@ -719,6 +739,55 @@ async function loadDraftMatterDocs(matterId){
     /* v5.11a: populate "documents to exclude" picker (default: every doc ticked) */
     populateDraftExcludePicker(docs);
   }catch(e){console.error('loadDraftMatterDocs:',e);}
+}
+
+/* ── v5.31: Context Documents folder navigation (Box 5) ──────────────────
+   The folder select filters the document select. Exact-folder-only: a
+   parent folder shows only its own documents; a subfolder's documents
+   appear when the subfolder itself is chosen (signed off by Tom 02 Jul).
+   Filtering is client-side via the folder_ids array /api/documents already
+   returns — the only extra call is one GET /api/folders per matter
+   selection, made in loadDraftMatterDocs. */
+var draftCtxDocsCache=[];
+var draftCtxFoldersCache=[];
+
+function populateDraftCtxFolderSelect(){
+  var sel=document.getElementById('draftCtxFolder');
+  if(!sel)return;
+  var opts='<option value="">— All documents —</option>';
+  if(draftCtxFoldersCache.length){
+    /* Uncategorised only makes sense when folders exist at all. */
+    opts+='<option value="__none__">Uncategorised</option>';
+    var walk=function(parentId,depth){
+      var kids=draftCtxFoldersCache.filter(function(f){return (f.parent_folder_id||null)===parentId;});
+      kids.forEach(function(f){
+        var pad='';for(var i=0;i<depth;i++)pad+=' ';
+        opts+='<option value="'+f.id+'">'+pad+(depth>0?'↳ ':'')+esc(f.name)+' ('+(f.document_count||0)+')</option>';
+        walk(f.id,depth+1);
+      });
+    };
+    walk(null,0);
+  }
+  sel.innerHTML=opts;
+  sel.value='';
+}
+
+function draftCtxFolderChanged(){
+  var sel=document.getElementById('draftCtxFolder');
+  populateDraftCtxDocSelect(sel?sel.value:'');
+}
+
+function populateDraftCtxDocSelect(folderId){
+  var sel=document.getElementById('draftCtxDoc');
+  if(!sel)return;
+  var docs=draftCtxDocsCache;
+  if(folderId==='__none__'){
+    docs=docs.filter(function(d){return !(d.folder_ids&&d.folder_ids.length);});
+  }else if(folderId){
+    docs=docs.filter(function(d){return (d.folder_ids||[]).indexOf(folderId)!==-1;});
+  }
+  var label=folderId?'— Select from folder —':'— Select from matter —';
+  sel.innerHTML='<option value="">'+label+'</option>'+docs.map(function(doc){return '<option value="'+doc.id+'">'+esc(doc.name)+' ['+esc(doc.doc_type)+']</option>';}).join('');
 }
 
 /* v5.11a: populate the exclude picker. All docs ticked by default; unticked

@@ -1,3 +1,13 @@
+/* v5.30 — 02 Jul 2026 — Push v5.30 (rejoinder directives):
+   buildDraftDirectives now recognises a rejoinder (Document Type name
+   contains "rejoinder", or a responsive skeleton answering a document
+   that is itself a reply). Rejoinder shape: single context sentence
+   first, no narrative or introduction, no Reading List unless asked,
+   straight into the one or two areas the instructions identify, short,
+   with the same source-checking and [ANY IDEAS RE PARA ...] rules.
+   worker.js untouched. Files changed: public/js/drafting.js,
+   index.html + public/index.html (cache-bust only). */
+
 /* v5.29 — 02 Jul 2026 — Push v5.29 (skeleton drafting doctrine + directed sources):
    1. The Sources boxes (Instructions / Response Document / Background /
       Context) were never transmitted to the draft job — pure UI. Their
@@ -1437,6 +1447,7 @@ async function attachDraftPoll(){
 function buildDraftDirectives(userInstructions){
   var dtName=getSelectedDocTypeName()||'';
   var isSkeleton=/skeleton|submission/i.test(dtName);
+  var isRejoinder=/rejoinder/i.test(dtName);
   function names(k){return (draftSelectedDocs[k]||[]).map(function(x){return x.name;}).filter(Boolean);}
   var instrDocs=names('src1');
   var respDocs=names('src2');
@@ -1447,7 +1458,18 @@ function buildDraftDirectives(userInstructions){
   if(respDocs.length)lines.push('THIS DRAFT RESPONDS TO: '+respDocs.join('; ')+'. Direct the draft at that document.');
   if(bgDocs.length)lines.push('Background documents and tool outputs to rely on: '+bgDocs.join('; ')+'.');
   if(ctxDocs.length)lines.push('Context documents (read for relevance): '+ctxDocs.join('; ')+'.');
-  if(isSkeleton){
+  if(isRejoinder){
+    /* v5.30: rejoinder — the simplest responsive form. */
+    lines.push('');
+    lines.push('DOCUMENT SHAPE — REJOINDER:');
+    lines.push('- The FIRST paragraph is a single sentence stating the context, e.g. "These are X\u2019s rejoinder submissions, which focus on ZZ." Nothing else by way of introduction.');
+    lines.push('- NO narrative. NO Reading List unless the instructions ask for one.');
+    lines.push('- Go directly to the specific areas identified in the instructions — a rejoinder is focused and short; do not attempt comprehensive coverage.');
+    lines.push('- Numbered paragraphs throughout.');
+    lines.push('- Give references for every material statement: document, page and paragraph for the record; full citations for authorities.');
+    lines.push('- Check every statement in the document responded to against the source it cites. Where a statement is not an accurate reflection of the source quoted, point that out with the reference. If the source is not available to you, raise it as a query.');
+    lines.push('- Where a point in the other side\u2019s argument has no available answer on the material provided, do NOT invent one. Insert a bracketed query in the text in the form [ANY IDEAS RE PARA ...] identifying the paragraph concerned.');
+  }else if(isSkeleton){
     lines.push('');
     lines.push('DOCUMENT SHAPE — '+dtName.toUpperCase()+':');
     if(respDocs.length){

@@ -2917,9 +2917,12 @@ function renderMdWithSourceLinks(text){
 }
 
 /* ── WORD DOWNLOAD ───────────────────────────────────────────────────────── */
-async function downloadWord(content,title){
+async function downloadWord(content,title,heading){
+  /* v5.28: optional heading object — when present the server renders a
+     court front sheet and drops the branding block. Tool outputs and
+     other callers pass nothing and are unchanged. */
   try{
-    var r=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(token||localStorage.getItem('elj_token'))},body:JSON.stringify({content:content,matterName:currentMatter?currentMatter.name:'Matter',jurisdiction:jurisdiction,title:title})});
+    var r=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(token||localStorage.getItem('elj_token'))},body:JSON.stringify({content:content,matterName:currentMatter?currentMatter.name:'Matter',jurisdiction:jurisdiction,title:title,heading:heading||null})});
     if(!r.ok){showToast('Export failed');return;}
     var blob=await r.blob();var url=URL.createObjectURL(blob);
     var a=document.createElement('a');a.href=url;a.download=(title||'analysis').replace(/[^a-z0-9]/gi,'-').toLowerCase()+'.docx';a.click();URL.revokeObjectURL(url);

@@ -1,3 +1,14 @@
+/* v5.28 — 02 Jul 2026 — Push v5.28 (Word export court front sheet):
+   draftDownloadWord passes draftHeading to downloadWord; /api/export
+   renders a front sheet — court (+ division) underlined caps left with
+   action number right, IN THE MATTER OF lines, BETWEEN block, tramlined
+   title held in the lower third of page one, page break — drops the
+   Ex Libris Juris branding for court documents, and strips the plain-text
+   heading the AI echoes at the top of the draft body. Tool-output exports
+   are unchanged. worker.js untouched. Files changed: api/export.js,
+   public/js/core.js, public/js/drafting.js, index.html + public/index.html
+   (cache-busts). */
+
 /* v5.27 — 02 Jul 2026 — Push v5.27 (Simple extraction: full header + own tramlines):
    1. extract_heading now also returns division and matterOf (array of
       IN THE MATTER OF subjects), so the referenced document's complete
@@ -1516,7 +1527,9 @@ function draftInsertAI(){
 function draftDownloadWord(){
   var editor=document.getElementById('draftEditor');
   var content=editor.innerText||editor.textContent;
-  downloadWord(content,'Draft — '+(draftHeading.docTitle||'document'));
+  /* v5.28: pass the heading so the export carries a proper court front
+     sheet (tramlined title in the lower third, page break, no branding). */
+  downloadWord(content,'Draft — '+(draftHeading.docTitle||'document'),draftHeading);
 }
 /* ── v5.16a: AI HEADING SUGGESTION (rewritten for reliability) ───────────
    Changes from v2.5:

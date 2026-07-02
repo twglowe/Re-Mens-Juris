@@ -25,16 +25,20 @@ function parseInline(text) {
   return runs;
 }
 
-function markdownToDocxXml(text, matterName, jurisdiction) {
+function markdownToDocxXml(text, matterName, jurisdiction, includeBranding) {
   var dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   var body = "";
 
-  body += '<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:jc w:val="center"/></w:pPr>'
-    + '<w:r><w:rPr><w:b/><w:sz w:val="32"/></w:rPr><w:t>Ex Libris Juris</w:t></w:r></w:p>';
-  body += '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>'
-    + '<w:r><w:rPr><w:color w:val="1D6FA4"/><w:sz w:val="24"/></w:rPr><w:t>' + esc(matterName) + '</w:t></w:r></w:p>';
-  body += '<w:p><w:pPr><w:jc w:val="center"/><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="C5DDF0"/></w:pBdr><w:spacing w:after="400"/></w:pPr>'
-    + '<w:r><w:rPr><w:color w:val="5A7A94"/><w:sz w:val="20"/></w:rPr><w:t>Jurisdiction: ' + esc(jurisdiction) + '   |   Date: ' + esc(dateStr) + '</w:t></w:r></w:p>';
+  /* v5.28: court documents (exports with a heading) must not carry the
+     Ex Libris Juris branding block; a proper front sheet replaces it. */
+  if (includeBranding !== false) {
+    body += '<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:jc w:val="center"/></w:pPr>'
+      + '<w:r><w:rPr><w:b/><w:sz w:val="32"/></w:rPr><w:t>Ex Libris Juris</w:t></w:r></w:p>';
+    body += '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>'
+      + '<w:r><w:rPr><w:color w:val="1D6FA4"/><w:sz w:val="24"/></w:rPr><w:t>' + esc(matterName) + '</w:t></w:r></w:p>';
+    body += '<w:p><w:pPr><w:jc w:val="center"/><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="C5DDF0"/></w:pBdr><w:spacing w:after="400"/></w:pPr>'
+      + '<w:r><w:rPr><w:color w:val="5A7A94"/><w:sz w:val="20"/></w:rPr><w:t>Jurisdiction: ' + esc(jurisdiction) + '   |   Date: ' + esc(dateStr) + '</w:t></w:r></w:p>';
+  }
 
   var lines = (text || "").split("\n");
   for (var i = 0; i < lines.length; i++) {
@@ -69,6 +73,102 @@ function markdownToDocxXml(text, matterName, jurisdiction) {
   }
 
   return body;
+}
+
+/* v5.28: strip a leading plain-text court heading from the draft body
+   (as produced by formatCourtHeading and echoed by the AI): everything up
+   to and including the second bar line (\u2550/=/_/- runs) within the
+   first 45 lines, provided the block looks like a heading. The proper
+   front sheet replaces it. */
+function stripTextHeading(text) {
+  var lines = (text || "").split("\n");
+  var limit = Math.min(lines.length, 45);
+  var bars = [];
+  for (var i = 0; i < limit && bars.length < 2; i++) {
+    var t = lines[i].trim();
+    if (t.length >= 8 && /^[\u2550=_\-]{8,}$/.test(t)) bars.push(i);
+  }
+  if (bars.length === 2) {
+    var head = lines.slice(0, bars[0]).join("\n");
+    if (/\b(court|between|in the matter of)\b/i.test(head)) {
+      var rest = lines.slice(bars[1] + 1);
+      while (rest.length && !rest[0].trim()) rest.shift();
+      return rest.join("\n");
+    }
+  }
+  return text;
+}
+
+/* v5.28: proper court front sheet. Court (+ division) bold underlined
+   caps at left with the action number at the right margin; IN THE MATTER
+   OF lines centred; BETWEEN block; then the tramlined document title held
+   in the lower third of the page (spacer computed from an estimate of the
+   heading height); page break before the body. */
+function frontSheetXml(h) {
+  function run(txt, opts) {
+    opts = opts || {};
+    return '<w:r><w:rPr>' + (opts.b ? '<w:b/>' : '') + (opts.u ? '<w:u w:val="single"/>' : '') + (opts.sz ? '<w:sz w:val="' + opts.sz + '"/>' : '') + '</w:rPr><w:t xml:space="preserve">' + esc(txt) + '</w:t></w:r>';
+  }
+  var court = String(h.courtName || h.court || "").trim();
+  var division = String(h.division || "").trim();
+  if (!division && court.indexOf("\n") >= 0) {
+    var cp = court.split("\n");
+    court = cp[0].trim();
+    division = cp.slice(1).join(" ").trim();
+  }
+  var caseNo = String(h.caseNo || "").trim();
+  var matterOf = (Array.isArray(h.matterOf) ? h.matterOf : []).map(function (x) { return String(x).trim(); }).filter(Boolean);
+  var p1 = String(h.party1 || "").trim(), p1r = String(h.party1Role || "").trim();
+  var p2 = String(h.party2 || "").trim(), p2r = String(h.party2Role || "").trim();
+  var docTitle = String(h.docTitle || "").trim();
+
+  var paras = [];
+  var count = 0;
+  if (court || caseNo) {
+    paras.push('<w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="9026"/></w:tabs><w:spacing w:after="60"/></w:pPr>'
+      + run(court.toUpperCase(), { b: 1, u: 1 })
+      + (caseNo ? '<w:r><w:tab/></w:r>' + run(caseNo.toUpperCase(), { b: 1 }) : '')
+      + '</w:p>');
+    count++;
+  }
+  if (division) {
+    paras.push('<w:p><w:pPr><w:spacing w:after="60"/></w:pPr>' + run(division.toUpperCase(), { b: 1, u: 1 }) + '</w:p>');
+    count++;
+  }
+  for (var i = 0; i < matterOf.length; i++) {
+    var mo = matterOf[i].replace(/^(and\s+)?in\s+the\s+matter\s+of\s+/i, "").toUpperCase();
+    paras.push('<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="' + (i === 0 ? '360' : '120') + '" w:after="120"/></w:pPr>'
+      + run((i === 0 ? 'IN THE MATTER OF ' : 'AND IN THE MATTER OF ') + mo, { b: 1 }) + '</w:p>');
+    count++;
+  }
+  if (p1 || p2) {
+    paras.push('<w:p><w:pPr><w:spacing w:before="360" w:after="240"/></w:pPr>' + run('BETWEEN', { b: 1 }) + '</w:p>');
+    count++;
+    if (p1) {
+      paras.push('<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="60"/></w:pPr>' + run(p1.toUpperCase(), { b: 1 }) + '</w:p>');
+      count++;
+      if (p1r) { paras.push('<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="120"/></w:pPr>' + run(p1r, { u: 1 }) + '</w:p>'); count++; }
+    }
+    if (p2) {
+      paras.push('<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="60"/></w:pPr>' + run('-and-', {}) + '</w:p>');
+      paras.push('<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="60"/></w:pPr>' + run(p2.toUpperCase(), { b: 1 }) + '</w:p>');
+      count += 2;
+      if (p2r) { paras.push('<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="120"/></w:pPr>' + run(p2r, { u: 1 }) + '</w:p>'); count++; }
+    }
+  }
+  /* Usable body height on A4 with 1in margins ~13958 twips. The title
+     must sit no higher than a third from the bottom, i.e. start around
+     9300 twips down. Each heading paragraph is roughly 340 twips. */
+  var used = count * 340 + 720;
+  var spacer = Math.max(240, 9300 - used);
+  paras.push('<w:p><w:pPr><w:spacing w:before="' + spacer + '"/></w:pPr></w:p>');
+  if (docTitle) {
+    paras.push('<w:p><w:pPr><w:jc w:val="center"/><w:ind w:left="1440" w:right="1440"/>'
+      + '<w:pBdr><w:top w:val="single" w:sz="12" w:space="6" w:color="000000"/><w:bottom w:val="single" w:sz="12" w:space="6" w:color="000000"/></w:pBdr>'
+      + '<w:spacing w:before="120" w:after="120"/></w:pPr>' + run(docTitle.toUpperCase(), { b: 1, sz: 26 }) + '</w:p>');
+  }
+  paras.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
+  return paras.join('');
 }
 
 function buildDocxFiles(bodyXml) {
@@ -213,7 +313,7 @@ function buildZip(files) {
   return Buffer.concat([...localHeaders, ...centralHeaders, eocd]);
 }
 
-const SERVER_VERSION = "v5.5";
+const SERVER_VERSION = "v5.28";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " export handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -223,11 +323,16 @@ export default async function handler(req, res) {
   var matterName = body.matterName || "Matter";
   var jurisdiction = body.jurisdiction || "Bermuda";
   var title = body.title || matterName;
+  var heading = body.heading || null;
 
   if (!content) return res.status(400).json({ error: "No content provided" });
 
   try {
-    var bodyXml = markdownToDocxXml(content, matterName, jurisdiction);
+    /* v5.28: an export carrying a heading becomes a court document —
+       front sheet, no branding, duplicated text heading stripped. */
+    var hasHeading = !!(heading && (heading.court || heading.courtName || heading.party1 || heading.docTitle || (Array.isArray(heading.matterOf) && heading.matterOf.length)));
+    var contentForBody = hasHeading ? stripTextHeading(content) : content;
+    var bodyXml = (hasHeading ? frontSheetXml(heading) : "") + markdownToDocxXml(contentForBody, matterName, jurisdiction, !hasHeading);
     var xmlFiles = buildDocxFiles(bodyXml);
 
     /* Convert string files to Buffers */

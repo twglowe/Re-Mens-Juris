@@ -1,3 +1,14 @@
+/* v5.26 — 02 Jul 2026 — Push v5.26 (Simple heading extraction robustness):
+   1. extract_heading in single-document mode now scans chunks 0-3 (was
+      0-1) and accepts PARTIAL headings — any of court / case number /
+      party / doc title. The all-or-nothing validation stays for the
+      legacy multi-document mode. worker.js untouched.
+   2. drafting.js: a partial result is applied and toasted as partial
+      ("click the heading to complete it"); the failure toast now names
+      the reason code so diagnosis doesn't need the console.
+   Files changed: public/js/drafting.js, api/extract_heading.js,
+   index.html + public/index.html (cache-bust only). */
+
 /* v5.25 — 02 Jul 2026 — Push v5.25 (rebuilt heading editor, Render own):
    Implements Tom's heading spec. draftHeading gains `division` (string)
    and `matterOf` (array of strings). Modal: court + division datalists
@@ -1545,7 +1556,7 @@ async function draftAISuggestHeading(matterId,documentId){
       if(why==='no_chunks'){
         showToast('That document has no readable text \u2014 try another, or use Render own heading');
       }else{
-        showToast('No court heading found \u2014 try another document, or use Render own heading');
+        showToast('No heading found in that document ('+why+') \u2014 try another, or use Render own heading');
       }
       return;
     }
@@ -1562,7 +1573,12 @@ async function draftAISuggestHeading(matterId,documentId){
     updateActionHeading();
     /* v5.24: persist the extracted heading to the matter. */
     persistHeadingToMatter(requestMatterId);
-    showToast('Heading suggested from documents \u2014 click to edit');
+    /* v5.26: say so when the document only yielded part of a heading. */
+    if(d.partial){
+      showToast('Partial heading taken from the document \u2014 click the heading to complete it');
+    }else{
+      showToast('Heading taken from the document \u2014 click to edit');
+    }
   }catch(e){
     console.log('AI heading suggestion skipped:',e.message);
     showToast('Heading extraction failed: '+e.message);

@@ -52,7 +52,7 @@ function isHeadingCandidate(text) {
   return hasActionNo;
 }
 
-const SERVER_VERSION = "v5.23";
+const SERVER_VERSION = "v5.26";
 
 /* withTimeout wraps a promise with a hard timeout that races to settle
    first. If the inner promise hasn't resolved by `ms` milliseconds, the
@@ -134,7 +134,7 @@ export default async function handler(req, res) {
       let q = supabase.from("chunks")
         .select("content, document_name, doc_type, chunk_index")
         .eq("matter_id", matterId)
-        .in("chunk_index", [0, 1])
+        .in("chunk_index", documentId ? [0, 1, 2, 3] : [0, 1])
         .order("document_name", { ascending: true })
         .order("chunk_index", { ascending: true })
         .limit(200);
@@ -167,7 +167,7 @@ export default async function handler(req, res) {
        send its opening chunks to Claude even when the regex prefilter
        found nothing heading-shaped. */
     if (candidates.length === 0 && documentId && chunks.length) {
-      for (const c of chunks.slice(0, 2)) candidates.push(c);
+      for (const c of chunks.slice(0, 4)) candidates.push(c);
       step("regex_filter_fallback_single_doc", { used: candidates.length });
     }
     if (candidates.length === 0) {
@@ -249,7 +249,17 @@ ${candText}`;
     const hasCourt = typeof heading.court === "string" && heading.court.trim().length > 2;
     const hasCaseNo = typeof heading.caseNo === "string" && heading.caseNo.trim().length > 0;
     const hasParty1 = typeof heading.party1 === "string" && heading.party1.trim().length > 0;
-    if (!hasCourt || (!hasCaseNo && !hasParty1)) {
+    const hasDocTitle = typeof heading.docTitle === "string" && heading.docTitle.trim().length > 0;
+    /* v5.26: when the user explicitly chose the document, a partial
+       heading is far more useful than nothing — accept if ANY field was
+       found, and tell the client it is partial so it can say so. The
+       strict rule stays for multi-document mode. */
+    if (documentId) {
+      if (!hasCourt && !hasCaseNo && !hasParty1 && !hasDocTitle) {
+        step("validation_failed", { hasCourt, hasCaseNo, hasParty1, hasDocTitle });
+        return res.status(200).json({ heading: null, reason: "validation_failed", raw: heading, steps });
+      }
+    } else if (!hasCourt || (!hasCaseNo && !hasParty1)) {
       step("validation_failed", { hasCourt, hasCaseNo, hasParty1 });
       return res.status(200).json({ heading: null, reason: "validation_failed", raw: heading, steps });
     }
@@ -264,7 +274,8 @@ ${candText}`;
       docTitle: String(heading.docTitle || "").trim().toUpperCase(),
     };
     step("success", { court: out.court.slice(0, 30), caseNo: out.caseNo });
-    return res.status(200).json({ heading: out, candidatesUsed: candidates.length, totalMs: Date.now() - t0, steps });
+    const partial = !(hasCourt && (hasCaseNo || hasParty1));
+    return res.status(200).json({ heading: out, partial, candidatesUsed: candidates.length, totalMs: Date.now() - t0, steps });
   } catch (err) {
     step("unhandled_error", { err: err.message, stack: err.stack ? err.stack.slice(0, 300) : null });
     return res.status(500).json({

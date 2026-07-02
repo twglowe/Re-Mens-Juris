@@ -1,3 +1,24 @@
+/* v5.29 — 02 Jul 2026 — Push v5.29 (skeleton drafting doctrine + directed sources):
+   1. The Sources boxes (Instructions / Response Document / Background /
+      Context) were never transmitted to the draft job — pure UI. Their
+      selections are now named in the drafting brief so the engine knows
+      which documents direct the draft.
+   2. buildDraftDirectives() prepends a document-shape brief to the user's
+      instructions. For skeletons (per Tom's doctrine): organise by topics
+      starting with the strongest, counterarguments met inside the topic in
+      the most effective order (never point-by-point), issues identified
+      and agreement with the other side noted, references for every
+      material statement, unnumbered Reading List, numbered paragraphs,
+      narrative only where the factual narrative is not agreed. When a
+      Response Document is selected the skeleton is responsive: first
+      paragraph states the context of the submission, no further narrative
+      or introduction, every statement in the responded-to document checked
+      against the source it cites and inaccuracies called out, and where no
+      answer exists a bracketed query [ANY IDEAS RE PARA ...] is inserted
+      rather than an invented answer. worker.js untouched.
+   Files changed: public/js/drafting.js, index.html + public/index.html
+   (cache-bust only). */
+
 /* v5.28 — 02 Jul 2026 — Push v5.28 (Word export court front sheet):
    draftDownloadWord passes draftHeading to downloadWord; /api/export
    renders a front sheet — court (+ division) underlined caps left with
@@ -1410,6 +1431,45 @@ async function attachDraftPoll(){
 /* v3.4: generateDraft uses fire-and-poll background processing.
    v5.16e Push A: poll body extracted to _runDraftPoll so the resume path
    uses the same code. */
+/* v5.29: document-shape directives prepended to the user's instructions.
+   Composed from Document Type + the Sources selections. Returns the final
+   instructions string. */
+function buildDraftDirectives(userInstructions){
+  var dtName=getSelectedDocTypeName()||'';
+  var isSkeleton=/skeleton|submission/i.test(dtName);
+  function names(k){return (draftSelectedDocs[k]||[]).map(function(x){return x.name;}).filter(Boolean);}
+  var instrDocs=names('src1');
+  var respDocs=names('src2');
+  var bgDocs=names('src3');
+  var ctxDocs=names('ctx');
+  var lines=[];
+  if(instrDocs.length)lines.push('Documents containing drafting instructions: '+instrDocs.join('; ')+'.');
+  if(respDocs.length)lines.push('THIS DRAFT RESPONDS TO: '+respDocs.join('; ')+'. Direct the draft at that document.');
+  if(bgDocs.length)lines.push('Background documents and tool outputs to rely on: '+bgDocs.join('; ')+'.');
+  if(ctxDocs.length)lines.push('Context documents (read for relevance): '+ctxDocs.join('; ')+'.');
+  if(isSkeleton){
+    lines.push('');
+    lines.push('DOCUMENT SHAPE — '+dtName.toUpperCase()+':');
+    if(respDocs.length){
+      lines.push('- This is a responsive skeleton. The FIRST paragraph must state the context of the submission (e.g. "These are X\u2019s reply submissions to the appeal, which focus primarily on ZZ."). No other narrative or introduction.');
+    }else{
+      lines.push('- Include narrative only if the factual narrative is not agreed between the parties or relevant facts have not been set out; keep it to the minimum needed.');
+    }
+    lines.push('- After any Reading List, proceed in numbered paragraphs throughout.');
+    lines.push('- Open with an unnumbered Reading List: "The Court is respectfully invited to read the following, time permitting:" followed by a short numbered list of the key documents.');
+    lines.push('- Organise the argument by TOPICS, starting with the strongest topic. Do NOT respond to the other side point by point.');
+    lines.push('- Deal with the other side\u2019s counterarguments INSIDE the topic to which they belong, in whatever order is most effective.');
+    lines.push('- Identify the issues. Where an issue or proposition appears to be agreed with the other side, say so expressly.');
+    lines.push('- Give references for every material statement: document, page and paragraph for the record; full citations for authorities.');
+    if(respDocs.length){
+      lines.push('- Check every statement in the document responded to against the source it cites. Where a statement is not an accurate reflection of the source quoted, point that out with the reference. If the source is not available to you, raise it as a query.');
+      lines.push('- Where a point in the other side\u2019s argument has no available answer on the material provided, do NOT invent one. Insert a bracketed query in the text in the form [ANY IDEAS RE PARA ...] identifying the paragraph concerned.');
+    }
+  }
+  if(!lines.length)return userInstructions;
+  return lines.join('\n')+'\n\n=== INSTRUCTIONS ===\n'+userInstructions;
+}
+
 async function generateDraft(){
   var matterId=document.getElementById('draftMatterSelect').value;
   if(!matterId){showToast('Select a matter first');return;}
@@ -1462,7 +1522,9 @@ async function generateDraft(){
   document.getElementById('draftGenerateBtn').disabled=true;
   var prog=document.getElementById('draftProgressMsg');prog.style.display='';prog.textContent='Submitting draft request\u2026';
   try{
-    var body={matterId:matterId,tool:'draft',instructions:instructions,jurisdiction:draftJur(),actingFor:'',courtHeading:draftHeading};
+    /* v5.29: prepend document-shape directives + named source documents. */
+    var finalInstructions=buildDraftDirectives(instructions);
+    var body={matterId:matterId,tool:'draft',instructions:finalInstructions,jurisdiction:draftJur(),actingFor:'',courtHeading:draftHeading};
     if(ctId)body.caseTypeId=ctId;
     if(dtId)body.docTypeId=dtId;
     if(stId)body.subcatId=stId;
@@ -1501,7 +1563,7 @@ async function generateDraft(){
        reattaches without losing the draft. The poll completion handler
        clears the stash. */
     window._inflightDraftJob={jobId:d.jobId,matterId:matterId};
-    _runDraftPoll(d.jobId,matterId,ctId,stId,dtId,instructions,prog,'generate',freshDraftRowId);
+    _runDraftPoll(d.jobId,matterId,ctId,stId,dtId,finalInstructions,prog,'generate',freshDraftRowId);
   }catch(e){document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';showToast('Draft error: '+e.message);}
 }
 

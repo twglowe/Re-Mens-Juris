@@ -1,3 +1,13 @@
+/* v5.24 — 02 Jul 2026 — Push v5.24 (per-matter heading persistence):
+   matters.heading_data (JSONB, present since v3.2, already written by the
+   Matter Record panel and read by worker.js) is now wired into the Draft
+   tab. 1. On matter selection a saved heading_data wins; the guess from
+   the matter name is only a fallback. 2. Save Heading (Render own) and a
+   successful Simple extraction both persist the heading to the matter via
+   PATCH /api/matters, and refresh the local matters cache. Failures are
+   toasted. Files changed: public/js/drafting.js, index.html +
+   public/index.html (cache-bust only). */
+
 /* v5.23 — 02 Jul 2026 — Push v5.23 (Case tab restructure, explicit heading source):
    1. Case tab order is now Matter → Case Type → Procedural Stage →
       Document Type → Heading, so the doc type is known before the
@@ -329,7 +339,19 @@ function draftMatterChanged(){
   if(typeof renderDraftSelectedPrecedents==='function')renderDraftSelectedPrecedents();
   /* Reset draftHeading from new matter */
   draftHeading={party1:'',party1Role:'',party2:'',party2Role:'',court:'',caseNo:'',docTitle:''};
-  if(m.name){
+  /* v5.24: a heading previously saved for this matter wins; the guess
+     from the matter name / jurisdiction is only a fallback. */
+  var savedHd=m.heading_data;
+  if(typeof savedHd==='string'){try{savedHd=JSON.parse(savedHd);}catch(e2){savedHd=null;}}
+  if(savedHd&&typeof savedHd==='object'&&(savedHd.court||savedHd.caseNo||savedHd.party1||savedHd.docTitle)){
+    draftHeading.party1=String(savedHd.party1||'');
+    draftHeading.party1Role=String(savedHd.party1Role||'');
+    draftHeading.party2=String(savedHd.party2||'');
+    draftHeading.party2Role=String(savedHd.party2Role||'');
+    draftHeading.court=String(savedHd.court||'');
+    draftHeading.caseNo=String(savedHd.caseNo||'');
+    draftHeading.docTitle=String(savedHd.docTitle||'');
+  }else if(m.name){
     var parts=m.name.split(/\s+v\s+/i);
     if(parts.length>=2){
       draftHeading.party1=parts[0].trim().toUpperCase();
@@ -983,6 +1005,22 @@ function updateHeadingPreview(){
   }
 }
 
+/* v5.24: persist the current draftHeading to the matter so it survives
+   matter switches and page reloads. Refreshes the local matters cache.
+   Fire-and-forget with a visible error on failure (e.g. shared matter
+   where only the owner may PATCH). */
+function persistHeadingToMatter(matterId){
+  if(!matterId)return;
+  var hd={party1:draftHeading.party1,party1Role:draftHeading.party1Role,party2:draftHeading.party2,party2Role:draftHeading.party2Role,court:draftHeading.court,caseNo:draftHeading.caseNo,docTitle:draftHeading.docTitle};
+  api('/api/matters?id='+matterId,'PATCH',{heading_data:hd}).then(function(){
+    var m=matters.find(function(x){return x.id===matterId;});
+    if(m)m.heading_data=hd;
+    if(typeof currentMatter!=='undefined'&&currentMatter&&currentMatter.id===matterId)currentMatter.heading_data=hd;
+  }).catch(function(e){
+    showToast('Heading kept for this session but not saved to the matter: '+e.message);
+  });
+}
+
 function saveHeading(){
   draftHeading.court=document.getElementById('hdCourt').value.trim();
   draftHeading.caseNo=document.getElementById('hdCaseNo').value.trim();
@@ -994,6 +1032,8 @@ function saveHeading(){
   closeModal('headingModal');
   updateHeadingBtnText();
   showToast('Heading saved');
+  /* v5.24: persist to the matter. */
+  persistHeadingToMatter(document.getElementById('draftMatterSelect').value);
   /* C2: If party names form a case name, offer to update the matter.
      v5.16b: only prompt for two-party BETWEEN cases \u2014 'A v B' isn't a
      sensible matter name for an in-the-matter-of single-party case. */
@@ -1402,6 +1442,8 @@ async function draftAISuggestHeading(matterId,documentId){
     if(h.party2Role)draftHeading.party2Role=h.party2Role;
     if(h.docTitle)draftHeading.docTitle=h.docTitle;
     updateActionHeading();
+    /* v5.24: persist the extracted heading to the matter. */
+    persistHeadingToMatter(requestMatterId);
     showToast('Heading suggested from documents \u2014 click to edit');
   }catch(e){
     console.log('AI heading suggestion skipped:',e.message);

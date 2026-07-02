@@ -1,3 +1,17 @@
+/* v5.27 — 02 Jul 2026 — Push v5.27 (Simple extraction: full header + own tramlines):
+   1. extract_heading now also returns division and matterOf (array of
+      IN THE MATTER OF subjects), so the referenced document's complete
+      header comes across, not just the court line.
+   2. On Simple extraction the tramlined title is COMPOSED from the
+      party role (matter acting_for, falling back to the extracted
+      party1Role) + the selected Document Type — e.g. APPELLANT'S
+      SKELETON — instead of inheriting the source document's own title
+      (PETITION, JUDGMENT, …). The source title is only used when no
+      Document Type is selected. Shared composer split out of
+      hdComposeDocTitle. worker.js untouched.
+   Files changed: public/js/drafting.js, api/extract_heading.js,
+   index.html + public/index.html (cache-bust only). */
+
 /* v5.26 — 02 Jul 2026 — Push v5.26 (Simple heading extraction robustness):
    1. extract_heading in single-document mode now scans chunks 0-3 (was
       0-1) and accepts PARTIAL headings — any of court / case number /
@@ -900,6 +914,16 @@ function hdGetMatterOfLines(){
   return out;
 }
 
+/* v5.27: shared composer — ROLE'S DOCTYPE, e.g. APPELLANT'S SKELETON.
+   Returns '' when there is nothing to compose from. */
+function composeDocTitleFromRole(role,dtName){
+  role=(role||'').trim();dtName=(dtName||'').trim();
+  if(!role&&!dtName)return '';
+  var roleU=role.toUpperCase();
+  var poss=roleU?(roleU+(/S$/.test(roleU)?'\u2019':'\u2019S')+' '):'';
+  return (poss+dtName.toUpperCase()).trim();
+}
+
 /* v5.25: compose the tramlined title from party role + Document Type,
    e.g. PETITIONER'S SKELETON ARGUMENT. Role: Party 1 Role field, falling
    back to the matter's acting_for. */
@@ -912,9 +936,7 @@ function hdComposeDocTitle(){
   }
   var dtName=getSelectedDocTypeName();
   if(!role&&!dtName){showToast('Set a Party 1 role and a Document Type first');return;}
-  var roleU=role.toUpperCase();
-  var poss=roleU?(roleU+(/S$/.test(roleU)?'\u2019':'\u2019S')+' '):'';
-  var title=(poss+(dtName||'').toUpperCase()).trim();
+  var title=composeDocTitleFromRole(role,dtName);
   document.getElementById('hdDocTitle').value=title;
   /* Reflect in the select if the exact title exists there; otherwise the
      hidden input alone carries it (same pattern as openHeadingEditor). */
@@ -1564,12 +1586,25 @@ async function draftAISuggestHeading(matterId,documentId){
     /* Endpoint already validates and normalises (uppercase parties, trimmed,
        court + caseNo|party1 guaranteed) so we apply directly. */
     if(h.court)draftHeading.court=h.court;
+    if(h.division)draftHeading.division=h.division;
+    if(Array.isArray(h.matterOf)&&h.matterOf.length)draftHeading.matterOf=h.matterOf.map(String);
     if(h.caseNo)draftHeading.caseNo=h.caseNo;
     if(h.party1)draftHeading.party1=h.party1;
     if(h.party1Role)draftHeading.party1Role=h.party1Role;
     if(h.party2)draftHeading.party2=h.party2;
     if(h.party2Role)draftHeading.party2Role=h.party2Role;
-    if(h.docTitle)draftHeading.docTitle=h.docTitle;
+    /* v5.27: the tramlined title belongs to the document being PREPARED,
+       not the one referenced. Compose from our party role + the selected
+       Document Type; only fall back to the source title when no Document
+       Type is chosen. */
+    var _m=matters.find(function(x){return x.id===requestMatterId;});
+    var _role=(_m&&_m.acting_for)?_m.acting_for:(h.party1Role||'');
+    var _own=composeDocTitleFromRole(_role,getSelectedDocTypeName());
+    if(_own){
+      draftHeading.docTitle=_own;
+    }else if(h.docTitle){
+      draftHeading.docTitle=h.docTitle;
+    }
     updateActionHeading();
     /* v5.24: persist the extracted heading to the matter. */
     persistHeadingToMatter(requestMatterId);

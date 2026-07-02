@@ -52,7 +52,7 @@ function isHeadingCandidate(text) {
   return hasActionNo;
 }
 
-const SERVER_VERSION = "v5.26";
+const SERVER_VERSION = "v5.27";
 
 /* withTimeout wraps a promise with a hard timeout that races to settle
    first. If the inner promise hasn't resolved by `ms` milliseconds, the
@@ -193,14 +193,16 @@ export default async function handler(req, res) {
 
     const prompt = `Below are the opening passages of court documents from a single matter. Extract the case heading from these passages and return it as a JSON object.
 
-Required fields (use empty string "" if not found):
-  - court: e.g. "IN THE GRAND COURT OF THE CAYMAN ISLANDS FINANCIAL SERVICES DIVISION", "IN THE SUPREME COURT OF BERMUDA"
+Required fields (use empty string "" or empty array [] if not found):
+  - court: the court line ONLY, e.g. "IN THE GRAND COURT OF THE CAYMAN ISLANDS", "IN THE SUPREME COURT OF BERMUDA"
+  - division: the division/jurisdiction line if present, e.g. "FINANCIAL SERVICES DIVISION", "CIVIL JURISDICTION", or empty
   - caseNo: e.g. "FSD 253 OF 2026 (RPJ)", "2024: No. 123"
-  - party1: the first party's name, in CAPITALS, e.g. "THALASSA INVESTMENTS LP"
-  - party1Role: e.g. "Plaintiff", "Petitioner", "Applicant", or "In the Matter of"
-  - party2: second party's name in CAPITALS, or empty if single-party
+  - matterOf: an ARRAY of the "IN THE MATTER OF ..." subjects, without the words "IN THE MATTER OF" or "AND IN THE MATTER OF", e.g. ["CHINA SHANSHUI CEMENT GROUP LIMITED", "THE COMPANIES ACT (2025 REVISION)"], or []
+  - party1: the first party's name (after BETWEEN), in CAPITALS, e.g. "THALASSA INVESTMENTS LP", or empty
+  - party1Role: e.g. "Plaintiff", "Petitioner", "Appellant", "Applicant", or empty
+  - party2: second party's name in CAPITALS, or empty
   - party2Role: e.g. "Defendant", "Respondent", or empty
-  - docTitle: the title of THIS document, e.g. "STATEMENT OF CLAIM", "SKELETON ARGUMENT", or empty if uncertain
+  - docTitle: the title of THIS document (usually between two horizontal lines), e.g. "STATEMENT OF CLAIM", "PETITION", or empty if uncertain
 
 Return ONLY valid JSON. No prose, no markdown, no code fences.
 
@@ -250,12 +252,13 @@ ${candText}`;
     const hasCaseNo = typeof heading.caseNo === "string" && heading.caseNo.trim().length > 0;
     const hasParty1 = typeof heading.party1 === "string" && heading.party1.trim().length > 0;
     const hasDocTitle = typeof heading.docTitle === "string" && heading.docTitle.trim().length > 0;
+    const hasMatterOf = Array.isArray(heading.matterOf) && heading.matterOf.some(x => String(x).trim());
     /* v5.26: when the user explicitly chose the document, a partial
        heading is far more useful than nothing — accept if ANY field was
        found, and tell the client it is partial so it can say so. The
        strict rule stays for multi-document mode. */
     if (documentId) {
-      if (!hasCourt && !hasCaseNo && !hasParty1 && !hasDocTitle) {
+      if (!hasCourt && !hasCaseNo && !hasParty1 && !hasDocTitle && !hasMatterOf) {
         step("validation_failed", { hasCourt, hasCaseNo, hasParty1, hasDocTitle });
         return res.status(200).json({ heading: null, reason: "validation_failed", raw: heading, steps });
       }
@@ -266,7 +269,11 @@ ${candText}`;
 
     const out = {
       court: String(heading.court || "").trim(),
+      division: String(heading.division || "").trim().toUpperCase(),
       caseNo: String(heading.caseNo || "").trim(),
+      matterOf: (Array.isArray(heading.matterOf) ? heading.matterOf : [])
+        .map(x => String(x).trim().replace(/^(and\s+)?in\s+the\s+matter\s+of\s+/i, "").toUpperCase())
+        .filter(Boolean),
       party1: String(heading.party1 || "").trim().toUpperCase(),
       party1Role: String(heading.party1Role || "").trim(),
       party2: String(heading.party2 || "").trim().toUpperCase(),

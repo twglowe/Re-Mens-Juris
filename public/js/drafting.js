@@ -1,3 +1,18 @@
+/* v5.23 — 02 Jul 2026 — Push v5.23 (Case tab restructure, explicit heading source):
+   1. Case tab order is now Matter → Case Type → Procedural Stage →
+      Document Type → Heading, so the doc type is known before the
+      heading is set.
+   2. Heading has two explicit modes. SIMPLE: pick a matter document and
+      extract its heading via /api/extract_heading (now scoped to that
+      document). RENDER OWN: the existing heading editor modal.
+   3. The automatic background heading guess on matter switch is removed.
+      Extraction failures are reported visibly via toast, not console-only.
+   4. The dead Matter Documents checkbox list (hidden since v5.16a but
+      un-hidden by loadDraftMatterDocs whenever the matter had documents)
+      is removed for good; nothing read those checkboxes.
+   Files changed: index.html, public/index.html, public/js/drafting.js,
+   api/extract_heading.js. */
+
 /* ── DRAFT TAB ────────────────────────────────────────────────────────────── */
 /* v5.16c — 05 May 2026 — Push v5.16c (heading extraction reliability):
    draftAISuggestHeading now calls a dedicated /api/extract_heading endpoint
@@ -345,9 +360,9 @@ function draftMatterChanged(){
   var clearBtn=document.getElementById('clearDraftBtn');
   if(clearBtn)clearBtn.style.display='none';
   /* Load matter docs and previous drafts list */
-  loadDraftMatterDocs(id).then(function(){
-    draftAISuggestHeading(id);
-  });
+  /* v5.23: no automatic background heading guess on matter switch —
+     the heading source is now explicit (Simple / Render own). */
+  loadDraftMatterDocs(id);
   loadDraftsForMatter(id);
 }
 
@@ -570,13 +585,10 @@ async function loadDraftMatterDocs(matterId){
   try{
     var d=await api('/api/documents?matter_id='+matterId);
     var docs=d&&d.documents?d.documents:[];
-    /* Populate Sector 1 doc list */
-    var wrap=document.getElementById('draftMatterDocsWrap');
-    var list=document.getElementById('draftMatterDocs');
-    if(docs.length){
-      wrap.style.display='';
-      list.innerHTML=docs.map(function(doc){return '<label class="draft-doc-check"><input type="checkbox" value="'+doc.id+'" data-name="'+esc(doc.name)+'"> '+esc(doc.name)+' <span style="font-size:.7rem;color:var(--text-faint)">['+esc(doc.doc_type)+']</span></label>';}).join('');
-    }else{wrap.style.display='none';}
+    /* v5.23: the Sector 1 checkbox list is gone from the DOM. Populate
+       the Case-tab heading-source select instead. */
+    var hdSrc=document.getElementById('draftHeadingSrcDoc');
+    if(hdSrc)hdSrc.innerHTML='<option value="">— Simple: take from document —</option>'+docs.map(function(doc){return '<option value="'+doc.id+'">'+esc(doc.name)+' ['+esc(doc.doc_type)+']</option>';}).join('');
     /* Populate Sector 2 doc selects — Instructions, Response, Context */
     var docOpts=docs.map(function(doc){return '<option value="'+doc.id+'">'+esc(doc.name)+' ['+esc(doc.doc_type)+']</option>';}).join('');
     document.getElementById('draftSrcDoc1').innerHTML='<option value="">— Select from matter —</option>'+docOpts;
@@ -1015,7 +1027,7 @@ function updateActionHeading(){
   }else if(draftHeading.court){
     btn.textContent='[heading set]';
   }else{
-    btn.textContent='Click to set heading\u2026';
+    btn.textContent='Render own heading\u2026';
   }
 
   if(inlineHeading){
@@ -1327,7 +1339,25 @@ function draftDownloadWord(){
       parsing in draftMatterChanged is the baseline; the AI suggestion
       OVERWRITES the baseline only when validation passes, and only for
       the current matter. */
-async function draftAISuggestHeading(matterId){
+/* v5.23: user-initiated Simple heading extraction. Reads the Case-tab
+   heading-source select, disables the tick button while in flight, and
+   delegates to draftAISuggestHeading scoped to that document. */
+async function draftUseHeadingFromDoc(){
+  var matterId=document.getElementById('draftMatterSelect').value;
+  if(!matterId){showToast('Select a matter first');return;}
+  var sel=document.getElementById('draftHeadingSrcDoc');
+  var docId=sel?sel.value:'';
+  if(!docId){showToast('Select the document to take the heading from');return;}
+  var btn=document.getElementById('draftHeadingSimpleBtn');
+  if(btn){btn.disabled=true;btn.textContent='\u2026';}
+  try{
+    await draftAISuggestHeading(matterId,docId);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='\u2713';}
+  }
+}
+
+async function draftAISuggestHeading(matterId,documentId){
   if(!matterId)return;
   /* v5.16c: dedicated endpoint /api/extract_heading replaces /api/analyse for
      this call. The new endpoint pulls first 1\u20132 chunks per document, regex-
@@ -1335,7 +1365,9 @@ async function draftAISuggestHeading(matterId){
      Claude. Faster, deterministic, and doesn't depend on doc_type labels. */
   var requestMatterId=matterId;
   try{
-    var d=await api('/api/extract_heading','POST',{matterId:matterId});
+    var body={matterId:matterId};
+    if(documentId)body.documentId=documentId;
+    var d=await api('/api/extract_heading','POST',body);
     /* Race-condition guard: if the user has switched matter while we were
        waiting, drop the response on the floor. */
     var sel=document.getElementById('draftMatterSelect');
@@ -1350,6 +1382,13 @@ async function draftAISuggestHeading(matterId){
     if(!d||!d.heading){
       var why=(d&&d.reason)?d.reason:'no_heading';
       console.log('AI heading suggestion: '+why+' \u2014 leaving baseline');
+      /* v5.23: extraction is user-initiated now, so failure must be
+         visible, not console-only. */
+      if(why==='no_chunks'){
+        showToast('That document has no readable text \u2014 try another, or use Render own heading');
+      }else{
+        showToast('No court heading found \u2014 try another document, or use Render own heading');
+      }
       return;
     }
     var h=d.heading;
@@ -1364,7 +1403,10 @@ async function draftAISuggestHeading(matterId){
     if(h.docTitle)draftHeading.docTitle=h.docTitle;
     updateActionHeading();
     showToast('Heading suggested from documents \u2014 click to edit');
-  }catch(e){console.log('AI heading suggestion skipped:',e.message);}
+  }catch(e){
+    console.log('AI heading suggestion skipped:',e.message);
+    showToast('Heading extraction failed: '+e.message);
+  }
 }
 
 /* ── v2.5: UPLOAD PRECEDENT MODAL DELETE (A4) ───────────────────────────── */

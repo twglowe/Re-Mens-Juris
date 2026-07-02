@@ -1121,12 +1121,49 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
   <div class="modal heading-popup">
     <h3>Edit Case Heading</h3>
     <div class="heading-preview" id="headingPreview"></div>
-    <div class="heading-field"><label>Court</label><input id="hdCourt" placeholder="e.g. IN THE SUPREME COURT OF BERMUDA" oninput="updateHeadingPreview()"></div>
-    <div class="heading-field"><label>Case Number</label><input id="hdCaseNo" placeholder="e.g. Civil Jurisdiction 2025 No. 123" oninput="updateHeadingPreview()"></div>
-    <div class="heading-field"><label>Party 1 Name</label><input id="hdParty1" placeholder="e.g. JOHN SMITH" oninput="updateHeadingPreview()"></div>
-    <div class="heading-field"><label>Party 1 Role</label><input id="hdParty1Role" placeholder="e.g. Plaintiff" oninput="updateHeadingPreview()"></div>
-    <div class="heading-field"><label>Party 2 Name</label><input id="hdParty2" placeholder="e.g. ABC COMPANY LIMITED" oninput="updateHeadingPreview()"></div>
-    <div class="heading-field"><label>Party 2 Role</label><input id="hdParty2Role" placeholder="e.g. Defendant" oninput="updateHeadingPreview()"></div>
+    <!-- v5.25: rebuilt per Tom's heading spec. Court + division come from
+         datalists (free text always allowed); "In the Matter of" lines are
+         repeatable; party roles come from datalists; the tramlined doc
+         title can be auto-composed from party role + Document Type. -->
+    <div class="heading-field"><label>Court</label><input id="hdCourt" list="hdCourtList" placeholder="Choose or type…" oninput="updateHeadingPreview()">
+      <datalist id="hdCourtList">
+        <option value="IN THE GRAND COURT OF THE CAYMAN ISLANDS"></option>
+        <option value="IN THE COURT OF APPEAL OF THE CAYMAN ISLANDS"></option>
+        <option value="IN THE SUPREME COURT OF BERMUDA"></option>
+        <option value="IN THE COURT OF APPEAL FOR BERMUDA"></option>
+        <option value="IN THE EASTERN CARIBBEAN SUPREME COURT IN THE HIGH COURT OF JUSTICE VIRGIN ISLANDS"></option>
+        <option value="IN THE EASTERN CARIBBEAN SUPREME COURT IN THE COURT OF APPEAL TERRITORY OF THE VIRGIN ISLANDS"></option>
+        <option value="IN THE JUDICIAL COMMITTEE OF THE PRIVY COUNCIL"></option>
+      </datalist>
+    </div>
+    <div class="heading-field"><label>Division</label><input id="hdDivision" list="hdDivisionList" placeholder="Optional — choose or type…" oninput="updateHeadingPreview()">
+      <datalist id="hdDivisionList">
+        <option value="FINANCIAL SERVICES DIVISION"></option>
+        <option value="CIVIL DIVISION"></option>
+        <option value="COMMERCIAL DIVISION"></option>
+        <option value="CIVIL JURISDICTION"></option>
+        <option value="COMMERCIAL JURISDICTION"></option>
+      </datalist>
+    </div>
+    <div class="heading-field"><label>Action / Case Number</label><input id="hdCaseNo" placeholder="e.g. FSD 123 OF 2026 (ABC)" oninput="updateHeadingPreview()"></div>
+    <div class="heading-field"><label>In the Matter of</label>
+      <div style="flex:1">
+        <div id="hdMatterOfRows"></div>
+        <button class="lib-box-btn" onclick="hdAddMatterOfRow('')" style="font-size:.78rem;margin-top:.2rem">+ Add "In the Matter of" line</button>
+      </div>
+    </div>
+    <div class="heading-field"><label>Party 1 Name</label><input id="hdParty1" placeholder="e.g. TIANRUI HOLDINGS LTD" oninput="updateHeadingPreview()"></div>
+    <div class="heading-field"><label>Party 1 Role</label><input id="hdParty1Role" list="hdRole1List" placeholder="Choose or type…" oninput="updateHeadingPreview()">
+      <datalist id="hdRole1List">
+        <option value="Petitioner"></option><option value="Plaintiff"></option><option value="Claimant"></option><option value="Appellant"></option><option value="Applicant"></option>
+      </datalist>
+    </div>
+    <div class="heading-field"><label>Party 2 Name</label><input id="hdParty2" placeholder="e.g. CHINA SHANSHUI CEMENT GROUP LIMITED" oninput="updateHeadingPreview()"></div>
+    <div class="heading-field"><label>Party 2 Role</label><input id="hdParty2Role" list="hdRole2List" placeholder="Choose or type…" oninput="updateHeadingPreview()">
+      <datalist id="hdRole2List">
+        <option value="Defendant"></option><option value="Defendant(s)"></option><option value="Respondent"></option><option value="Respondent(s)"></option>
+      </datalist>
+    </div>
     <!-- v5.16a: Doc Title is now a select populated from /api/draft_doc_titles.
          The hidden input keeps id=hdDocTitle for backward compatibility with
          saveHeading() / updateHeadingPreview() / openHeadingEditor(); the
@@ -1139,6 +1176,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
         </select>
         <button class="lib-box-btn" onclick="hdDocTitleAdd()" title="Add a new doc title to your list">+</button>
         <button class="lib-box-btn del" onclick="hdDocTitleRemove()" title="Delete the selected doc title from your list">−</button>
+        <button class="lib-box-btn" onclick="hdComposeDocTitle()" title="Compose from party role + Document Type, e.g. PETITIONER'S SKELETON ARGUMENT" style="font-size:.78rem">Auto</button>
       </div>
       <input type="hidden" id="hdDocTitle">
     </div>
@@ -1275,7 +1313,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <script src="/js/core.js?v=5.16c"></script>
 <script src="/js/tools.js?v=5.22"></script>
 <script src="/js/library.js?v=5.16c"></script>
-<script src="/js/drafting.js?v=5.24"></script>
+<script src="/js/drafting.js?v=5.25"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->
 <div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">

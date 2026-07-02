@@ -1,3 +1,17 @@
+/* v5.25 — 02 Jul 2026 — Push v5.25 (rebuilt heading editor, Render own):
+   Implements Tom's heading spec. draftHeading gains `division` (string)
+   and `matterOf` (array of strings). Modal: court + division datalists
+   seeded with Cayman/Bermuda/BVI/JCPC courts, repeatable "In the Matter
+   of" rows, party-role datalists, and an Auto button composing the
+   tramlined title from party role + Document Type. renderHeadingHtml
+   renders: court (+ division) left with case number right → IN THE
+   MATTER OF lines (first plain, subsequent AND IN THE MATTER OF) →
+   BETWEEN parties → tramlined title. worker.js is deliberately NOT
+   touched: persistHeadingToMatter writes heading_data.court as the
+   court+division composite that worker.js already reads, alongside the
+   structured courtName/division/matterOf fields used by this editor.
+   Files changed: public/js/drafting.js, index.html + public/index.html. */
+
 /* v5.24 — 02 Jul 2026 — Push v5.24 (per-matter heading persistence):
    matters.heading_data (JSONB, present since v3.2, already written by the
    Matter Record panel and read by worker.js) is now wired into the Draft
@@ -338,7 +352,7 @@ function draftMatterChanged(){
   if(typeof renderDraftSelectedDocs==='function')renderDraftSelectedDocs();
   if(typeof renderDraftSelectedPrecedents==='function')renderDraftSelectedPrecedents();
   /* Reset draftHeading from new matter */
-  draftHeading={party1:'',party1Role:'',party2:'',party2Role:'',court:'',caseNo:'',docTitle:''};
+  draftHeading={party1:'',party1Role:'',party2:'',party2Role:'',court:'',division:'',caseNo:'',matterOf:[],docTitle:''};
   /* v5.24: a heading previously saved for this matter wins; the guess
      from the matter name / jurisdiction is only a fallback. */
   var savedHd=m.heading_data;
@@ -348,7 +362,16 @@ function draftMatterChanged(){
     draftHeading.party1Role=String(savedHd.party1Role||'');
     draftHeading.party2=String(savedHd.party2||'');
     draftHeading.party2Role=String(savedHd.party2Role||'');
-    draftHeading.court=String(savedHd.court||'');
+    /* v5.25: prefer the structured courtName/division written by this
+       editor; legacy rows only have the composite court string. */
+    if(savedHd.courtName!==undefined){
+      draftHeading.court=String(savedHd.courtName||'');
+      draftHeading.division=String(savedHd.division||'');
+    }else{
+      draftHeading.court=String(savedHd.court||'');
+      draftHeading.division='';
+    }
+    draftHeading.matterOf=Array.isArray(savedHd.matterOf)?savedHd.matterOf.map(String):[];
     draftHeading.caseNo=String(savedHd.caseNo||'');
     draftHeading.docTitle=String(savedHd.docTitle||'');
   }else if(m.name){
@@ -804,7 +827,7 @@ function clearDraftEditor(){
   if(typeof renderDraftSelectedDocs==='function')renderDraftSelectedDocs();
   if(typeof renderDraftSelectedPrecedents==='function')renderDraftSelectedPrecedents();
   /* Reset action heading to default state */
-  draftHeading={party1:'',party1Role:'',party2:'',party2Role:'',court:'',caseNo:'',docTitle:''};
+  draftHeading={party1:'',party1Role:'',party2:'',party2Role:'',court:'',division:'',caseNo:'',matterOf:[],docTitle:''};
   var headingText=document.getElementById('draftHeadingText');
   if(headingText)headingText.textContent='Click to set action heading…';
   if(typeof updateActionHeading==='function')updateActionHeading();
@@ -836,8 +859,76 @@ if(draftInstrEl){draftInstrEl.addEventListener('input',function(){unsavedEdits=t
 var draftEditorEl=document.getElementById('draftEditor');
 if(draftEditorEl){draftEditorEl.addEventListener('input',function(){unsavedEdits=true;draftAutoSaveChoices();});}
 /* Heading Editor */
+/* v5.25: repeatable "In the Matter of" rows. */
+function hdAddMatterOfRow(val){
+  var rows=document.getElementById('hdMatterOfRows');
+  if(!rows)return;
+  var row=document.createElement('div');
+  row.style.cssText='display:flex;gap:.3rem;align-items:center;margin-bottom:.25rem';
+  var inp=document.createElement('input');
+  inp.className='hd-matterof-input';
+  inp.placeholder='e.g. CHINA SHANSHUI CEMENT GROUP LIMITED, or THE COMPANIES ACT (2025 REVISION)';
+  inp.value=val||'';
+  inp.style.cssText='flex:1';
+  inp.addEventListener('input',updateHeadingPreview);
+  var del=document.createElement('button');
+  del.className='lib-box-btn del';
+  del.textContent='\u2212';
+  del.title='Remove this line';
+  del.onclick=function(){row.remove();updateHeadingPreview();};
+  row.appendChild(inp);row.appendChild(del);
+  rows.appendChild(row);
+}
+
+function hdGetMatterOfLines(){
+  var out=[];
+  document.querySelectorAll('#hdMatterOfRows .hd-matterof-input').forEach(function(inp){
+    var v=inp.value.trim();
+    if(v)out.push(v);
+  });
+  return out;
+}
+
+/* v5.25: compose the tramlined title from party role + Document Type,
+   e.g. PETITIONER'S SKELETON ARGUMENT. Role: Party 1 Role field, falling
+   back to the matter's acting_for. */
+function hdComposeDocTitle(){
+  var role=(document.getElementById('hdParty1Role').value||'').trim();
+  if(!role){
+    var matterId=document.getElementById('draftMatterSelect').value;
+    var m=matterId?matters.find(function(x){return x.id===matterId;}):null;
+    if(m&&m.acting_for)role=m.acting_for;
+  }
+  var dtName=getSelectedDocTypeName();
+  if(!role&&!dtName){showToast('Set a Party 1 role and a Document Type first');return;}
+  var roleU=role.toUpperCase();
+  var poss=roleU?(roleU+(/S$/.test(roleU)?'\u2019':'\u2019S')+' '):'';
+  var title=(poss+(dtName||'').toUpperCase()).trim();
+  document.getElementById('hdDocTitle').value=title;
+  /* Reflect in the select if the exact title exists there; otherwise the
+     hidden input alone carries it (same pattern as openHeadingEditor). */
+  var sel=document.getElementById('hdDocTitleSelect');
+  if(sel){
+    var found=false;
+    for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===title){sel.value=title;found=true;break;}}
+    if(!found){
+      var opt=document.createElement('option');
+      opt.value=title;opt.textContent=title;
+      sel.appendChild(opt);sel.value=title;
+    }
+  }
+  updateHeadingPreview();
+}
+
 function openHeadingEditor(){
   document.getElementById('hdCourt').value=draftHeading.court;
+  var dv=document.getElementById('hdDivision');
+  if(dv)dv.value=draftHeading.division||'';
+  var rows=document.getElementById('hdMatterOfRows');
+  if(rows){
+    rows.innerHTML='';
+    (draftHeading.matterOf||[]).forEach(function(v){hdAddMatterOfRow(v);});
+  }
   document.getElementById('hdCaseNo').value=draftHeading.caseNo;
   document.getElementById('hdParty1').value=draftHeading.party1;
   document.getElementById('hdParty1Role').value=draftHeading.party1Role;
@@ -913,6 +1004,8 @@ function _hdgIsInTheMatter(headingObj){
 function renderHeadingHtml(headingObj){
   if(!headingObj)return '';
   var court=(headingObj.court||'').trim();
+  var division=(headingObj.division||'').trim();
+  var matterOf=Array.isArray(headingObj.matterOf)?headingObj.matterOf.filter(function(x){return String(x).trim();}):[];
   var caseNo=(headingObj.caseNo||'').trim();
   var p1=(headingObj.party1||'').trim();
   var p1r=(headingObj.party1Role||'').trim();
@@ -921,9 +1014,9 @@ function renderHeadingHtml(headingObj){
   var docTitle=(headingObj.docTitle||'').trim();
   /* If absolutely nothing is set, return empty so callers can fall back to
      placeholder text. */
-  if(!court&&!caseNo&&!p1&&!p2&&!docTitle)return '';
+  if(!court&&!division&&!matterOf.length&&!caseNo&&!p1&&!p2&&!docTitle)return '';
 
-  var inMatter=_hdgIsInTheMatter(headingObj);
+  var inMatter=matterOf.length?false:_hdgIsInTheMatter(headingObj);
 
   var html='<div style="font-family:\'Libre Baskerville\',serif;line-height:1.7;color:var(--navy)">';
 
@@ -935,7 +1028,7 @@ function renderHeadingHtml(headingObj){
       /* Court is bold + uppercase + underlined per Tom's spec. White-space:pre-line
          lets multi-line court names (e.g. with FINANCIAL SERVICES DIVISION on a
          second line) render with line breaks if the AI returned them that way. */
-      html+='<div style="font-size:.88rem;font-weight:700;text-transform:uppercase;text-decoration:underline;text-align:left;white-space:pre-line">'+esc(court)+'</div>';
+      html+='<div style="font-size:.88rem;font-weight:700;text-transform:uppercase;text-decoration:underline;text-align:left;white-space:pre-line">'+esc(court)+(division?'\n'+esc(division):'')+'</div>';
     }else{
       html+='<div></div>';
     }
@@ -945,7 +1038,21 @@ function renderHeadingHtml(headingObj){
     html+='</div>';
   }
 
-  /* Connector + parties block, centred. */
+  /* v5.25: explicit IN THE MATTER OF lines, centred, before the parties.
+     First line plain, subsequent lines prefixed AND. A user-typed leading
+     "(and) in the matter of" is stripped to avoid doubling. */
+  if(matterOf.length){
+    html+='<div style="text-align:center">';
+    for(var mi=0;mi<matterOf.length;mi++){
+      var moTxt=String(matterOf[mi]).trim().replace(/^(and\s+)?in\s+the\s+matter\s+of\s+/i,'');
+      html+='<div style="font-size:.9rem;font-weight:700;letter-spacing:.03em;margin:'+(mi===0?'.4rem':'.2rem')+' 0 0">'+(mi===0?'IN THE MATTER OF ':'AND IN THE MATTER OF ')+esc(moTxt.toUpperCase())+'</div>';
+    }
+    html+='</div>';
+  }
+
+  /* Connector + parties block, centred. v5.25: when explicit matterOf
+     lines exist, parties always render as BETWEEN (the legacy in-matter
+     heuristic only applies when there are no explicit lines). */
   if(p1||p2){
     html+='<div style="text-align:center">';
     if(inMatter){
@@ -989,8 +1096,11 @@ function renderHeadingHtml(headingObj){
 function updateHeadingPreview(){
   /* v5.16b: build a temporary heading object from the modal inputs and
      render with the shared renderer. */
+  var dvEl=document.getElementById('hdDivision');
   var temp={
     court:document.getElementById('hdCourt').value.trim(),
+    division:dvEl?dvEl.value.trim():'',
+    matterOf:hdGetMatterOfLines(),
     caseNo:document.getElementById('hdCaseNo').value.trim(),
     party1:document.getElementById('hdParty1').value.trim(),
     party1Role:document.getElementById('hdParty1Role').value.trim(),
@@ -1011,7 +1121,12 @@ function updateHeadingPreview(){
    where only the owner may PATCH). */
 function persistHeadingToMatter(matterId){
   if(!matterId)return;
-  var hd={party1:draftHeading.party1,party1Role:draftHeading.party1Role,party2:draftHeading.party2,party2Role:draftHeading.party2Role,court:draftHeading.court,caseNo:draftHeading.caseNo,docTitle:draftHeading.docTitle};
+  /* v5.25: heading_data.court stays the composite string that worker.js
+     formatCourtHeading already reads (court + division on a second line);
+     courtName/division/matterOf are the structured fields this editor
+     round-trips. worker.js is NOT modified. */
+  var compositeCourt=draftHeading.court+(draftHeading.division?'\n'+draftHeading.division:'');
+  var hd={party1:draftHeading.party1,party1Role:draftHeading.party1Role,party2:draftHeading.party2,party2Role:draftHeading.party2Role,court:compositeCourt,courtName:draftHeading.court,division:draftHeading.division||'',matterOf:(draftHeading.matterOf||[]).slice(),caseNo:draftHeading.caseNo,docTitle:draftHeading.docTitle};
   api('/api/matters?id='+matterId,'PATCH',{heading_data:hd}).then(function(){
     var m=matters.find(function(x){return x.id===matterId;});
     if(m)m.heading_data=hd;
@@ -1023,6 +1138,9 @@ function persistHeadingToMatter(matterId){
 
 function saveHeading(){
   draftHeading.court=document.getElementById('hdCourt').value.trim();
+  var dvEl=document.getElementById('hdDivision');
+  draftHeading.division=dvEl?dvEl.value.trim():'';
+  draftHeading.matterOf=hdGetMatterOfLines();
   draftHeading.caseNo=document.getElementById('hdCaseNo').value.trim();
   draftHeading.party1=document.getElementById('hdParty1').value.trim();
   draftHeading.party1Role=document.getElementById('hdParty1Role').value.trim();

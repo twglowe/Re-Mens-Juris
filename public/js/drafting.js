@@ -1,3 +1,12 @@
+/* v5.32 — 02 Jul 2026 — Push v5.32 (Generate Draft gate):
+   generateDraft now checks the matter's history (fresh GET /api/history,
+   same server-side reasoning as the v5.16f duplicate-job guard) for at
+   least one output each from the briefing, issues and chronology tools.
+   If any is missing, a confirm() dialogue lists what is missing and the
+   user may proceed or cancel. History-fetch failure skips the gate
+   (advisory, not a hard block). worker.js untouched. Files changed:
+   public/js/drafting.js, index.html + public/index.html (cache-bust only). */
+
 /* v5.31 — 02 Jul 2026 — Push v5.31 (Context Documents folder navigation):
    Box 5 is now a folder → file two-step. A folder select (All documents /
    Uncategorised / folder tree from GET /api/folders, children indented)
@@ -1601,6 +1610,28 @@ async function generateDraft(){
        surface anything that goes wrong. The guard is defensive, not a hard
        gate. */
     console.log('Draft duplicate-job guard skipped:',guardErr.message);
+  }
+  /* v5.32: pre-generation gate. Drafts are stronger when Briefing, Issues
+     and Chronology have been run on the matter first. Check fresh history
+     server-side (same reasoning as the duplicate-job guard: this tab's
+     matterHistory stash may be stale or belong to a different matter). If
+     any of the three is missing, warn and let the user override via
+     confirm(). History-fetch failure skips the gate — it is advisory, not
+     a hard block. */
+  try{
+    var gh=await api('/api/history?matter_id='+matterId);
+    var ghRows=(gh&&gh.history)?gh.history:[];
+    var GATE_TOOLS=['briefing','issues','chronology'];
+    var GATE_LABELS={briefing:'Briefing',issues:'Issues',chronology:'Chronology'};
+    var missing=GATE_TOOLS.filter(function(t){return !ghRows.some(function(h){return h.tool_name===t;});});
+    console.log('v5.32 gate: missing tool outputs: '+(missing.length?missing.join(', '):'none'));
+    if(missing.length){
+      var missNames=missing.map(function(t){return GATE_LABELS[t];});
+      var listText=missNames.length===1?missNames[0]:missNames.slice(0,-1).join(', ')+' and '+missNames[missNames.length-1];
+      if(!confirm('This matter has no '+listText+' output yet.\n\nDrafts are stronger when these tools have been run first.\n\nGenerate anyway?'))return;
+    }
+  }catch(gateErr){
+    console.log('Draft pre-generation gate skipped:',gateErr.message);
   }
   var ctId=document.getElementById('draftCaseType').value;
   var dtId=document.getElementById('draftDocType').value;

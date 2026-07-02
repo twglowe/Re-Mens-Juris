@@ -685,10 +685,6 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
               </select>
             </div>
             <div>
-              <div class="draft-field-label">Case Heading</div>
-              <button class="draft-heading-btn" id="draftHeadingBtn" onclick="openHeadingEditor()">Click to set heading…</button>
-            </div>
-            <div>
               <div class="draft-field-label">Case Type</div>
               <div style="display:flex;gap:.3rem">
                 <select class="draft-field-select" id="draftCaseType" onchange="draftCaseTypeChanged()" style="flex:1"><option value="">— Select —</option></select>
@@ -712,10 +708,17 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
                 <button class="lib-box-btn del" onclick="draftDeleteFromSelect('doctype')" title="Delete selected">−</button>
               </div>
             </div>
-            <!-- v5.16a: Matter Documents list permanently hidden. The exclude
-                 picker on the Sources tab covers the same need more precisely. -->
-            <div id="draftMatterDocsWrap" style="display:none">
-              <div class="draft-doc-list" id="draftMatterDocs"></div>
+            <!-- v5.23: Heading moved below Document Type (doc type feeds the
+                 tramlined title). Two explicit modes: Simple takes the heading
+                 from a chosen matter document; Render own opens the editor.
+                 The dead v5.16a Matter Documents checkbox list is removed. -->
+            <div>
+              <div class="draft-field-label">Heading</div>
+              <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
+                <select class="draft-field-select" id="draftHeadingSrcDoc" style="flex:1;font-size:.8rem"><option value="">— Simple: take from document —</option></select>
+                <button class="lib-box-btn" id="draftHeadingSimpleBtn" onclick="draftUseHeadingFromDoc()" title="Extract and display the heading from the selected document" style="min-width:26px">✓</button>
+              </div>
+              <button class="draft-heading-btn" id="draftHeadingBtn" onclick="openHeadingEditor()">Render own heading…</button>
             </div>
           </div>
         </div>
@@ -1272,7 +1275,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <script src="/js/core.js?v=5.16c"></script>
 <script src="/js/tools.js?v=5.22"></script>
 <script src="/js/library.js?v=5.16c"></script>
-<script src="/js/drafting.js?v=5.17"></script>
+<script src="/js/drafting.js?v=5.23"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->
 <div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">

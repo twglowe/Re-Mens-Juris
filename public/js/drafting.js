@@ -1,3 +1,18 @@
+/* v5.34 — 02 Jul 2026 — Push v5.34 (full-pipeline Redraft):
+   The Further Instructions bar under the draft editor gains a ⟳ Redraft
+   button beside the existing ➤ quick update. ➤ is unchanged (text-only
+   edit via /api/analyse, seconds). ⟳ resubmits the whole matter through
+   the draft pipeline: the comments become the instructions, the current
+   editor text is appended under === PREVIOUS DRAFT ===, and a REDRAFT
+   brief directs revision per the comments with the matter re-read (Tom's
+   choice, 02 Jul). Duplicate-job guard and pre-generation gate apply as
+   for a fresh generate; the panel returns to the generating state and the
+   poll re-opens the editor with the new version; the old version stays in
+   Previous drafts. generateDraft now takes an optional redraftOpts and
+   returns true when a job was submitted. worker.js untouched. Files
+   changed: public/js/drafting.js, index.html + public/index.html (Redraft
+   button + cache-bust). */
+
 /* v5.33 — 02 Jul 2026 — Push v5.33 (generate from an Instructions document alone):
    generateDraft no longer insists on typed text in the main instructions
    textarea when a document is selected or uploaded in the Instructions box
@@ -1583,10 +1598,22 @@ function buildDraftDirectives(userInstructions){
   return lines.join('\n')+'\n\n=== INSTRUCTIONS ===\n'+(userInstructions||'No further instructions are typed. Take the drafting instructions from the document(s) named above as containing drafting instructions.');
 }
 
-async function generateDraft(){
+async function generateDraft(redraftOpts){
+  /* v5.34: when called from draftDialogueRedraft, redraftOpts carries
+     {comments, previous}. The comments stand as the instructions and the
+     previous draft is appended to the brief via buildRedraftDirectives;
+     everything else (duplicate-job guard, pre-generation gate, whole-matter
+     read) is identical to a fresh generate, per Tom's instruction that
+     redrafts re-read the matter. Returns true when a job was submitted,
+     falsy otherwise, so the redraft caller knows whether to switch the
+     panel to the generating state. onclick="generateDraft()" passes no
+     argument — fresh generates are unchanged. */
+  var isRedraft=!!(redraftOpts&&redraftOpts.comments);
   var matterId=document.getElementById('draftMatterSelect').value;
   if(!matterId){showToast('Select a matter first');return;}
   var instructions=document.getElementById('draftMainInstructions').value.trim();
+  /* v5.34: on a redraft the comments ARE the instructions. */
+  if(isRedraft)instructions=redraftOpts.comments;
   /* v5.33: a document in the Instructions box satisfies the requirement —
      typed text is optional when the instructions arrive as a document.
      buildDraftDirectives already names Instructions-box documents in the
@@ -1665,6 +1692,8 @@ async function generateDraft(){
   try{
     /* v5.29: prepend document-shape directives + named source documents. */
     var finalInstructions=buildDraftDirectives(instructions);
+    /* v5.34: wrap with the redraft brief and append the previous draft. */
+    if(isRedraft)finalInstructions=buildRedraftDirectives(finalInstructions,redraftOpts.previous);
     var body={matterId:matterId,tool:'draft',instructions:finalInstructions,jurisdiction:draftJur(),actingFor:'',courtHeading:draftHeading};
     if(ctId)body.caseTypeId=ctId;
     if(dtId)body.docTypeId=dtId;
@@ -1705,7 +1734,46 @@ async function generateDraft(){
        clears the stash. */
     window._inflightDraftJob={jobId:d.jobId,matterId:matterId};
     _runDraftPoll(d.jobId,matterId,ctId,stId,dtId,finalInstructions,prog,'generate',freshDraftRowId);
+    return true;
   }catch(e){document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';showToast('Draft error: '+e.message);}
+}
+
+/* v5.34: redraft brief. Wraps the normal directives (which carry the
+   comments under === INSTRUCTIONS ===) and appends the previous draft. */
+function buildRedraftDirectives(baseInstructions,previousDraft){
+  var base=baseInstructions.indexOf('=== INSTRUCTIONS ===')!==-1?baseInstructions:'=== INSTRUCTIONS ===\n'+baseInstructions;
+  var lines=[];
+  lines.push('REDRAFT:');
+  lines.push('- A previous draft of this document appears below under === PREVIOUS DRAFT ===.');
+  lines.push('- Revise that draft in accordance with the comments under === INSTRUCTIONS ===.');
+  lines.push('- Re-read the matter documents afresh where the comments require it.');
+  lines.push('- Retain the substance of passages the comments do not touch, unless they conflict with the comments.');
+  lines.push('- Return the complete revised document, not only the changed passages.');
+  return lines.join('\n')+'\n\n'+base+'\n\n=== PREVIOUS DRAFT ===\n'+(previousDraft||'');
+}
+
+/* v5.34: full-pipeline redraft from the Further Instructions bar. The
+   quick ➤ path (draftDialogueSend) edits the draft text only via
+   /api/analyse; this ⟳ path resubmits the whole matter through the draft
+   pipeline with the current draft text and the comments. The previous
+   version remains in Previous drafts (each job writes a fresh drafts row
+   server-side since v5.17). */
+async function draftDialogueRedraft(){
+  var input=document.getElementById('draftDialogueInput');
+  var comments=input?input.value.trim():'';
+  if(!comments){showToast('Type the comments or further instructions for the redraft');return;}
+  var editor=document.getElementById('draftEditor');
+  var previous=editor?(editor.innerText||editor.textContent||''):'';
+  if(!previous.trim()){showToast('No draft in the editor to redraft');return;}
+  var ok=await generateDraft({comments:comments,previous:previous});
+  if(ok){
+    input.value='';
+    /* Return the panel to the generating state so the standard progress
+       message is visible; the poll's completion path re-opens the editor
+       with the new version. */
+    document.getElementById('draftOutputWrap').classList.add('hidden');
+    document.getElementById('draftInstructionsBody').style.display='';
+  }
 }
 
 /* Draft rich text commands */

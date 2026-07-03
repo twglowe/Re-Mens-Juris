@@ -967,8 +967,10 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
               <div class="draft-dialogue">
                 <div style="font-size:.72rem;font-weight:700;color:var(--text-light);letter-spacing:.05em;text-transform:uppercase;margin-bottom:.3rem">Further Instructions</div>
                 <div class="draft-dialogue-row">
-                  <textarea class="draft-dialogue-input" id="draftDialogueInput" placeholder="Give further instructions to refine the draft…" rows="1"></textarea>
-                  <button class="draft-dialogue-send" onclick="draftDialogueSend()">➤</button>
+                  <textarea class="draft-dialogue-input" id="draftDialogueInput" placeholder="Comments or further instructions — ➤ quick update of the text, ⟳ full redraft re-reading the matter…" rows="1"></textarea>
+                  <button class="draft-dialogue-send" onclick="draftDialogueSend()" title="Quick update — edits the draft text only (seconds)">➤</button>
+                  <!-- v5.34: full-pipeline redraft — re-reads the whole matter. -->
+                  <button class="draft-dialogue-send" id="draftRedraftBtn" onclick="draftDialogueRedraft()" title="Full redraft — re-reads the matter documents (takes minutes)">⟳</button>
                 </div>
               </div>
             </div>
@@ -1317,7 +1319,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <script src="/js/core.js?v=5.28"></script>
 <script src="/js/tools.js?v=5.22"></script>
 <script src="/js/library.js?v=5.16c"></script>
-<script src="/js/drafting.js?v=5.33"></script>
+<script src="/js/drafting.js?v=5.34"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->
 <div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">

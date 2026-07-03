@@ -1,3 +1,13 @@
+/* v5.38 — 02 Jul 2026 — Push v5.38 (Case sub-tab selects fixed):
+   libPopulateDraftSelects preserves the Draft tab's Case Type / Stage /
+   Doc Type selections across library reloads and repopulates the Stage
+   and Doc Type lists for the selected Case Type — previously every reload
+   (including the one Quick Add triggers) wiped the Case Type and emptied
+   both lists, so freshly-added items never appeared. Companion change in
+   library.js quickAddSave (Draft-tab case type wins; new item selected).
+   worker.js untouched. Files: public/js/drafting.js, public/js/library.js,
+   index.html + public/index.html (cache-busts). */
+
 /* v5.37 — 02 Jul 2026 — Push v5.37 (hearing note directives):
    New buildDraftDirectives branch for Document Types whose name contains
    "hearing note" ("respond" in the name = responding seat; otherwise
@@ -433,9 +443,28 @@ function draftJur(){
 function libPopulateDraftSelects(){
   var ct=document.getElementById('draftCaseType');
   if(!ct)return;
+  /* v5.38: preserve the Draft tab's selections across library reloads.
+     Previously every reload (including the one Quick Add triggers) wiped
+     the Case Type selection and emptied the Stage / Doc Type lists, so a
+     freshly-added item never appeared. Now the Case Type value survives,
+     and Stage / Doc Type are repopulated for that Case Type with their
+     own values restored where the option still exists. */
+  var ctVal=ct.value;
+  var stSel=document.getElementById('draftStage');
+  var dtSel=document.getElementById('draftDocType');
+  var stVal=stSel?stSel.value:'';
+  var dtVal=dtSel?dtSel.value:'';
   ct.innerHTML='<option value="">— Select —</option>'+libraryData.caseTypes.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>';}).join('');
-  document.getElementById('draftStage').innerHTML='<option value="">— Select —</option>';
-  document.getElementById('draftDocType').innerHTML='<option value="">— Select —</option>';
+  if(ctVal)ct.value=ctVal;
+  ctVal=ct.value; /* '' again if that case type no longer exists */
+  var stOpts='<option value="">— Select —</option>';
+  var dtOpts='<option value="">— Select —</option>';
+  if(ctVal){
+    stOpts+=libraryData.subcats.filter(function(s){return s.case_type_id===ctVal;}).map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
+    dtOpts+=libraryData.docTypes.filter(function(d){return d.case_type_id===ctVal;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
+  }
+  if(stSel){stSel.innerHTML=stOpts;if(stVal)stSel.value=stVal;}
+  if(dtSel){dtSel.innerHTML=dtOpts;if(dtVal)dtSel.value=dtVal;}
   /* Populate matter dropdown */
   var ms=document.getElementById('draftMatterSelect');
   if(ms){

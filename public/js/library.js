@@ -1,4 +1,10 @@
 /* ── LIBRARY ──────────────────────────────────────────────────────────────── */
+/* v5.38 — 02 Jul 2026: quickAddSave — when Quick Add is used from the
+   Draft tab, the Draft tab's Case Type takes priority for attaching a new
+   stage/doc type (previously the Library tab's search filter silently
+   won), and the new item is selected in the relevant Draft dropdown after
+   saving. Companion change: drafting.js libPopulateDraftSelects preserves
+   selections across library reloads. */
 /* v5.12b: matter-document index indicator state machine. Lives at the top of
    the Library left panel above the Precedent search. The whole thing is
    driven by the status returned by GET /api/index-library?action=status,
@@ -471,25 +477,39 @@ function libQuickAdd(type){
   document.getElementById('quickAddModal').style.display='flex';
   setTimeout(function(){document.getElementById('quickAddName').focus();},100);
 }
+/* v5.38: when Quick Add is used from the Draft tab, the Draft tab's Case
+   Type must win — previously a leftover selection in the Library tab's
+   search filter or box silently claimed the new stage/doc type. */
+function _quickAddDraftCt(){
+  var dcp=document.getElementById('draftCentrePanel');
+  if(!dcp||dcp.style.display==='none')return null;
+  var dsel=document.getElementById('draftCaseType');
+  return (dsel&&dsel.value)?dsel.value:null;
+}
 async function quickAddSave(){
   var name=document.getElementById('quickAddName').value.trim();
   if(!name){showToast('Please enter a name');return;}
+  var usedCt=null;
   try{
     if(quickAddType==='casetype'){
       await api('/api/library','POST',{action:'create_case_type',name:name,jurisdiction:jurisdiction,subcats:[],docTypes:[]});
     }else if(quickAddType==='subcat'){
-      var ctId=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;
+      var ctId=_quickAddDraftCt();
+      if(!ctId){ctId=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;}
       if(!ctId){var sel=document.getElementById('libBoxCaseType');if(sel)ctId=sel.value;}
       if(!ctId){var dsel=document.getElementById('draftCaseType');if(dsel)ctId=dsel.value;}
       if(!ctId&&libraryData.caseTypes.length){ctId=libraryData.caseTypes[0].id;}
       if(!ctId){showToast('Add a case type first');return;}
+      usedCt=ctId;
       await api('/api/library','POST',{action:'create_subcat',name:name,case_type_id:ctId});
     }else if(quickAddType==='doctype'){
-      var ctId2=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;
+      var ctId2=_quickAddDraftCt();
+      if(!ctId2){ctId2=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;}
       if(!ctId2){var sel2=document.getElementById('libBoxCaseType');if(sel2)ctId2=sel2.value;}
       if(!ctId2){var dsel2=document.getElementById('draftCaseType');if(dsel2)ctId2=dsel2.value;}
       if(!ctId2&&libraryData.caseTypes.length){ctId2=libraryData.caseTypes[0].id;}
       if(!ctId2){showToast('Add a case type first');return;}
+      usedCt=ctId2;
       await api('/api/library','POST',{action:'create_doc_type',name:name,case_type_id:ctId2});
     }
     closeModal('quickAddModal');
@@ -497,6 +517,25 @@ async function quickAddSave(){
     /* Re-populate the upload modal dropdowns if it's still open */
     if(document.getElementById('precUploadModal').style.display==='flex'){
       precUpCaseTypeChanged();
+    }
+    /* v5.38: if added from the Draft tab, select the new item there.
+       libPopulateDraftSelects (run by loadLibrary) now preserves the
+       Case Type and repopulates Stage/Doc Type, so the new option exists;
+       find it by name within the case type it was attached to. */
+    if(document.getElementById('draftCentrePanel')&&document.getElementById('draftCentrePanel').style.display!=='none'){
+      if(quickAddType==='casetype'){
+        var nc=libraryData.caseTypes.find(function(c){return c.name===name;});
+        var cs=document.getElementById('draftCaseType');
+        if(nc&&cs){cs.value=nc.id;if(typeof draftCaseTypeChanged==='function')draftCaseTypeChanged();}
+      }else if(quickAddType==='subcat'&&usedCt){
+        var nsc=libraryData.subcats.find(function(x){return x.case_type_id===usedCt&&x.name===name;});
+        var ss=document.getElementById('draftStage');
+        if(nsc&&ss)ss.value=nsc.id;
+      }else if(quickAddType==='doctype'&&usedCt){
+        var nd=libraryData.docTypes.find(function(x){return x.case_type_id===usedCt&&x.name===name;});
+        var ds=document.getElementById('draftDocType');
+        if(nd&&ds)ds.value=nd.id;
+      }
     }
     showToast('Added: '+name);
   }catch(e){showToast('Error: '+e.message);}

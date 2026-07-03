@@ -1,3 +1,12 @@
+/* v5.33 — 02 Jul 2026 — Push v5.33 (generate from an Instructions document alone):
+   generateDraft no longer insists on typed text in the main instructions
+   textarea when a document is selected or uploaded in the Instructions box
+   (Box 1). buildDraftDirectives tells the engine to take its instructions
+   from the named document(s) when nothing is typed. Nothing typed AND no
+   Instructions document → blocked as before, clearer toast. worker.js
+   untouched. Files changed: public/js/drafting.js, index.html +
+   public/index.html (cache-bust only). */
+
 /* v5.32 — 02 Jul 2026 — Push v5.32 (Generate Draft gate):
    generateDraft now checks the matter's history (fresh GET /api/history,
    same server-side reasoning as the v5.16f duplicate-job guard) for at
@@ -1567,14 +1576,24 @@ function buildDraftDirectives(userInstructions){
     }
   }
   if(!lines.length)return userInstructions;
-  return lines.join('\n')+'\n\n=== INSTRUCTIONS ===\n'+userInstructions;
+  /* v5.33: when nothing is typed, the Instructions-box document(s) named
+     above ARE the instructions — say so explicitly. generateDraft only
+     lets an empty instructions string through when such a document is
+     selected. */
+  return lines.join('\n')+'\n\n=== INSTRUCTIONS ===\n'+(userInstructions||'No further instructions are typed. Take the drafting instructions from the document(s) named above as containing drafting instructions.');
 }
 
 async function generateDraft(){
   var matterId=document.getElementById('draftMatterSelect').value;
   if(!matterId){showToast('Select a matter first');return;}
   var instructions=document.getElementById('draftMainInstructions').value.trim();
-  if(!instructions){showToast('Please enter drafting instructions');return;}
+  /* v5.33: a document in the Instructions box satisfies the requirement —
+     typed text is optional when the instructions arrive as a document.
+     buildDraftDirectives already names Instructions-box documents in the
+     brief (v5.29) and now directs the engine to take its instructions from
+     them when nothing is typed. */
+  var hasInstrDoc=(typeof draftSelectedDocs!=='undefined'&&draftSelectedDocs.src1&&draftSelectedDocs.src1.length>0);
+  if(!instructions&&!hasInstrDoc){showToast('Type drafting instructions or add a document to the Instructions box');return;}
   /* v5.16f Push B: duplicate-job guard. Before kicking off a new draft job,
      check the server for any in-flight draft job on this matter. The check
      is server-side (not just window._inflightDraftJob) because that stash

@@ -1,3 +1,19 @@
+/* v5.40 — 03 Jul 2026 — Push v5.40 (draft persistence + history display):
+   1. draftAutoSaveChoices only sends draft_content when the editor has
+      content — an empty editor can no longer erase a server-side draft
+      (root cause of the 03 Jul wipe: generateDraft attaches
+      currentDraftId at job start, the worker fills the row on
+      completion, and an autosave from a reloaded/empty browser then
+      PUT '' over the finished draft).
+   2. Lazy draft-row creation no longer counts the instructions box —
+      per-matter persistent instructions (v5.35) made every matter
+      selection spawn an empty drafts row.
+   3. tools.js: toolDefs gains a 'draft' entry so clicking a draft in
+      History renders it (previously threw on the missing definition and
+      showed nothing).
+   worker.js untouched. Files: public/js/drafting.js, public/js/tools.js,
+   index.html + public/index.html (cache-busts). */
+
 /* v5.39 — 02 Jul 2026 — Push v5.39 (Document Type first):
    The Case sub-tab reorders to Matter → Document Type → Case Type →
    Stage → Heading. populateDraftDocTypeSelect lists EVERY document type,
@@ -1018,7 +1034,12 @@ function draftAutoSaveChoices(){
     var dtVal=document.getElementById('draftDocType').value||null;
     var instrVal=document.getElementById('draftMainInstructions').value||'';
     var contentVal=editorEl?editorEl.innerHTML:'';
-    var hasAnyData=!!(ctVal||stVal||dtVal||instrVal.trim()||(contentVal&&contentVal.trim()));
+    /* v5.40: instrVal removed from the lazy-create trigger. Since v5.35
+       the instructions box is per-matter and loads on matter selection,
+       so counting it here spawned an empty drafts row for every matter
+       merely selected. Only real signals create a row: a dropdown pick
+       or actual editor content. */
+    var hasAnyData=!!(ctVal||stVal||dtVal||(contentVal&&contentVal.trim()));
 
     /* v5.16a (Issue #4 fix): lazy draft-row creation. If the user has
        picked any dropdown / typed any instruction but there is no
@@ -1067,9 +1088,15 @@ function draftAutoSaveChoices(){
       subcat_id:stVal,
       doc_type_id:dtVal,
       heading_data:draftHeading,
-      instructions:instrVal,
-      draft_content:contentVal
+      instructions:instrVal
     };
+    /* v5.40: draft_content is only sent when the editor actually has
+       content. An empty editor in this browser must NEVER be able to
+       erase a draft on the server — the worker writes the finished
+       draft into this very row while the editor sits empty (the
+       03 Jul wipe: job 0c3b9373's draft was overwritten by '' from an
+       attached, empty editor after a reload). Choices still save. */
+    if(contentVal&&contentVal.trim())updates.draft_content=contentVal;
     api('/api/drafts?id='+currentDraftId,'PUT',updates).then(function(){
       unsavedEdits=false;
     }).catch(function(e){console.log('Draft auto-save:',e.message);});

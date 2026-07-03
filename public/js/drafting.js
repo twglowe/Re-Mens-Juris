@@ -1,3 +1,11 @@
+/* v5.41 — 03 Jul 2026 — Push v5.41 (render loaded drafts):
+   loadDraftIntoEditor renders worker-persisted markdown via renderMd
+   (detected by absence of a leading '<'); previously raw markdown went
+   straight into innerHTML, displaying as an unformatted lump whose line
+   structure collapsed on Word export (front sheet with a mangled body).
+   Client-saved HTML rows load unchanged. worker.js untouched. Files:
+   public/js/drafting.js, index.html + public/index.html (cache-bust). */
+
 /* v5.40 — 03 Jul 2026 — Push v5.40 (draft persistence + history display):
    1. draftAutoSaveChoices only sends draft_content when the editor has
       content — an empty editor can no longer erase a server-side draft
@@ -762,7 +770,16 @@ async function loadDraftIntoEditor(draftId){
   document.getElementById('draftInstructionsBody').style.display='none';
   document.getElementById('draftOutputWrap').classList.remove('hidden');
   var editor=document.getElementById('draftEditor');
-  if(editor){editor.innerHTML=dr.draft_content||'';}
+  if(editor){
+    var dc=dr.draft_content||'';
+    /* v5.41: worker-persisted drafts are raw markdown (the live poll path
+       renders via renderMd before display; this path pasted it raw, so
+       loaded drafts showed as an unformatted lump and lost their line
+       structure on Word export). Client-saved rows are already HTML —
+       detect by leading '<'. */
+    if(dc&&!/^\s*</.test(dc))dc=renderMd(dc);
+    editor.innerHTML=dc;
+  }
   /* Restore heading if present */
   if(dr.heading_data){
     try{

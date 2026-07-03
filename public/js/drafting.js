@@ -1,3 +1,20 @@
+/* v5.37 — 02 Jul 2026 — Push v5.37 (hearing note directives):
+   New buildDraftDirectives branch for Document Types whose name contains
+   "hearing note" ("respond" in the name = responding seat; otherwise
+   presenting). Working note for counsel, not a filed document: headings /
+   sub-points / sub-sub-points; presenting organised by our themes (open
+   with points the other side missed, opposing arguments woven into their
+   theme, separate section only if substantial); responding organised by
+   the issues and themes their skeleton raises in the order most effective
+   for us. Every point referenced to their skeleton (paragraph), hearing
+   bundle (consecutive bundle pagination, never internal pagination) and
+   authorities bundle (tab/page + full citation). Source-checking per
+   doctrine. NO GUESSING: 🚩 [NO REFERENCE: …] / 🚩 [ANY IDEAS RE PARA …]
+   red flags instead of invented references or answers. Tool outputs reach
+   the note via matterToolHistory (v5.11a) and the Background box. Tom to
+   create the two Library Document Types. worker.js untouched. Files:
+   public/js/drafting.js, index.html + public/index.html (cache-bust). */
+
 /* v5.35 — 02 Jul 2026 — Push v5.35 (persistent per-matter instructions):
    The main Draft-tab instructions textarea is saved to a new
    matters.draft_instructions column (debounced PATCH, like heading_data)
@@ -1601,6 +1618,12 @@ function buildDraftDirectives(userInstructions){
   var dtName=getSelectedDocTypeName()||'';
   var isSkeleton=/skeleton|submission/i.test(dtName);
   var isRejoinder=/rejoinder/i.test(dtName);
+  /* v5.37: hearing notes — working notes for counsel at the hearing.
+     Two Library Document Types expected: names containing "hearing note"
+     plus "respond" for the responding seat; anything else (present/open)
+     is the presenting seat. */
+  var isHearingNote=/hearing\s*note/i.test(dtName);
+  var hnResponding=isHearingNote&&/respond/i.test(dtName);
   function names(k){return (draftSelectedDocs[k]||[]).map(function(x){return x.name;}).filter(Boolean);}
   var instrDocs=names('src1');
   var respDocs=names('src2');
@@ -1611,7 +1634,26 @@ function buildDraftDirectives(userInstructions){
   if(respDocs.length)lines.push('THIS DRAFT RESPONDS TO: '+respDocs.join('; ')+'. Direct the draft at that document.');
   if(bgDocs.length)lines.push('Background documents and tool outputs to rely on: '+bgDocs.join('; ')+'.');
   if(ctxDocs.length)lines.push('Context documents (read for relevance): '+ctxDocs.join('; ')+'.');
-  if(isRejoinder){
+  if(isHearingNote){
+    /* v5.37: hearing note doctrine (Tom, 02 Jul). */
+    lines.push('');
+    lines.push('DOCUMENT SHAPE — HEARING NOTE ('+(hnResponding?'RESPONDING':'PRESENTING')+'):');
+    lines.push('- This is a working note for counsel’s own use at the hearing, NOT a filed document. No narrative, no Reading List, no court formalities.');
+    lines.push('- Structure: headings, sub-points and sub-sub-points (numbered 1 / 1.1 / 1.1.1).');
+    lines.push('- Identify the issues and themes raised by the other side’s skeleton. Where an issue or proposition is agreed, say so expressly.');
+    if(hnResponding){
+      lines.push('- Organise by the issues and themes raised by the other side’s skeleton, in the order most effective for our side — not necessarily their order.');
+      lines.push('- Weave our affirmative arguments in while addressing each of theirs.');
+    }else{
+      lines.push('- Organise by OUR themes, in the order they will be presented.');
+      lines.push('- Where the other side has missed points we consider important, open with those.');
+      lines.push('- Deal with the other side’s arguments inside the theme to which they belong; give an opposing argument its own section only where it is substantial.');
+    }
+    lines.push('- EVERY point must carry its references: the other side’s skeleton by paragraph; the hearing bundle by page; the authorities bundle by tab/page with the full citation of the authority — for each of these that applies to the point.');
+    lines.push('- Hearing bundle references use the bundle’s consecutive page numbering (usually printed bottom right, sometimes bottom centre) — NEVER a document’s own internal page numbering. Where it is unclear which numbering is the bundle’s, flag it rather than guess.');
+    lines.push('- Check every statement in the other side’s skeleton against the source it cites. Where a statement is not an accurate reflection of the source, point that out with the reference.');
+    lines.push('- NO GUESSING — this is essential. Where a reference cannot be found in the material provided, insert a red flag in the text in the form 🚩 [NO REFERENCE: …] stating exactly what is missing (skeleton paragraph, hearing bundle page, or authority). Where a point in the other side’s argument has no available answer on the material, insert 🚩 [ANY IDEAS RE PARA …]. Never invent a reference or an answer.');
+  }else if(isRejoinder){
     /* v5.30: rejoinder — the simplest responsive form. */
     lines.push('');
     lines.push('DOCUMENT SHAPE — REJOINDER:');

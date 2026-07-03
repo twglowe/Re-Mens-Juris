@@ -200,10 +200,41 @@ document.querySelectorAll('.jur-tab').forEach(function(btn){
 async function loadMatters(){
   try{var d=await api('/api/matters');matters=d.matters||[];renderMatters();}catch(e){console.error(e);}
 }
+/* v5.36: A–Z / Recent ordering. Preference kept in localStorage. Recent
+   sorts by matters.last_used_at (stamped by selectMatter); never-used
+   matters sort to the bottom of Recent. A–Z is locale-aware. */
+var mattersSort='az';
+try{mattersSort=localStorage.getItem('mattersSort')||'az';}catch(e){}
+function setMattersSort(s){
+  mattersSort=(s==='recent')?'recent':'az';
+  try{localStorage.setItem('mattersSort',mattersSort);}catch(e){}
+  renderMatters();
+}
+function updateMattersSortButtons(){
+  var az=document.getElementById('mattersSortAZ');
+  var rec=document.getElementById('mattersSortRecent');
+  if(az)az.classList.toggle('active',mattersSort==='az');
+  if(rec)rec.classList.toggle('active',mattersSort==='recent');
+}
+function sortedMatters(){
+  var s=matters.slice();
+  if(mattersSort==='recent'){
+    s.sort(function(a,b){
+      var ta=a.last_used_at?(Date.parse(a.last_used_at)||0):0;
+      var tb=b.last_used_at?(Date.parse(b.last_used_at)||0):0;
+      if(tb!==ta)return tb-ta;
+      return (a.name||'').localeCompare(b.name||'',undefined,{sensitivity:'base'});
+    });
+  }else{
+    s.sort(function(a,b){return (a.name||'').localeCompare(b.name||'',undefined,{sensitivity:'base'});});
+  }
+  return s;
+}
 function renderMatters(){
   var list=document.getElementById('mattersList');
+  updateMattersSortButtons();
   if(!matters.length){list.innerHTML='<div class="empty-state">No matters yet.<br>Create one to begin.</div>';return;}
-  list.innerHTML=matters.map(function(m){return '<div class="matter-item'+(currentMatter&&currentMatter.id===m.id?' active':'')+'" tabindex="0" role="button" onclick="selectMatter(\''+m.id+'\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();selectMatter(\''+m.id+'\');}">'
+  list.innerHTML=sortedMatters().map(function(m){return '<div class="matter-item'+(currentMatter&&currentMatter.id===m.id?' active':'')+'" tabindex="0" role="button" onclick="selectMatter(\''+m.id+'\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();selectMatter(\''+m.id+'\');}">'
     +'<div class="matter-name">'+esc(m.name)+'</div>'
     +'<div class="matter-meta">'
     +'<span class="badge badge-jur">'+esc(m.jurisdiction==='British Virgin Islands'?'BVI':m.jurisdiction)+'</span>'
@@ -220,6 +251,12 @@ function renderMatters(){
 async function selectMatter(id){
   currentMatter=matters.find(function(m){return m.id===id;})||null;
   if(!currentMatter)return;
+  /* v5.36: stamp last-used for Recent ordering. Fire-and-forget — a
+     failed stamp only affects ordering, never selection. Local cache
+     updated first so the order is right immediately. */
+  var _luNow=new Date().toISOString();
+  currentMatter.last_used_at=_luNow;
+  api('/api/matters?id='+id,'PATCH',{last_used_at:_luNow}).catch(function(e){console.log('v5.36 last_used_at stamp failed:',e.message);});
   document.getElementById('chatTitle').textContent=currentMatter.name;
   document.getElementById('chatTitle').classList.remove('empty');
   document.getElementById('toolsBar').style.display='flex';

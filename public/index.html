@@ -52,6 +52,14 @@ header{background:var(--navy);padding:0 1.5rem;flex-shrink:0;box-shadow:0 2px 16
 .btn-add{padding:.3rem .75rem;background:var(--blue-light);border:none;border-radius:5px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer}
 .btn-add:hover{background:#1a7ab8}
 .matters-scroll{flex:1;overflow-y:auto;padding:.6rem}
+/* v5.36: the scroll fix — these two wrappers were plain divs, so
+   .matters-scroll's flex:1/overflow never had a constrained height and
+   the list clipped at the bottom of the column without a scrollbar. */
+#mattersLeftPanel{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+#matterListView{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+.matters-sort-bar{display:flex;gap:.3rem;padding:.45rem .6rem 0;flex-shrink:0}
+.matters-sort-btn{flex:1;font-size:.7rem;padding:.25rem .4rem;border:1px solid var(--border);background:var(--white);border-radius:5px;cursor:pointer;color:var(--text-faint);font-weight:600}
+.matters-sort-btn.active{background:var(--navy-mid);color:#fff;border-color:var(--navy-mid)}
 .matter-item{padding:.7rem .9rem;border-radius:7px;cursor:pointer;margin-bottom:.35rem;border:1.5px solid transparent;transition:all .18s;position:relative}
 .matter-item:hover{background:var(--blue-faint);border-color:var(--border)}
 .matter-item.active{background:var(--blue-pale);border-color:var(--blue-light)}
@@ -621,6 +629,11 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <button class="matter-left-tab" data-mlt="record" onclick="switchMatterLeftTab('record')">Record</button>
         </div>
         <div id="matterListView">
+          <!-- v5.36: A–Z / Recent ordering toggle, remembered between sessions. -->
+          <div class="matters-sort-bar">
+            <button class="matters-sort-btn" id="mattersSortAZ" onclick="setMattersSort('az')">A–Z</button>
+            <button class="matters-sort-btn" id="mattersSortRecent" onclick="setMattersSort('recent')">Recent</button>
+          </div>
           <div class="matters-scroll" id="mattersList"><div class="empty-state">No matters yet.<br>Create one to begin.</div></div>
         </div>
         <div id="matterRecordView" style="display:none">
@@ -1321,7 +1334,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js?v=5.28"></script>
+<script src="/js/core.js?v=5.36"></script>
 <script src="/js/tools.js?v=5.22"></script>
 <script src="/js/library.js?v=5.16c"></script>
 <script src="/js/drafting.js?v=5.35"></script>

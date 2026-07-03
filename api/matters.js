@@ -15,7 +15,7 @@ async function getUser(req, supabase) {
   return error ? null : user;
 }
 
-const SERVER_VERSION = "v5.35";
+const SERVER_VERSION = "v5.36";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " matters handler: " + (req.method || "?") + " " + (req.url || ""));
   const supabase = freshClient();
@@ -62,8 +62,10 @@ export default async function handler(req, res) {
 
       const updates = {};
       /* v5.35: draft_instructions — per-matter persistent Draft-tab
-         instructions text, written by the Draft tab's autosave. */
-      const fields = ["name", "nature", "issues", "acting_for", "client", "commencement_date", "law_firm", "responsible_individual", "case_type_id", "subcategory_id", "draft_instructions"];
+         instructions text, written by the Draft tab's autosave.
+         v5.36: last_used_at — stamped by selectMatter for the matters
+         list's Recent ordering. */
+      const fields = ["name", "nature", "issues", "acting_for", "client", "commencement_date", "law_firm", "responsible_individual", "case_type_id", "subcategory_id", "draft_instructions", "last_used_at"];
       for (const f of fields) {
         if (body[f] !== undefined) updates[f] = body[f];
       }

@@ -474,6 +474,24 @@ function libQuickAdd(type){
   var titles={casetype:'Add Case Type',subcat:'Add Procedural Stage',doctype:'Add Document Type'};
   document.getElementById('quickAddTitle').textContent=titles[type]||'Add';
   document.getElementById('quickAddName').value='';
+  /* v5.39: explicit case-type attachment for stages and doc types —
+     pre-filled from the Draft tab when visible, else the Library tab. */
+  var wrap=document.getElementById('quickAddCtWrap');
+  var ctSel=document.getElementById('quickAddCaseType');
+  if(wrap&&ctSel){
+    if((type==='subcat'||type==='doctype')&&libraryData.caseTypes.length){
+      ctSel.innerHTML=libraryData.caseTypes.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>';}).join('');
+      var pre=null;
+      var dcp=document.getElementById('draftCentrePanel');
+      if(dcp&&dcp.style.display!=='none'){var dsel=document.getElementById('draftCaseType');if(dsel&&dsel.value)pre=dsel.value;}
+      if(!pre){var f=document.getElementById('libSearchCaseType');if(f&&f.value)pre=f.value;}
+      if(!pre){var b=document.getElementById('libBoxCaseType');if(b&&b.value)pre=b.value;}
+      if(pre)ctSel.value=pre;
+      wrap.style.display='';
+    }else{
+      wrap.style.display='none';
+    }
+  }
   document.getElementById('quickAddModal').style.display='flex';
   setTimeout(function(){document.getElementById('quickAddName').focus();},100);
 }
@@ -494,20 +512,15 @@ async function quickAddSave(){
     if(quickAddType==='casetype'){
       await api('/api/library','POST',{action:'create_case_type',name:name,jurisdiction:jurisdiction,subcats:[],docTypes:[]});
     }else if(quickAddType==='subcat'){
-      var ctId=_quickAddDraftCt();
-      if(!ctId){ctId=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;}
-      if(!ctId){var sel=document.getElementById('libBoxCaseType');if(sel)ctId=sel.value;}
-      if(!ctId){var dsel=document.getElementById('draftCaseType');if(dsel)ctId=dsel.value;}
-      if(!ctId&&libraryData.caseTypes.length){ctId=libraryData.caseTypes[0].id;}
+      /* v5.39: attachment is explicit — the modal's own dropdown decides. */
+      var mSel=document.getElementById('quickAddCaseType');
+      var ctId=(mSel&&mSel.value)?mSel.value:_quickAddDraftCt();
       if(!ctId){showToast('Add a case type first');return;}
       usedCt=ctId;
       await api('/api/library','POST',{action:'create_subcat',name:name,case_type_id:ctId});
     }else if(quickAddType==='doctype'){
-      var ctId2=_quickAddDraftCt();
-      if(!ctId2){ctId2=document.getElementById('libSearchCaseType')?document.getElementById('libSearchCaseType').value:null;}
-      if(!ctId2){var sel2=document.getElementById('libBoxCaseType');if(sel2)ctId2=sel2.value;}
-      if(!ctId2){var dsel2=document.getElementById('draftCaseType');if(dsel2)ctId2=dsel2.value;}
-      if(!ctId2&&libraryData.caseTypes.length){ctId2=libraryData.caseTypes[0].id;}
+      var mSel2=document.getElementById('quickAddCaseType');
+      var ctId2=(mSel2&&mSel2.value)?mSel2.value:_quickAddDraftCt();
       if(!ctId2){showToast('Add a case type first');return;}
       usedCt=ctId2;
       await api('/api/library','POST',{action:'create_doc_type',name:name,case_type_id:ctId2});
@@ -534,7 +547,11 @@ async function quickAddSave(){
       }else if(quickAddType==='doctype'&&usedCt){
         var nd=libraryData.docTypes.find(function(x){return x.case_type_id===usedCt&&x.name===name;});
         var ds=document.getElementById('draftDocType');
-        if(nd&&ds)ds.value=nd.id;
+        if(nd&&ds){
+          ds.value=nd.id;
+          /* v5.39: mirror the change listener — pull Case Type + Stage along. */
+          if(typeof draftDocTypeAutoCase==='function')draftDocTypeAutoCase(nd.id);
+        }
       }
     }
     showToast('Added: '+name);

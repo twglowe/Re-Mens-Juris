@@ -1,3 +1,15 @@
+/* v5.39 — 02 Jul 2026 — Push v5.39 (Document Type first):
+   The Case sub-tab reorders to Matter → Document Type → Case Type →
+   Stage → Heading. populateDraftDocTypeSelect lists EVERY document type,
+   grouped by case type in optgroups, always populated — no Case Type
+   prerequisite. Choosing a Document Type auto-selects its Case Type and
+   populates the Stage list (draftDocTypeAutoCase); Case Type no longer
+   filters or resets the Document Type list. Companion: library.js Quick
+   Add modal gains an explicit "Attach to Case Type" dropdown (pre-filled
+   from the Draft tab when visible), removing the silent misattachment
+   fallbacks. worker.js untouched. Files: public/js/drafting.js,
+   public/js/library.js, index.html + public/index.html. */
+
 /* v5.38 — 02 Jul 2026 — Push v5.38 (Case sub-tab selects fixed):
    libPopulateDraftSelects preserves the Draft tab's Case Type / Stage /
    Doc Type selections across library reloads and repopulates the Stage
@@ -440,6 +452,41 @@ function draftJur(){
   return 'Bermuda';
 }
 
+/* v5.39: Document Type is the primary field. Lists every document type in
+   the Library, grouped by case type (optgroups disambiguate duplicate
+   names). Always populated — no Case Type prerequisite. */
+function populateDraftDocTypeSelect(preserveVal){
+  var dtSel=document.getElementById('draftDocType');
+  if(!dtSel)return;
+  var html='<option value="">— Select —</option>';
+  var seenCt={};
+  libraryData.caseTypes.forEach(function(c){
+    seenCt[c.id]=1;
+    var dts=libraryData.docTypes.filter(function(d){return d.case_type_id===c.id;});
+    if(!dts.length)return;
+    html+='<optgroup label="'+esc(c.name)+'">'+dts.map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('')+'</optgroup>';
+  });
+  var orphans=libraryData.docTypes.filter(function(d){return !seenCt[d.case_type_id];});
+  if(orphans.length)html+='<optgroup label="(no case type)">'+orphans.map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('')+'</optgroup>';
+  dtSel.innerHTML=html;
+  if(preserveVal)dtSel.value=preserveVal;
+}
+
+/* v5.39: choosing a Document Type auto-selects its Case Type and populates
+   the Stage list. Called from the doc type change listener and from
+   library.js after a Quick Add. */
+function draftDocTypeAutoCase(dtId){
+  var dt=libraryData.docTypes.find(function(d){return d.id===dtId;});
+  if(!dt||!dt.case_type_id)return;
+  var cs=document.getElementById('draftCaseType');
+  if(!cs)return;
+  if(cs.value!==dt.case_type_id){
+    cs.value=dt.case_type_id;
+    var stSel=document.getElementById('draftStage');
+    if(stSel)stSel.innerHTML='<option value="">— Select —</option>'+libraryData.subcats.filter(function(s){return s.case_type_id===dt.case_type_id;}).map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
+  }
+}
+
 function libPopulateDraftSelects(){
   var ct=document.getElementById('draftCaseType');
   if(!ct)return;
@@ -458,13 +505,13 @@ function libPopulateDraftSelects(){
   if(ctVal)ct.value=ctVal;
   ctVal=ct.value; /* '' again if that case type no longer exists */
   var stOpts='<option value="">— Select —</option>';
-  var dtOpts='<option value="">— Select —</option>';
   if(ctVal){
     stOpts+=libraryData.subcats.filter(function(s){return s.case_type_id===ctVal;}).map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
-    dtOpts+=libraryData.docTypes.filter(function(d){return d.case_type_id===ctVal;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
   }
   if(stSel){stSel.innerHTML=stOpts;if(stVal)stSel.value=stVal;}
-  if(dtSel){dtSel.innerHTML=dtOpts;if(dtVal)dtSel.value=dtVal;}
+  /* v5.39: the Document Type list is global (grouped by case type), not
+     filtered — the primary choice of what to draft. */
+  populateDraftDocTypeSelect(dtVal);
   /* Populate matter dropdown */
   var ms=document.getElementById('draftMatterSelect');
   if(ms){
@@ -930,7 +977,8 @@ function getDraftExcludeDocNames(){
 function draftCaseTypeChanged(){
   var ctId=document.getElementById('draftCaseType').value;
   document.getElementById('draftStage').innerHTML='<option value="">— Select —</option>'+libraryData.subcats.filter(function(s){return s.case_type_id===ctId;}).map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
-  document.getElementById('draftDocType').innerHTML='<option value="">— Select —</option>'+libraryData.docTypes.filter(function(d){return d.case_type_id===ctId;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
+  /* v5.39: the Document Type list is global — case type no longer filters
+     or resets it. */
   draftAutoSaveChoices();
 }
 function draftStageChanged(){draftAutoSaveChoices();}
@@ -1077,6 +1125,8 @@ function clearDraftEditor(){
 /* When Doc Type changes, update the doc title in the heading if not already set manually */
 var draftDocTypeEl=document.getElementById('draftDocType');
 if(draftDocTypeEl){draftDocTypeEl.addEventListener('change',function(){
+  /* v5.39: doc type drives — auto-select its Case Type + Stage list. */
+  if(this.value&&typeof draftDocTypeAutoCase==='function')draftDocTypeAutoCase(this.value);
   var dtName=getSelectedDocTypeName();
   if(dtName&&!draftHeading.docTitle){
     draftHeading.docTitle=dtName.toUpperCase();

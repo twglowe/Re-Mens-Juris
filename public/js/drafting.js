@@ -1,3 +1,11 @@
+/* v5.42 — 03 Jul 2026 — Push v5.42 (Document Type list survives matter
+   switch): draftMatterChanged and clearDraftEditor still wiped the
+   Document Type dropdown to a bare "— Select —" (pre-v5.39 reset lines),
+   emptying the global list the moment a matter was selected. Both now
+   repopulate via populateDraftDocTypeSelect('') — list kept, selection
+   cleared. worker.js untouched. Files: public/js/drafting.js,
+   index.html + public/index.html (cache-bust). */
+
 /* v5.41 — 03 Jul 2026 — Push v5.41 (render loaded drafts):
    loadDraftIntoEditor renders worker-persisted markdown via renderMd
    (detected by absence of a leading '<'); previously raw markdown went
@@ -589,8 +597,10 @@ function draftMatterChanged(){
   var ct=document.getElementById('draftCaseType');if(ct)ct.value='';
   var stEl=document.getElementById('draftStage');
   if(stEl)stEl.innerHTML='<option value="">— Select —</option>';
-  var dt=document.getElementById('draftDocType');
-  if(dt)dt.innerHTML='<option value="">— Select —</option>';
+  /* v5.42: keep the global Document Type list (v5.39) — just clear the
+     selection. The old wipe left the dropdown empty after every matter
+     switch. */
+  if(typeof populateDraftDocTypeSelect==='function')populateDraftDocTypeSelect('');
   /* Clear selected docs and precedents */
   draftSelectedDocs={src1:[],src2:[],src3:[],ctx:[],prec:[]};
   draftSelectedPrecedents=[];
@@ -1143,8 +1153,8 @@ function clearDraftEditor(){
   var ct=document.getElementById('draftCaseType');if(ct)ct.value='';
   var stEl=document.getElementById('draftStage');
   if(stEl)stEl.innerHTML='<option value="">— Select —</option>';
-  var dt=document.getElementById('draftDocType');
-  if(dt)dt.innerHTML='<option value="">— Select —</option>';
+  /* v5.42: keep the global Document Type list — just clear the selection. */
+  if(typeof populateDraftDocTypeSelect==='function')populateDraftDocTypeSelect('');
   /* Clear selected source docs and precedents */
   if(typeof draftSelectedDocs!=='undefined')draftSelectedDocs={src1:[],src2:[],src3:[],ctx:[],prec:[]};
   if(typeof draftSelectedPrecedents!=='undefined')draftSelectedPrecedents=[];

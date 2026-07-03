@@ -1,3 +1,19 @@
+/* v5.35 — 02 Jul 2026 — Push v5.35 (persistent per-matter instructions):
+   The main Draft-tab instructions textarea is saved to a new
+   matters.draft_instructions column (debounced PATCH, like heading_data)
+   and reloaded whenever the matter is selected, on any device. Matter
+   switch and Clear Draft no longer wipe it; delete by emptying the box.
+   While a draft is open in the editor, a collapsible "Instructions" strip
+   above the toolbar mirrors the same text and writes through the same
+   save path. api/matters.js: draft_instructions added to the PATCH field
+   list and the Supabase client moved inside the handler (module-scope
+   client would silently strip the newly-migrated column on warm
+   instances — v4.2j lesson). REQUIRES one-line SQL migration:
+   alter table matters add column if not exists draft_instructions text;
+   worker.js untouched. Files changed: public/js/drafting.js,
+   api/matters.js, index.html + public/index.html (echo strip +
+   cache-bust). */
+
 /* v5.34 — 02 Jul 2026 — Push v5.34 (full-pipeline Redraft):
    The Further Instructions bar under the draft editor gains a ⟳ Redraft
    button beside the existing ➤ quick update. ➤ is unchanged (text-only
@@ -447,9 +463,11 @@ function draftMatterChanged(){
   if(outputWrap)outputWrap.classList.add('hidden');
   var instrBody=document.getElementById('draftInstructionsBody');
   if(instrBody)instrBody.style.display='';
-  /* Clear instructions textarea */
+  /* v5.35: instructions are per-matter and persistent — load the saved
+     text for this matter (like heading_data) instead of clearing. */
   var instr=document.getElementById('draftMainInstructions');
-  if(instr)instr.value='';
+  if(instr)instr.value=m.draft_instructions||'';
+  if(typeof syncDraftInstrEcho==='function')syncDraftInstrEcho();
   /* Reset Library dropdowns */
   var ct=document.getElementById('draftCaseType');if(ct)ct.value='';
   var stEl=document.getElementById('draftStage');
@@ -981,9 +999,8 @@ function clearDraftEditor(){
   if(outputWrap)outputWrap.classList.add('hidden');
   var instrBody=document.getElementById('draftInstructionsBody');
   if(instrBody)instrBody.style.display='';
-  /* Clear instructions textarea */
-  var instr=document.getElementById('draftMainInstructions');
-  if(instr)instr.value='';
+  /* v5.35: Clear Draft no longer wipes the instructions — they are
+     per-matter and persistent. Empty the box yourself to delete them. */
   /* Reset Library dropdowns */
   var ct=document.getElementById('draftCaseType');if(ct)ct.value='';
   var stEl=document.getElementById('draftStage');
@@ -1021,9 +1038,43 @@ if(draftDocTypeEl){draftDocTypeEl.addEventListener('change',function(){
   }
   draftAutoSaveChoices();
 });}
+/* ── v5.35: persistent per-matter instructions ───────────────────────────
+   The main instructions textarea is saved to matters.draft_instructions
+   (debounced PATCH, like heading_data) and reloaded on matter selection.
+   While a draft is open in the editor, a collapsible echo textarea above
+   the toolbar mirrors the main one — both write through the same save
+   path. Emptying either deletes the saved instructions. */
+var _draftInstrSaveTimer=null;
+function persistDraftInstructions(){
+  var matterId=document.getElementById('draftMatterSelect').value;
+  if(!matterId)return;
+  if(_draftInstrSaveTimer)clearTimeout(_draftInstrSaveTimer);
+  _draftInstrSaveTimer=setTimeout(function(){
+    var main=document.getElementById('draftMainInstructions');
+    var text=main?main.value:'';
+    api('/api/matters?id='+matterId,'PATCH',{draft_instructions:text}).then(function(){
+      var m=matters.find(function(x){return x.id===matterId;});
+      if(m)m.draft_instructions=text;
+      if(typeof currentMatter!=='undefined'&&currentMatter&&currentMatter.id===matterId)currentMatter.draft_instructions=text;
+    }).catch(function(e){console.log('v5.35 draft_instructions save failed:',e.message);});
+  },800);
+}
+function syncDraftInstrEcho(){
+  var echo=document.getElementById('draftMainInstructionsEcho');
+  var main=document.getElementById('draftMainInstructions');
+  if(echo&&main)echo.value=main.value;
+}
+
 /* C3: Auto-save when instructions change */
 var draftInstrEl=document.getElementById('draftMainInstructions');
-if(draftInstrEl){draftInstrEl.addEventListener('input',function(){unsavedEdits=true;draftAutoSaveChoices();});}
+if(draftInstrEl){draftInstrEl.addEventListener('input',function(){unsavedEdits=true;draftAutoSaveChoices();persistDraftInstructions();syncDraftInstrEcho();});}
+/* v5.35: the echo textarea writes through to the main one + same saves. */
+var draftInstrEchoEl=document.getElementById('draftMainInstructionsEcho');
+if(draftInstrEchoEl){draftInstrEchoEl.addEventListener('input',function(){
+  var main=document.getElementById('draftMainInstructions');
+  if(main)main.value=this.value;
+  unsavedEdits=true;draftAutoSaveChoices();persistDraftInstructions();
+});}
 /* v5.13b: track manual editor edits and trigger autosave (PUT path). */
 var draftEditorEl=document.getElementById('draftEditor');
 if(draftEditorEl){draftEditorEl.addEventListener('input',function(){unsavedEdits=true;draftAutoSaveChoices();});}

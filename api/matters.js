@@ -1,17 +1,25 @@
 import { createClient } from "@supabase/supabase-js";
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
-async function getUser(req) {
+/* v5.35: client construction moved inside the handler. The module-scope
+   client caches the PostgREST schema, so a warm instance created before
+   the draft_instructions migration would silently strip that column from
+   every UPDATE payload with no error (v4.2j lesson). */
+function freshClient() {
+  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+}
+
+async function getUser(req, supabase) {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) return null;
   const { data: { user }, error } = await supabase.auth.getUser(token);
   return error ? null : user;
 }
 
-const SERVER_VERSION = "v5.5";
+const SERVER_VERSION = "v5.35";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " matters handler: " + (req.method || "?") + " " + (req.url || ""));
-  const user = await getUser(req);
+  const supabase = freshClient();
+  const user = await getUser(req, supabase);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
   try {
@@ -53,7 +61,9 @@ export default async function handler(req, res) {
       if (!matter || matter.owner_id !== user.id) return res.status(403).json({ error: "Only the owner can edit this matter" });
 
       const updates = {};
-      const fields = ["name", "nature", "issues", "acting_for", "client", "commencement_date", "law_firm", "responsible_individual", "case_type_id", "subcategory_id"];
+      /* v5.35: draft_instructions — per-matter persistent Draft-tab
+         instructions text, written by the Draft tab's autosave. */
+      const fields = ["name", "nature", "issues", "acting_for", "client", "commencement_date", "law_firm", "responsible_individual", "case_type_id", "subcategory_id", "draft_instructions"];
       for (const f of fields) {
         if (body[f] !== undefined) updates[f] = body[f];
       }

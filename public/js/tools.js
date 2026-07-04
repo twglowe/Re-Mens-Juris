@@ -756,13 +756,16 @@ function _sw_toggle(rootId){
    element. Idempotent: calling twice returns the same element.
    The widget is appended as a sibling of the progress track inside
    #progressWrap, which has flex-direction:column already. */
-function _sw_ensure(){
-  var existing=document.getElementById('sectionWidget');
+function _sw_ensure(container,widgetId){
+  /* v5.45: parameterised so the Draft tab can host its own copy of the
+     widget. No arguments = the original tools behaviour, unchanged. */
+  widgetId=widgetId||'sectionWidget';
+  var existing=document.getElementById(widgetId);
   if(existing)return existing;
-  var wrap=document.getElementById('progressWrap');
+  var wrap=container||document.getElementById('progressWrap');
   if(!wrap)return null;
   var root=document.createElement('div');
-  root.id='sectionWidget';
+  root.id=widgetId;
   root.setAttribute('data-collapsed','0');
   root.style.cssText='display:none;flex-direction:column;font-size:.78rem';
   /* Header row: status text + toggle. Separate <span>s so the count text and
@@ -776,7 +779,7 @@ function _sw_ensure(){
   toggle.className='elj-sw-toggle';
   toggle.style.cssText='font-size:.72rem;color:var(--blue);cursor:pointer;user-select:none;font-weight:400';
   toggle.textContent='Hide \u25B4';
-  toggle.addEventListener('click',function(){_sw_toggle('sectionWidget');});
+  toggle.addEventListener('click',function(){_sw_toggle(widgetId);});
   header.appendChild(headerText);
   header.appendChild(toggle);
   /* Thin divider between the bar and the section list. */
@@ -800,7 +803,11 @@ function _sw_ensure(){
      progressLabel — the existing #progressLabel element to override when sectioned
    Returns true if the widget took over the label, false otherwise. The caller
    uses this to know whether to skip the existing label-setting branches. */
-function setSectionWidget(j,toolLabel,progressLabel){
+function setSectionWidget(j,toolLabel,progressLabel,container,widgetId){
+  /* v5.45: optional container + widgetId let the Draft tab render its own
+     checklist (drafting.js passes #draftProgressWrap / 'draftSectionWidget').
+     Tools call sites pass neither and behave exactly as before. */
+  widgetId=widgetId||'sectionWidget';
   /* Sectioned tools only. Bail early on non-sectioned tools (Chronology,
      Persons, Issues, Inconsistency, Citations, Issue Briefing) \u2014 those have
      sectionPlan permanently null and behave exactly as they always have. */
@@ -810,11 +817,11 @@ function setSectionWidget(j,toolLabel,progressLabel){
      Proposition; if a future push adds another sectioned tool, this widget
      picks it up automatically without needing a code change. */
   if(!j||!j.sectionPlan||!Array.isArray(j.sectionPlan)||j.sectionPlan.length===0){
-    var existing=document.getElementById('sectionWidget');
+    var existing=document.getElementById(widgetId);
     if(existing)existing.style.display='none';
     return false;
   }
-  var root=_sw_ensure();
+  var root=_sw_ensure(container,widgetId);
   if(!root)return false;
   /* Make visible. Only flip display once \u2014 if already visible, leave it. */
   if(root.style.display==='none'||!root.style.display){
@@ -862,7 +869,7 @@ function setSectionWidget(j,toolLabel,progressLabel){
   if(terminal&&root.getAttribute('data-auto-collapsed')!=='1'){
     root.setAttribute('data-auto-collapsed','1');
     if(root.getAttribute('data-collapsed')!=='1'){
-      _sw_toggle('sectionWidget');
+      _sw_toggle(widgetId);
     }
   }
 
@@ -926,8 +933,8 @@ function setSectionWidget(j,toolLabel,progressLabel){
 /* Reset the widget. Called when a new job starts so stale data from a previous
    run doesn't briefly flash on screen. Removes the widget entirely; the next
    call to setSectionWidget will recreate it lazily if needed. */
-function resetSectionWidget(){
-  var existing=document.getElementById('sectionWidget');
+function resetSectionWidget(widgetId){
+  var existing=document.getElementById(widgetId||'sectionWidget');
   if(existing&&existing.parentNode)existing.parentNode.removeChild(existing);
 }
 

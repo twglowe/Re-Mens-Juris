@@ -1627,6 +1627,19 @@ function collectMatterToolHistory(){
 }
 
 /* Generate Draft */
+/* v5.45: show/hide the draft progress card. Toggles #draftProgressWrap
+   (label + bar + section checklist); hiding resets the bar to 0%. Falls
+   back to toggling the label alone if the wrap isn't in the DOM (stale
+   cached HTML pre-v5.45). */
+function draftProgressShow(on){
+  var fill=document.getElementById('draftProgressFill');
+  if(fill&&!on)fill.style.width='0%';
+  var wrap=document.getElementById('draftProgressWrap');
+  if(wrap){wrap.style.display=on?'flex':'none';return;}
+  var p=document.getElementById('draftProgressMsg');
+  if(p)p.style.display=on?'':'none';
+}
+
 /* v5.16e Push A: shared poll-body for both fresh and resumed draft jobs.
    Runs the 10-second poll loop, renders the result into the editor on
    completion, and persists a new drafts row. Behaviour for both call sites
@@ -1648,10 +1661,43 @@ function _runDraftPoll(jobId,matterId,ctId,stId,dtId,instructions,prog,ctxSource
       pollCount++;
       var j=await api('/api/jobs?id='+jobId);
       if(!j)return;
-      if(j.batchesTotal>0&&j.batchesDone>0){prog.textContent='Generating draft\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;}
+      /* v5.45: same staged labels + bar as the tools poll (tools.js
+         startPollingJob), plus the per-section checklist via the
+         generalised setSectionWidget. Draft is a sectioned tool, so
+         section_plan/section_results arrive in the same poll response. */
+      var fill=document.getElementById('draftProgressFill');
+      var attemptSuffix=(j.synthAttempts&&j.synthAttempts>=2)?' (attempt '+j.synthAttempts+')':'';
+      /* Only render the checklist when the v5.45 wrap exists — without this
+         guard a missing wrap would make _sw_ensure fall back to the TOOLS
+         panel's #progressWrap and put the draft checklist in the wrong tab. */
+      var dpWrap=document.getElementById('draftProgressWrap');
+      var widgetTookLabel=(dpWrap&&typeof setSectionWidget==='function')?setSectionWidget(j,'Draft',prog,dpWrap,'draftSectionWidget'):false;
+      if(j.batchesTotal>0&&j.batchesDone>0){
+        var pct=Math.min(10+Math.round((j.batchesDone/j.batchesTotal)*80),90);
+        if(fill)fill.style.width=pct+'%';
+        if(!widgetTookLabel)prog.textContent='Generating draft\u2026 batch '+j.batchesDone+' of '+j.batchesTotal;
+      }
+      if(j.status==='synthesising'){
+        var extractsCount=j.extractsCount||0;
+        var condenseDone=j.condenseDone||0;
+        var condensedCount=j.condensedCount||0;
+        if(extractsCount>0&&condenseDone<extractsCount){
+          /* Clamp exactly as tools.js does: condense counts in groups of 3. */
+          var displayDone=Math.min(condensedCount*3,extractsCount);
+          if(!widgetTookLabel)prog.textContent='Condensing draft\u2026 '+displayDone+' of '+extractsCount+attemptSuffix;
+          if(fill)fill.style.width=(90+Math.round((displayDone/extractsCount)*5))+'%';
+        }else{
+          if(!widgetTookLabel)prog.textContent='Producing final draft\u2026'+attemptSuffix;
+          if(fill)fill.style.width='95%';
+        }
+      }else if(j.status==='paused'){
+        if(!widgetTookLabel)prog.textContent='Resuming draft\u2026 batch '+j.batchesDone+' of '+j.batchesTotal+attemptSuffix;
+      }
       if(j.status==='complete'||j.status==='partial'){
         clearInterval(draftPoll);
-        document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';
+        document.getElementById('draftGenerateBtn').disabled=false;
+        if(fill)fill.style.width='100%';
+        draftProgressShow(false);
         /* v5.16e: clear the in-flight stash so a later tab activation
            doesn't try to reattach to a now-finished job. */
         if(window._inflightDraftJob&&window._inflightDraftJob.jobId===jobId)window._inflightDraftJob=null;
@@ -1698,7 +1744,7 @@ function _runDraftPoll(jobId,matterId,ctId,stId,dtId,instructions,prog,ctxSource
       }
       if(j.status==='failed'){
         clearInterval(draftPoll);
-        document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';
+        document.getElementById('draftGenerateBtn').disabled=false;draftProgressShow(false);
         if(window._inflightDraftJob&&window._inflightDraftJob.jobId===jobId)window._inflightDraftJob=null;
         showToast('Draft error: '+(j.error||'Unknown error'));return;
       }
@@ -1754,7 +1800,8 @@ async function attachDraftPoll(){
   /* Surface the resume in the UI. */
   document.getElementById('draftGenerateBtn').disabled=true;
   var prog=document.getElementById('draftProgressMsg');
-  if(prog){prog.style.display='';prog.textContent='Resuming in-flight draft generation\u2026';}
+  if(prog){draftProgressShow(true);prog.textContent='Resuming in-flight draft generation\u2026';}
+  if(typeof resetSectionWidget==='function')resetSectionWidget('draftSectionWidget');
   console.log('v5.16e attachDraftPoll: reattaching to job '+stash.jobId+' on matter '+matterId+(draftRowId?' (drafts row '+draftRowId+')':' (legacy, no drafts row)'));
   _runDraftPoll(stash.jobId,matterId,ctId,stId,dtId,instructions,prog,'resume',draftRowId);
 }
@@ -1932,7 +1979,9 @@ async function generateDraft(redraftOpts){
      the user sees. Cheap and idempotent. */
   if(typeof updateActionHeading==='function')updateActionHeading();
   document.getElementById('draftGenerateBtn').disabled=true;
-  var prog=document.getElementById('draftProgressMsg');prog.style.display='';prog.textContent='Submitting draft request\u2026';
+  var prog=document.getElementById('draftProgressMsg');draftProgressShow(true);prog.textContent='Submitting draft request\u2026';
+  if(typeof resetSectionWidget==='function')resetSectionWidget('draftSectionWidget');
+  var progFill=document.getElementById('draftProgressFill');if(progFill)progFill.style.width='5%';
   try{
     /* v5.29: prepend document-shape directives + named source documents. */
     var finalInstructions=buildDraftDirectives(instructions);
@@ -1973,13 +2022,14 @@ async function generateDraft(redraftOpts){
       console.log('v5.17 generateDraft: drafts row '+freshDraftRowId+' pre-created server-side, attached as currentDraftId');
     }
     prog.textContent='Generating draft\u2026 (processing in background, you can navigate away)';
+    if(progFill)progFill.style.width='10%';
     /* v5.16e: stash this fresh job too, so reload-then-tab-activation
        reattaches without losing the draft. The poll completion handler
        clears the stash. */
     window._inflightDraftJob={jobId:d.jobId,matterId:matterId};
     _runDraftPoll(d.jobId,matterId,ctId,stId,dtId,finalInstructions,prog,'generate',freshDraftRowId);
     return true;
-  }catch(e){document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';showToast('Draft error: '+e.message);}
+  }catch(e){document.getElementById('draftGenerateBtn').disabled=false;draftProgressShow(false);showToast('Draft error: '+e.message);}
 }
 
 /* v5.44: draft-specific markdown renderer. Identical to core.js renderMd

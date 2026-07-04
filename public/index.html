@@ -950,7 +950,11 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
                 <input type="checkbox" id="draftLearnComparable" checked style="margin:0">
                 <span>Learn from comparable documents in other matters</span>
               </label>
-              <div id="draftProgressMsg" style="display:none;flex-shrink:0;padding:.5rem;background:var(--blue-pale);border-radius:6px;font-size:.82rem;font-weight:600;color:var(--blue);min-height:1.4em">Generating draft… this may take several minutes.</div>
+              <!-- v5.45: draft progress card — label + bar + per-section checklist, mirroring the tools progress card. drafting.js toggles the wrap; the label keeps its historic id. -->
+              <div id="draftProgressWrap" style="display:none;flex-direction:column;gap:.4rem;flex-shrink:0;padding:.5rem .7rem;background:var(--blue-pale);border:1.5px solid var(--border);border-radius:6px">
+                <div id="draftProgressMsg" style="font-size:.82rem;font-weight:600;color:var(--blue);min-height:1.4em">Generating draft… this may take several minutes.</div>
+                <div class="progress-bar-track"><div class="progress-bar-fill" id="draftProgressFill"></div></div>
+              </div>
             </div>
             <div class="draft-output-wrap hidden" id="draftOutputWrap">
               <!-- v5.35: persistent instructions stay reachable while a draft is open. -->
@@ -1344,9 +1348,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
 <script src="/js/core.js?v=5.36"></script>
-<script src="/js/tools.js?v=5.40"></script>
+<script src="/js/tools.js?v=5.45"></script>
 <script src="/js/library.js?v=5.39"></script>
-<script src="/js/drafting.js?v=5.44"></script>
+<script src="/js/drafting.js?v=5.45"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->
 <div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">

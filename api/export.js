@@ -332,6 +332,8 @@ export default async function handler(req, res) {
        front sheet, no branding, duplicated text heading stripped. */
     var hasHeading = !!(heading && (heading.court || heading.courtName || heading.party1 || heading.docTitle || (Array.isArray(heading.matterOf) && heading.matterOf.length)));
     var contentForBody = hasHeading ? stripTextHeading(content) : content;
+    /* v5.43: diagnostic for the 03 Jul heading-only export report. */
+    console.log("v5.43 export: received " + content.length + " chars, after strip " + contentForBody.length + ", hasHeading " + hasHeading + ", title: " + title);
     var bodyXml = (hasHeading ? frontSheetXml(heading) : "") + markdownToDocxXml(contentForBody, matterName, jurisdiction, !hasHeading);
     var xmlFiles = buildDocxFiles(bodyXml);
 

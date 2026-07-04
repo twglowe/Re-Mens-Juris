@@ -1,3 +1,11 @@
+/* v5.43 — 03 Jul 2026 — Push v5.43 (heading-only export diagnostic):
+   draftDownloadWord now refuses to export an empty editor (explicit
+   toast), warns when the editor holds under 200 characters, and logs the
+   character count it sends. Companion: api/export.js logs received
+   content length. Chasing the 03 Jul "download is just the heading"
+   report — server-side export verified healthy by generating and parsing
+   a docx from live code, so the text is being lost client-side. */
+
 /* v5.42 — 03 Jul 2026 — Push v5.42 (Document Type list survives matter
    switch): draftMatterChanged and clearDraftEditor still wiped the
    Document Type dropdown to a bare "— Select —" (pre-v5.39 reset lines),
@@ -2026,6 +2034,14 @@ function draftDownloadWord(){
   var content=editor.innerText||editor.textContent;
   /* v5.28: pass the heading so the export carries a proper court front
      sheet (tramlined title in the lower third, page break, no branding). */
+  /* v5.43: diagnostic guard — heading-only exports reported 03 Jul. If the
+     editor holds almost nothing, say so instead of silently exporting a
+     court front sheet with no body. */
+  if(!content||content.trim().length<200){
+    showToast('Editor holds only '+(content?content.trim().length:0)+' characters — load the draft into the editor (Previous drafts) before downloading');
+    if(!content||!content.trim())return;
+  }
+  console.log('v5.43 draftDownloadWord: sending '+content.length+' chars to export');
   downloadWord(content,'Draft — '+(draftHeading.docTitle||'document'),draftHeading);
 }
 /* ── v5.16a: AI HEADING SUGGESTION (rewritten for reliability) ───────────

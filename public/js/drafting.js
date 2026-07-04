@@ -1,3 +1,13 @@
+/* v5.44 — 03 Jul 2026 — Push v5.44 (literal paragraph numbers):
+   New renderDraftMd used for every draft-editor render (poll completion,
+   Previous-drafts load, AI insert, quick dialogue update). Identical to
+   renderMd except numbered paragraphs keep their LITERAL numbers as text —
+   renderMd rebuilt each blank-line-separated numbered paragraph as a fresh
+   <ol>, so every paragraph displayed "1." and the true numbers (which
+   legal cross-references and [ANY IDEAS RE PARA n] flags depend on) were
+   discarded. Companion: api/export.js writes numbered lines as literal
+   text instead of Word auto-numbering. worker.js untouched. */
+
 /* v5.43 — 03 Jul 2026 — Push v5.43 (heading-only export diagnostic):
    draftDownloadWord now refuses to export an empty editor (explicit
    toast), warns when the editor holds under 200 characters, and logs the
@@ -791,11 +801,11 @@ async function loadDraftIntoEditor(draftId){
   if(editor){
     var dc=dr.draft_content||'';
     /* v5.41: worker-persisted drafts are raw markdown (the live poll path
-       renders via renderMd before display; this path pasted it raw, so
-       loaded drafts showed as an unformatted lump and lost their line
-       structure on Word export). Client-saved rows are already HTML —
-       detect by leading '<'. */
-    if(dc&&!/^\s*</.test(dc))dc=renderMd(dc);
+       renders before display; this path pasted it raw, so loaded drafts
+       showed as an unformatted lump and lost their line structure on Word
+       export). Client-saved rows are already HTML — detect by leading '<'.
+       v5.44: renderDraftMd keeps literal paragraph numbers. */
+    if(dc&&!/^\s*</.test(dc))dc=renderDraftMd(dc);
     editor.innerHTML=dc;
   }
   /* Restore heading if present */
@@ -1648,7 +1658,7 @@ function _runDraftPoll(jobId,matterId,ctId,stId,dtId,instructions,prog,ctxSource
         var resultText=j.result||'';
         document.getElementById('draftInstructionsBody').style.display='none';
         var outputWrap=document.getElementById('draftOutputWrap');outputWrap.classList.remove('hidden');
-        var editor=document.getElementById('draftEditor');editor.innerHTML=renderMd(resultText);editor.focus();
+        var editor=document.getElementById('draftEditor');editor.innerHTML=renderDraftMd(resultText);editor.focus();
         /* v5.14a: show Clear Draft button as soon as the editor has content */
         updateClearDraftBtnVisibility();
         /* v5.13b: persist a new draft row in the `drafts` table and
@@ -1972,6 +1982,28 @@ async function generateDraft(redraftOpts){
   }catch(e){document.getElementById('draftGenerateBtn').disabled=false;prog.style.display='none';showToast('Draft error: '+e.message);}
 }
 
+/* v5.44: draft-specific markdown renderer. Identical to core.js renderMd
+   EXCEPT numbered paragraphs keep their literal numbers as plain text.
+   renderMd converts each consecutive run of "N. " lines into an <ol> and
+   discards the numbers — with blank lines between legal paragraphs every
+   paragraph became its own <ol> and displayed as "1.", destroying the
+   cross-reference numbering. Tool outputs elsewhere keep renderMd. */
+function renderDraftMd(text){
+  var lines=(text||'').split('\n');var html='';var i=0;
+  while(i<lines.length){
+    var l=lines[i];
+    if(/^#{1,2} /.test(l)){html+='<h2>'+inl(l.replace(/^#+\s/,''))+'</h2>';}
+    else if(l.indexOf('### ')===0){html+='<h3>'+inl(l.slice(4))+'</h3>';}
+    else if(l.indexOf('#### ')===0){html+='<h4>'+inl(l.slice(5))+'</h4>';}
+    else if(l.indexOf('- ')===0||l.indexOf('• ')===0){html+='<ul>';while(i<lines.length&&(lines[i].indexOf('- ')===0||lines[i].indexOf('• ')===0)){html+='<li>'+inl(lines[i].slice(2))+'</li>';i++;}html+='</ul>';continue;}
+    else if(/^\d+\. /.test(l)){html+='<p>'+inl(l)+'</p>';}
+    else if(l.indexOf('> ')===0){html+='<blockquote>'+inl(l.slice(2))+'</blockquote>';}
+    else if(l.trim()){html+='<p>'+inl(l)+'</p>';}
+    i++;
+  }
+  return html;
+}
+
 /* v5.34: redraft brief. Wraps the normal directives (which carry the
    comments under === INSTRUCTIONS ===) and appends the previous draft. */
 function buildRedraftDirectives(baseInstructions,previousDraft){
@@ -2026,7 +2058,7 @@ function draftInsertAI(){
   var currentContent=editor.innerText||editor.textContent;
   var matterId=document.getElementById('draftMatterSelect').value;
   api('/api/analyse','POST',{matterId:matterId,matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are editing a legal draft document. Current draft text:\n\n'+currentContent+'\n\nInstruction: '+instruction+'\n\nReturn the complete updated document incorporating the instruction.'}],jurisdiction:draftJur(),queryType:'Document Drafting',focusAreas:[]}).then(function(d){
-    if(d&&d.result){editor.innerHTML=renderMd(d.result);showToast('AI insert applied');}
+    if(d&&d.result){editor.innerHTML=renderDraftMd(d.result);showToast('AI insert applied');}
   }).catch(function(e){showToast('AI error: '+e.message);});
 }
 function draftDownloadWord(){
@@ -2321,6 +2353,6 @@ async function draftDialogueSend(){
   showToast('Updating draft…');
   try{
     var d=await api('/api/analyse','POST',{matterId:matterId,matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are editing a legal draft document. Current draft:\n\n'+currentContent+'\n\nFurther instruction: '+text+'\n\nReturn the complete updated document.'}],jurisdiction:draftJur(),queryType:'Document Drafting',focusAreas:[]});
-    if(d&&d.result){editor.innerHTML=renderMd(d.result);showToast('Draft updated');}
+    if(d&&d.result){editor.innerHTML=renderDraftMd(d.result);showToast('Draft updated');}
   }catch(e){showToast('Error: '+e.message);}
 }

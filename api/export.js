@@ -57,8 +57,11 @@ function markdownToDocxXml(text, matterName, jurisdiction, includeBranding) {
       body += '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>'
         + parseInline(trimmed.slice(2)) + '</w:p>';
     } else if (/^\d+\.\s/.test(trimmed)) {
-      body += '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr></w:pPr>'
-        + parseInline(trimmed.replace(/^\d+\.\s/, "")) + '</w:p>';
+      /* v5.44: keep the LITERAL paragraph number as text. Word
+         auto-numbering replaced it and restarted/drifted, so every
+         paragraph could show "1." and cross-references (e.g. the
+         [ANY IDEAS RE PARA n] flags) stopped matching the text. */
+      body += '<w:p><w:pPr><w:spacing w:after="120"/></w:pPr>' + parseInline(trimmed) + '</w:p>';
     } else if (trimmed.startsWith("> ")) {
       body += '<w:p><w:pPr><w:ind w:left="720"/><w:pBdr><w:left w:val="single" w:sz="12" w:space="4" w:color="1D6FA4"/></w:pBdr></w:pPr>'
         + '<w:r><w:rPr><w:i/><w:color w:val="2D5070"/></w:rPr><w:t xml:space="preserve">' + esc(trimmed.slice(2)) + '</w:t></w:r></w:p>';

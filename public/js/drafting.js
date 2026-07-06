@@ -1656,6 +1656,15 @@ function draftProgressShow(on){
    pre-attach currentDraftId here. */
 function _runDraftPoll(jobId,matterId,ctId,stId,dtId,instructions,prog,ctxSource,draftRowId){
   var pollCount=0;
+  /* v5.46: frontend worker re-fire for draft jobs, exactly as the tools
+     poll has done since v4.2e. Until now drafts relied solely on the
+     server-side cron to resume a paused/synthesising job, so they could
+     sit idle up to a minute between batches even with the browser open.
+     All v4.2k over-firing protection preserved: only fire when the status
+     has changed since the last fire, or the cooldown has elapsed. */
+  var lastFireStatus=null;
+  var lastFireTime=0;
+  var FIRE_COOLDOWN_MS=180000;
   var draftPoll=setInterval(async function(){
     try{
       pollCount++;
@@ -1692,6 +1701,18 @@ function _runDraftPoll(jobId,matterId,ctId,stId,dtId,instructions,prog,ctxSource
         }
       }else if(j.status==='paused'){
         if(!widgetTookLabel)prog.textContent='Resuming draft\u2026 batch '+j.batchesDone+' of '+j.batchesTotal+attemptSuffix;
+      }
+      if(j.status==='paused'||j.status==='synthesising'){
+        /* v5.46: re-fire the worker from the frontend (v4.2k-protected). */
+        var nowMs=Date.now();
+        var statusChanged=(j.status!==lastFireStatus);
+        var cooldownElapsed=(nowMs-lastFireTime>FIRE_COOLDOWN_MS);
+        if(statusChanged||cooldownElapsed){
+          console.log('v5.46 draft re-fire worker:',j.status,statusChanged?'(status changed)':'(cooldown elapsed)');
+          lastFireStatus=j.status;
+          lastFireTime=nowMs;
+          fetch('/api/worker?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Draft worker re-fire:',e.message);});
+        }
       }
       if(j.status==='complete'||j.status==='partial'){
         clearInterval(draftPoll);

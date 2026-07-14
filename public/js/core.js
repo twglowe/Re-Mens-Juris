@@ -1462,6 +1462,57 @@ async function doDeleteFolderAndDocs(folderId,folderName,docsInFolder){
 async function deleteDoc(id,name){if(!confirm('Remove "'+name+'"?'))return;try{await api('/api/documents?id='+id,'DELETE');await loadDocuments(currentMatter.id);await loadMatters();showToast('Document removed');}catch(e){showToast('Error: '+e.message);}}
 
 /* v4.5a: Rebuild trigger */
+/* ── v5.47: ZIP UPLOAD HELPERS ───────────────────────────────────────────
+   A .zip dropped or browsed into the upload zone is expanded in the
+   browser with JSZip and its contents fed through processFolderUpload as
+   {file, relativePath} items — exactly the shape a folder drop produces,
+   so folder creation, collision renaming and the skipped-files report all
+   apply unchanged. Junk entries (__MACOSX, dotfiles) are dropped. If the
+   zip's contents already sit inside a single top-level folder, the entry
+   paths are used as-is (no double nesting); otherwise everything goes
+   into a folder named after the zip, mirroring Finder's behaviour.
+   Zips nested inside a zip or a dropped folder are NOT expanded — they
+   fall through classifyUploadFile as unsupported and appear in the
+   skipped-files report. ──────────────────────────────────────────────── */
+async function expandZipFile(file){
+  if(typeof JSZip==='undefined')throw new Error('zip reader not loaded \u2014 empty caches and reload');
+  var zip=await JSZip.loadAsync(file);
+  var names=[];
+  zip.forEach(function(relPath,entry){if(!entry.dir)names.push(relPath);});
+  names=names.filter(function(p){
+    if(p.indexOf('__MACOSX/')===0)return false;
+    var parts=p.split('/');
+    for(var pi=0;pi<parts.length;pi++){if(!parts[pi]||parts[pi].charAt(0)==='.')return false;}
+    return true;
+  });
+  if(!names.length)throw new Error('no usable files found in '+file.name);
+  var tops={};names.forEach(function(p){tops[p.split('/')[0]]=true;});
+  var singleTopFolder=Object.keys(tops).length===1&&names.every(function(p){return p.indexOf('/')>0;});
+  var prefix=singleTopFolder?'':(String(file.name).replace(/\.zip$/i,'')||'Zip')+'/';
+  var out=[];
+  for(var i=0;i<names.length;i++){
+    var blob=await zip.file(names[i]).async('blob');
+    out.push({file:new File([blob],names[i].split('/').pop()),relativePath:prefix+names[i]});
+  }
+  return out;
+}
+/* Replaces any top-level .zip items with their expanded contents.
+   Returns {items, hadZip}. Items already inside a folder (relativePath
+   set) are passed through untouched. */
+async function expandZipItems(items){
+  var out=[];var hadZip=false;
+  for(var i=0;i<items.length;i++){
+    var it=items[i];
+    var nm=(it.file&&it.file.name?it.file.name:'').toLowerCase();
+    if(!it.relativePath&&nm.endsWith('.zip')){
+      hadZip=true;
+      showToast('Unzipping '+it.file.name+'\u2026');
+      out=out.concat(await expandZipFile(it.file));
+    }else{out.push(it);}
+  }
+  return {items:out,hadZip:hadZip};
+}
+
 /* ── UPLOAD ──────────────────────────────────────────────────────────────── */
 var uploadZone=document.getElementById('uploadZone'),fileInput=document.getElementById('fileInput');
 /* v5.15b2: separate input for picking a folder (webkitdirectory). Browser
@@ -1481,6 +1532,9 @@ uploadZone.addEventListener('drop',async function(e){
   var collected;
   try{collected=await collectDropEntries(e.dataTransfer);}
   catch(err){showToast('Drop failed: '+(err&&err.message||'unknown'));return;}
+  /* v5.47: expand any dropped .zip files before routing. */
+  try{collected=Object.assign({},collected,{items:(await expandZipItems(collected.items)).items,hasFolder:collected.hasFolder||collected.items.some(function(it){return !it.relativePath&&(it.file&&it.file.name?it.file.name:'').toLowerCase().endsWith('.zip');})});}
+  catch(zerr){showToast('Could not read zip: '+(zerr&&zerr.message||'unknown'));return;}
   if(collected.hasFolder){
     await processFolderUpload(collected.items);
   }else{
@@ -1494,7 +1548,20 @@ uploadZone.addEventListener('drop',async function(e){
       .filter(function(f){var n=f.name.toLowerCase();return n.endsWith('.pdf')||n.endsWith('.docx');}));
   }
 });
-fileInput.addEventListener('change',function(){if(!currentMatter){showToast('Select a matter first');return;}uploadFiles(Array.from(fileInput.files));fileInput.value='';});
+fileInput.addEventListener('change',async function(){
+  if(!currentMatter){showToast('Select a matter first');return;}
+  var picked=Array.from(fileInput.files);fileInput.value='';
+  /* v5.47: browsed .zip files expand and take the folder-upload path;
+     plain picks keep the original battle-tested uploadFiles path. */
+  if(picked.some(function(f){return f.name.toLowerCase().endsWith('.zip');})){
+    var zipped;
+    try{zipped=await expandZipItems(picked.map(function(f){return {file:f,relativePath:''};}));}
+    catch(zerr){showToast('Could not read zip: '+(zerr&&zerr.message||'unknown'));return;}
+    await processFolderUpload(zipped.items);
+  }else{
+    uploadFiles(picked);
+  }
+});
 /* v5.15b2: folder-picker click. The 📁 button at the right of the upload
    zone triggers the hidden folderInput. stopPropagation prevents the
    click bubbling to fileInput's full-area overlay. */

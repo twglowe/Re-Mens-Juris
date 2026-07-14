@@ -7,6 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/js/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<!-- v5.47: JSZip for client-side unzip in the upload zone -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -1012,9 +1014,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
       <!-- v5.0: Folder picker populated by renderUploadFolderPicker() -->
       <div id="uploadFolderPicker" style="display:none;margin-bottom:.4rem"></div>
       <div class="upload-zone" id="uploadZone">
-        <input type="file" id="fileInput" accept=".pdf,.docx" multiple>
+        <input type="file" id="fileInput" accept=".pdf,.docx,.zip" multiple>
         <input type="file" id="folderInput" webkitdirectory directory style="display:none">
-        <div class="uz-text">Drop files or folders, or click to browse</div>
+        <div class="uz-text">Drop files, folders or zips, or click to browse</div>
         <button type="button" id="folderBrowseBtn" class="uz-folder-btn" title="Browse folder…" aria-label="Browse folder">📁</button>
       </div>
       <div class="upload-progress" id="uploadProg"></div>
@@ -1347,7 +1349,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js?v=5.36"></script>
+<script src="/js/core.js?v=5.47"></script>
 <script src="/js/tools.js?v=5.45"></script>
 <script src="/js/library.js?v=5.39"></script>
 <script src="/js/drafting.js?v=5.46"></script>

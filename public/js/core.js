@@ -667,6 +667,38 @@ async function loadDocuments(matterId){try{var d=await api('/api/documents?matte
    only when each folder is in the open state. Empty folders still show. The
    flat-rendering path remains identical when no folder has a parent set
    (which is the day-one state of the v5.15a release). */
+/* v5.48: A\u2013Z / Newest ordering for the Documents panel. One toggle
+   covers both sibling folders (at every level) and documents inside each
+   folder. 'date' = newest first \u2014 folders by created_at, documents by
+   created_at (the date they were uploaded; the date in a file's NAME is
+   never used). For A\u2013Z, a leading date in the name (2024-03-01,
+   01.03.2024, 20240301 and similar) is ignored so date-prefixed documents
+   sort by their real title. Preference kept in localStorage. Unassigned
+   stays pinned to the bottom either way. */
+var docsSort='az';
+try{docsSort=localStorage.getItem('docsSort')||'az';}catch(e){}
+function setDocsSort(s){
+  docsSort=(s==='date')?'date':'az';
+  try{localStorage.setItem('docsSort',docsSort);}catch(e){}
+  renderDocs();
+}
+/* Strip a leading date-ish prefix (and trailing separators) for A\u2013Z
+   comparison only \u2014 display names are untouched. */
+function _docsSortKey(name){
+  var s=String(name||'');
+  var stripped=s.replace(/^\s*(\d{4}[-._ \/]\d{1,2}[-._ \/]\d{1,2}|\d{1,2}[-._ \/]\d{1,2}[-._ \/]\d{2,4}|\d{8})[\s\-._)\u2013\u2014]*/,'');
+  return (stripped||s).toLowerCase();
+}
+function _docsCmpName(aName,bName){
+  return _docsSortKey(aName).localeCompare(_docsSortKey(bName),undefined,{sensitivity:'base',numeric:true});
+}
+function _docsCmpDate(aDate,bDate,aName,bName){
+  var ta=aDate?(Date.parse(aDate)||0):0;
+  var tb=bDate?(Date.parse(bDate)||0):0;
+  if(tb!==ta)return tb-ta;
+  return _docsCmpName(aName,bName);
+}
+
 function renderDocs(){
   var list=document.getElementById('docsList');
   var newFolderBtnRow=document.getElementById('newFolderButtonRow');
@@ -678,6 +710,9 @@ function renderDocs(){
   if(newFolderBtnRow)newFolderBtnRow.style.display='';
   /* Small secondary "Manage folders" link and folder count, right-aligned. */
   var header='<div class="docs-header-row" style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:.35rem;gap:.5rem">'
+    /* v5.48: sort toggle \u2014 same look as the matters list toggle. */
+    +'<button class="matters-sort-btn'+(docsSort==='az'?' active':'')+'" style="flex:0 0 auto" onclick="setDocsSort(\'az\')" title="Sort folders and files alphabetically (ignoring a leading date in the name)">A\u2013Z</button>'
+    +'<button class="matters-sort-btn'+(docsSort==='date'?' active':'')+'" style="flex:0 0 auto;margin-right:auto" onclick="setDocsSort(\'date\')" title="Sort folders and files by date uploaded, newest first">Newest</button>'
     +(currentFolders.length?'<span style="font-size:.68rem;color:var(--text-faint);font-weight:500">'+currentFolders.length+' folder'+(currentFolders.length!==1?'s':'')+'</span>':'')
     +'<button class="btn-dl" onclick="openManageFoldersModal()" style="font-size:.7rem;padding:.22rem .5rem;background:var(--off-white);color:var(--text-mid);font-weight:600" title="Rename or delete folders">🗂 Manage</button>'
     +'</div>';
@@ -699,9 +734,11 @@ function renderDocs(){
     if(!childrenByParent[pid])childrenByParent[pid]=[];
     childrenByParent[pid].push(f);
   });
+  /* v5.48: sibling folders follow the toggle. */
   Object.keys(childrenByParent).forEach(function(pid){
     childrenByParent[pid].sort(function(a,b){
-      return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+      if(docsSort==='date')return _docsCmpDate(a.created_at,b.created_at,a.name,b.name);
+      return _docsCmpName(a.name,b.name);
     });
   });
   /* Group documents by folder id. A doc in 2 folders lands in 2 bins. */
@@ -715,6 +752,14 @@ function renderDocs(){
       if(byFolder[fid])byFolder[fid].push(doc);
     });
   });
+  /* v5.48: documents inside each folder follow the toggle too. Newest uses
+     created_at (upload date) \u2014 never doc_date or a date in the name. */
+  var _docCmp=function(a,b){
+    if(docsSort==='date')return _docsCmpDate(a.created_at,b.created_at,a.name,b.name);
+    return _docsCmpName(a.name,b.name);
+  };
+  Object.keys(byFolder).forEach(function(fid){byFolder[fid].sort(_docCmp);});
+  uncategorised.sort(_docCmp);
   /* Render a single document row. inFolderId is the folder whose child row
      this is ('' if rendered under Uncategorised). Used by drag-to-move to
      know which folder to remove from. */

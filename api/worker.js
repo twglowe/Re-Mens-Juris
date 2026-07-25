@@ -2,6 +2,27 @@
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
 
+   v5.22 CHANGES (24 Jul 2026) - Push v5.22 (Push 2: long documents read in full):
+   1. Feature-flagged (FULL_DOCS, default true). To restore the previous
+      behaviour exactly, set FULL_DOCS = false and re-push this one file.
+   2. When FULL_DOCS is true, chunksToDocMap splits any document whose text
+      exceeds PART_MAX_CHARS (80000, same value as the old truncation point)
+      into consecutive parts at chunk boundaries (chunks are page-based, so
+      splits fall at natural page/paragraph breaks). Every part flows through
+      the existing extract -> condense -> synthesise pipeline as if it were a
+      document. NOTHING is truncated: the old "[...truncated for
+      processing...]" cut in batchDocs is bypassed under the flag.
+   3. Part labels are MODEL-ONLY. docsToText marks each part in its ===
+      header as "(long document - part n of m; cite this document as
+      "<name>", not by part number)". buildPageIndex merges all parts of a
+      document under its base name, so the PAGE REFERENCE INDEX is identical
+      in shape to before. Prompts, output formats, and citations are
+      unchanged - the reader never sees part numbers.
+   4. With FULL_DOCS = false, chunksToDocMap, batchDocs, docsToText and
+      buildPageIndex behave byte-for-byte as v5.21. No other function, no
+      tool branch, no prompt, and none of the resume/condense/synthesis
+      machinery is touched.
+
    v5.21 CHANGES (22 Jun 2026) - Push v5.21 (Chronology: surface gaps + conflicts):
    1. Chronology SYNTHESIS prompt only. Two always-on additions (no parameter;
       applies to every chronology, anchored or not):
@@ -261,6 +282,18 @@ const PARALLEL = 6;
 const FULL_FETCH = true;
 const FETCH_PAGE = 1000;
 
+/* ──────────────────────────────────────────────────────────────────────────
+   v5.22 PUSH 2 — long documents read in full (feature-flagged).
+   When FULL_DOCS is true, documents longer than PART_MAX_CHARS are split
+   into consecutive parts at chunk boundaries instead of being truncated at
+   80000 characters. To revert to the exact previous behaviour, set
+   FULL_DOCS = false and re-push this one file — no other change is needed.
+   PART_MAX_CHARS deliberately equals the old truncation point so batch
+   packing arithmetic is unchanged.
+   ────────────────────────────────────────────────────────────────────────── */
+const FULL_DOCS = true;
+const PART_MAX_CHARS = 80000;
+
 /* ══════════════════════════════════════════════════════════════════════════
    SHARED HELPERS (moved from tools.js v3.3 — identical logic)
    ══════════════════════════════════════════════════════════════════════════ */
@@ -331,13 +364,63 @@ function applyDocFilters(chunks, excludeDocNames, includeDocNames) {
 }
 
 function chunksToDocMap(chunks) {
+  /* v5.22: flag off — original behaviour, byte-for-byte. */
+  if (!FULL_DOCS) {
+    var byDocOld = {};
+    for (var oi = 0; oi < chunks.length; oi++) {
+      var oc = chunks[oi];
+      if (!byDocOld[oc.document_name]) byDocOld[oc.document_name] = { type: oc.doc_type, text: "", pages: [] };
+      byDocOld[oc.document_name].text += oc.content + "\n\n";
+      if (oc.page_number != null) {
+        byDocOld[oc.document_name].pages.push({ chunkIndex: oc.chunk_index, page: oc.page_number, snippet: oc.content.slice(0, 80) });
+      }
+    }
+    return byDocOld;
+  }
+  /* v5.22 FULL_DOCS path: identical accumulation, but when a document's
+     current part would exceed PART_MAX_CHARS, close it and open a new part
+     keyed "<name> \u27E6part N\u27E7". Splits fall at chunk boundaries
+     (chunks are page-based). currentKeyByDoc tracks each document's open
+     part so accumulation is correct even if chunk ordering interleaves
+     documents. A part always accepts at least one chunk, so no chunk is
+     ever dropped. After the loop, parts of split documents are stamped with
+     baseName / partNum / partTotal for docsToText and buildPageIndex;
+     unsplit documents carry no part fields and behave exactly as before. */
   var byDoc = {};
+  var partsPerDoc = {};
+  var currentKeyByDoc = {};
   for (var i = 0; i < chunks.length; i++) {
     var c = chunks[i];
-    if (!byDoc[c.document_name]) byDoc[c.document_name] = { type: c.doc_type, text: "", pages: [] };
-    byDoc[c.document_name].text += c.content + "\n\n";
+    var base = c.document_name;
+    var key = currentKeyByDoc[base];
+    if (!key) {
+      key = base;
+      currentKeyByDoc[base] = key;
+      partsPerDoc[base] = [key];
+      byDoc[key] = { type: c.doc_type, text: "", pages: [] };
+    }
+    var entry = byDoc[key];
+    if (entry.text.length > 0 && entry.text.length + c.content.length + 2 > PART_MAX_CHARS) {
+      key = base + " \u27E6part " + (partsPerDoc[base].length + 1) + "\u27E7";
+      currentKeyByDoc[base] = key;
+      partsPerDoc[base].push(key);
+      byDoc[key] = { type: c.doc_type, text: "", pages: [] };
+      entry = byDoc[key];
+    }
+    entry.text += c.content + "\n\n";
     if (c.page_number != null) {
-      byDoc[c.document_name].pages.push({ chunkIndex: c.chunk_index, page: c.page_number, snippet: c.content.slice(0, 80) });
+      entry.pages.push({ chunkIndex: c.chunk_index, page: c.page_number, snippet: c.content.slice(0, 80) });
+    }
+  }
+  var splitDocs = Object.keys(partsPerDoc);
+  for (var s = 0; s < splitDocs.length; s++) {
+    var keys = partsPerDoc[splitDocs[s]];
+    if (keys.length > 1) {
+      for (var k = 0; k < keys.length; k++) {
+        byDoc[keys[k]].baseName = splitDocs[s];
+        byDoc[keys[k]].partNum = k + 1;
+        byDoc[keys[k]].partTotal = keys.length;
+      }
     }
   }
   return byDoc;
@@ -345,6 +428,7 @@ function chunksToDocMap(chunks) {
 
 function batchDocs(byDoc, maxChars) {
   maxChars = maxChars || 100000;
+  var docDataPart = null;
   var batches = [];
   var current = {};
   var currentSize = 0;
@@ -352,8 +436,11 @@ function batchDocs(byDoc, maxChars) {
   for (var i = 0; i < entries.length; i++) {
     var name = entries[i][0];
     var data = entries[i][1];
-    var truncated = data.text.length > 80000 ? data.text.slice(0, 80000) + "\n[...truncated for processing...]" : data.text;
-    var docData = { type: data.type, text: truncated, pages: data.pages };
+    /* v5.22: under FULL_DOCS, entries arrive pre-split at <= PART_MAX_CHARS,
+       so nothing is truncated. Flag off: original 80000 cut, byte-for-byte. */
+    var truncated = (!FULL_DOCS && data.text.length > 80000) ? data.text.slice(0, 80000) + "\n[...truncated for processing...]" : data.text;
+    if (data.partNum) { docDataPart = { baseName: data.baseName, partNum: data.partNum, partTotal: data.partTotal }; } else { docDataPart = null; }
+    var docData = docDataPart ? { type: data.type, text: truncated, pages: data.pages, baseName: docDataPart.baseName, partNum: docDataPart.partNum, partTotal: docDataPart.partTotal } : { type: data.type, text: truncated, pages: data.pages };
     var docSize = truncated.length + name.length + 50;
     if (currentSize + docSize > maxChars && Object.keys(current).length > 0) {
       batches.push(current);
@@ -371,7 +458,12 @@ function docsToText(byDoc) {
   return Object.entries(byDoc).map(function(entry) {
     var n = entry[0];
     var d = entry[1];
-    var header = "=== " + n + " [" + d.type + "] ===";
+    /* v5.22: parts of a long document are labelled for the MODEL only, with
+       an explicit instruction to cite by the document name. Unsplit
+       documents produce the identical header to v5.21. */
+    var header = d.partNum
+      ? "=== " + (d.baseName || n) + " [" + d.type + "] (long document \u2014 part " + d.partNum + " of " + d.partTotal + "; cite this document as \"" + (d.baseName || n) + "\", not by part number) ==="
+      : "=== " + n + " [" + d.type + "] ===";
     if (d.pages && d.pages.length > 0) {
       var pageRange = d.pages.map(function(p) { return p.page; });
       header += " (pages " + Math.min.apply(null, pageRange) + "\u2013" + Math.max.apply(null, pageRange) + ")";
@@ -381,21 +473,30 @@ function docsToText(byDoc) {
 }
 
 function buildPageIndex(byDoc) {
+  /* v5.22: parts of a split document are merged under the base document
+     name, so the index shape is identical to v5.21 — one line per document.
+     For unsplit documents the output is byte-for-byte unchanged. */
   var lines = [];
+  var order = [];
+  var groupedByLabel = {};
   var entries = Object.entries(byDoc);
   for (var i = 0; i < entries.length; i++) {
     var name = entries[i][0];
     var data = entries[i][1];
     if (data.pages && data.pages.length > 0) {
-      var grouped = {};
+      var label = data.baseName || name;
+      if (!groupedByLabel[label]) { groupedByLabel[label] = {}; order.push(label); }
+      var grouped = groupedByLabel[label];
       for (var j = 0; j < data.pages.length; j++) {
         var p = data.pages[j];
         if (!grouped[p.page]) grouped[p.page] = [];
         grouped[p.page].push(p.chunkIndex + 1);
       }
-      var refs = Object.entries(grouped).map(function(e) { return "p." + e[0] + " (\u00b6" + e[1].join(",") + ")"; }).join(", ");
-      lines.push(name + ": " + refs);
     }
+  }
+  for (var li = 0; li < order.length; li++) {
+    var refs = Object.entries(groupedByLabel[order[li]]).map(function(e) { return "p." + e[0] + " (\u00b6" + e[1].join(",") + ")"; }).join(", ");
+    lines.push(order[li] + ": " + refs);
   }
   return lines.length > 0 ? "\n\nPAGE REFERENCE INDEX:\n" + lines.join("\n") : "";
 }
@@ -974,7 +1075,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
    the function alive as long as the response has not been sent.
    ══════════════════════════════════════════════════════════════════════════ */
 
-const SERVER_VERSION = "v5.17";
+const SERVER_VERSION = "v5.22";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " worker handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });

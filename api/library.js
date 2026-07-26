@@ -41,7 +41,7 @@ async function extractPdfText(filePath) {
   return response.content?.find(b => b.type === "text")?.text || "";
 }
 
-const SERVER_VERSION = "v5.5";
+const SERVER_VERSION = "v5.24";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " library handler: " + (req.method || "?") + " " + (req.url || ""));
   const user = await getUser(req);
@@ -91,6 +91,15 @@ export default async function handler(req, res) {
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ data });
     }
+    /* v5.24 Push A: list legislation acts (Library > Legislation) */
+    if (type === "legislation") {
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+      const { data, error } = await sb.from("legislation")
+        .select("id, jurisdiction, act_name, file_name, char_count, created_at")
+        .eq("user_id", user.id).order("jurisdiction").order("act_name");
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ data });
+    }
     // v2.3: Law firms list
     if (type === "law_firms") {
       const { data, error } = await supabase.from("law_firms")
@@ -137,6 +146,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
     // v2.3: Delete law firm
+    /* v5.24 Push A: delete a legislation act (chunks cascade) */
+    if (action === "delete_legislation") {
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+      await sb.from("legislation").delete().eq("id", id).eq("user_id", user.id);
+      return res.status(200).json({ success: true });
+    }
     if (action === "delete_law_firm") {
       await supabase.from("law_firms").delete().eq("id", id).eq("owner_id", user.id);
       return res.status(200).json({ success: true });
@@ -202,6 +217,42 @@ export default async function handler(req, res) {
       });
     }
     const { action } = body || {};
+
+    /* v5.24 Push A: store a legislation act. Text is extracted in the
+       BROWSER (full text - the server-side PDF extractor's 4096-token
+       ceiling would silently truncate a long act) and sent as JSON.
+       Fresh client inside the handler: module-scope clients can hold a
+       stale schema cache that does not know newly migrated tables. */
+    if (action === "create_legislation") {
+      const { jurisdiction, act_name, file_name, text } = body;
+      if (!jurisdiction || !act_name || !text || !text.trim()) {
+        return res.status(400).json({ error: "jurisdiction, act_name and text required" });
+      }
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+      const { data: leg, error: legErr } = await sb.from("legislation").insert({
+        user_id: user.id,
+        jurisdiction: jurisdiction,
+        act_name: act_name,
+        file_name: file_name || null,
+        char_count: text.length,
+      }).select("id").single();
+      if (legErr) return res.status(500).json({ error: legErr.message });
+      try {
+        const chunks = chunkText(text);
+        const rows = chunks.map((c, i) => ({
+          legislation_id: leg.id, user_id: user.id, chunk_index: i, content: c,
+        }));
+        /* insert in slices of 500 rows - a long act can run to 1500+ chunks */
+        for (let s = 0; s < rows.length; s += 500) {
+          const { error: chErr } = await sb.from("legislation_chunks").insert(rows.slice(s, s + 500));
+          if (chErr) throw new Error(chErr.message);
+        }
+      } catch (e) {
+        await sb.from("legislation").delete().eq("id", leg.id).eq("user_id", user.id);
+        return res.status(500).json({ error: "Chunk storage failed: " + e.message });
+      }
+      return res.status(201).json({ success: true, id: leg.id });
+    }
 
     if (action === "create_case_type") {
       const { name, jurisdiction, description, subcats = [], docTypes = [] } = body;

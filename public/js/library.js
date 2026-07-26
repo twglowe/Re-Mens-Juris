@@ -195,12 +195,14 @@ async function libIndexMarkNotRelevant(documentId){
 async function loadLibrary(){
   if(!token)return;
   try{
-    var results=await Promise.all([api('/api/library?type=case_types'),api('/api/library?type=subcats'),api('/api/library?type=doc_types'),api('/api/library?type=precedents'),api('/api/library?type=sections')]);
+    var results=await Promise.all([api('/api/library?type=case_types'),api('/api/library?type=subcats'),api('/api/library?type=doc_types'),api('/api/library?type=precedents'),api('/api/library?type=sections'),api('/api/library?type=legislation')]);
     libraryData.caseTypes=results[0].data||[];
     libraryData.subcats=results[1].data||[];
     libraryData.docTypes=results[2].data||[];
     libraryData.precedents=results[3].data||[];
     libraryData.sections=results[4].data||[];
+    libraryData.legislation=results[5].data||[];
+    legRender();
     libPopulateSearchFilters();
     libFilterSearch();
     libPopulateDraftSelects();
@@ -602,4 +604,73 @@ function draftDeleteFromSelect(type){
     if(!confirm('Delete doc type "'+name3+'"?'))return;
     api('/api/library','DELETE',{action:'delete_doc_type',id:sel3.value}).then(function(){loadLibrary();showToast('Deleted: '+name3);}).catch(function(e){showToast('Error: '+e.message);});
   }
+}
+
+
+/* ══ v5.40 Push A: LEGISLATION LIBRARY ═══════════════════════════════════
+   Acts are extracted in the browser (full text) and stored chunked on the
+   server. Text extraction reuses the matter-document extractors. */
+var legPendingText=null;
+async function legFileChanged(input){
+  legPendingText=null;
+  var st=document.getElementById('legUpStatus');
+  if(!input.files||!input.files[0])return;
+  var file=input.files[0];
+  var lower=file.name.toLowerCase();
+  var isPdf=lower.endsWith('.pdf'),isDocx=lower.endsWith('.docx');
+  if(!isPdf&&!isDocx){st.style.display='';st.textContent='PDF or DOCX only.';return;}
+  st.style.display='';st.textContent='Reading document\u2026';
+  try{
+    var pages=isDocx?await extractDocxText(file):await extractPdfText(file);
+    var text=pages.map(function(p){return p.text;}).join('\n\n');
+    if(!text||text.trim().length<200){st.textContent='No readable text \u2014 if this is a scanned PDF, OCR it first.';return;}
+    legPendingText=text;
+    st.textContent='Read '+text.length.toLocaleString()+' characters.';
+    var nameField=document.getElementById('legUpName');
+    if(!nameField.value.trim()){
+      nameField.value=file.name.replace(/\.(pdf|docx)$/i,'').replace(/[_-]+/g,' ').trim();
+    }
+  }catch(e){st.textContent='Read error: '+e.message;}
+}
+async function legUpload(){
+  var jur=document.getElementById('legUpJur').value;
+  var name=document.getElementById('legUpName').value.trim();
+  var fileInput=document.getElementById('legUpFile');
+  var st=document.getElementById('legUpStatus');
+  if(!name){showToast('Enter the act name');return;}
+  if(!legPendingText){showToast('Choose a file first');return;}
+  st.style.display='';st.textContent='Uploading\u2026';
+  try{
+    await api('/api/library','POST',{action:'create_legislation',jurisdiction:jur,act_name:name,file_name:fileInput.files[0]?fileInput.files[0].name:null,text:legPendingText});
+    legPendingText=null;fileInput.value='';document.getElementById('legUpName').value='';
+    st.style.display='none';
+    showToast('Legislation stored');
+    await loadLibrary();
+  }catch(e){st.textContent='Upload error: '+e.message;}
+}
+async function legDelete(id,name){
+  if(!confirm('Delete "'+name+'" from the legislation library?'))return;
+  try{
+    await api('/api/library','DELETE',{action:'delete_legislation',id:id});
+    showToast('Deleted');
+    await loadLibrary();
+  }catch(e){showToast('Error: '+e.message);}
+}
+function legRender(){
+  var wrap=document.getElementById('legList');
+  if(!wrap)return;
+  var acts=libraryData.legislation||[];
+  if(!acts.length){wrap.innerHTML='<div style="font-size:.78rem;color:var(--text-faint);padding:.3rem .1rem">No legislation uploaded yet.</div>';return;}
+  var byJur={};
+  acts.forEach(function(a){(byJur[a.jurisdiction]=byJur[a.jurisdiction]||[]).push(a);});
+  wrap.innerHTML=Object.keys(byJur).sort().map(function(j){
+    return '<div style="font-size:.72rem;font-weight:700;color:var(--text-mid);margin:.35rem 0 .15rem;text-transform:uppercase;letter-spacing:.03em">'+esc(j)+'</div>'
+      +byJur[j].map(function(a){
+        return '<div style="display:flex;align-items:center;gap:.35rem;padding:.22rem .1rem;font-size:.82rem;border-bottom:1px solid var(--border)">'
+          +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(a.act_name)+'">'+esc(a.act_name)+'</span>'
+          +'<span style="font-size:.7rem;color:var(--text-faint);flex-shrink:0">'+(a.char_count?Math.round(a.char_count/1000)+'k':'')+'</span>'
+          +'<button class="lib-box-btn del" style="flex-shrink:0;padding:.1rem .4rem;font-size:.78rem" title="Delete" onclick="legDelete(\''+a.id+'\',\''+esc(a.act_name).replace(/'/g,'')+'\')">\u2212</button>'
+          +'</div>';
+      }).join('');
+  }).join('');
 }

@@ -680,6 +680,18 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
         <div class="lib-search-results" id="libSearchResults">
           <div class="empty-state">Add case types and precedents to build your library.</div>
         </div>
+        <!-- v5.40 Push A: Legislation library -->
+        <div style="border-top:2px solid var(--border);padding:.5rem .6rem;flex-shrink:0;max-height:40%;overflow-y:auto">
+          <div style="font-family:'Libre Baskerville',serif;font-size:.92rem;font-weight:700;color:var(--text-light);margin-bottom:.35rem">Legislation</div>
+          <select class="lib-select" id="legUpJur" style="width:100%;margin-bottom:.25rem;font-size:.8rem">
+            <option>Cayman Islands</option><option>Bermuda</option><option>British Virgin Islands</option>
+          </select>
+          <input class="lib-search-input" id="legUpName" placeholder="Act name, e.g. Companies Act (2025 Revision)" style="margin-bottom:.25rem">
+          <input type="file" id="legUpFile" accept=".pdf,.docx" style="width:100%;font-size:.78rem;margin-bottom:.25rem" onchange="legFileChanged(this)">
+          <div id="legUpStatus" style="display:none;font-size:.75rem;color:var(--blue);margin-bottom:.25rem"></div>
+          <button class="btn-primary" style="width:100%;padding:.35rem;font-size:.82rem" onclick="legUpload()">Upload legislation</button>
+          <div id="legList" style="margin-top:.4rem"></div>
+        </div>
       </div>
 
       <!-- DRAFT left panel — v5.16a: Two-tab merged column. Case + Sources. -->
@@ -1351,7 +1363,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <datalist id="newFolderSuggestions"></datalist>
 <script src="/js/core.js?v=5.49"></script>
 <script src="/js/tools.js?v=5.45"></script>
-<script src="/js/library.js?v=5.39"></script>
+<script src="/js/library.js?v=5.40"></script>
 <script src="/js/drafting.js?v=5.46"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->

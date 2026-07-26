@@ -2,6 +2,22 @@
    Background tool processor. Called by tools.js (fire-and-forget) AND by
    cron-resume.js (every 2 minutes, for laptop-closed processing).
 
+   v5.23 CHANGES (26 Jul 2026) - tool-specific tramline titles:
+   1. For every tool EXCEPT draft, the title between the court heading's
+      tramlines (the ═══ lines) is now "<TOOL NAME> ON <PROCEDURAL STAGE>"
+      in capitals - e.g. "ISSUES ON STRIKE OUT APPLICATION". The stage is
+      the matter's selected Procedural Stage (matters.subcategory_id ->
+      case_subcategories.name). If no stage is selected the tool name
+      appears alone. Whatever docTitle is stored in heading_data is ignored
+      for tool outputs. Court, case number and parties are unchanged.
+   2. The draft tool is untouched: its tramline title still comes from the
+      heading editor. If a matter has no heading data at all, tool output
+      is unchanged (no heading block, as before).
+   3. Implementation is confined to the heading-fetch block in the tool run
+      section: one widened select (heading_data, subcategory_id), one
+      case_subcategories lookup, one docTitle override on a copied heading
+      object. No prompts, pipeline, or resume machinery touched.
+
    v5.22 CHANGES (24 Jul 2026) - Push v5.22 (Push 2: long documents read in full):
    1. Feature-flagged (FULL_DOCS, default true). To restore the previous
       behaviour exactly, set FULL_DOCS = false and re-push this one file.
@@ -1075,7 +1091,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
    the function alive as long as the response has not been sent.
    ══════════════════════════════════════════════════════════════════════════ */
 
-const SERVER_VERSION = "v5.22";
+const SERVER_VERSION = "v5.23";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " worker handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -1163,15 +1179,36 @@ export default async function handler(req, res) {
       actingFor ? "Acting for: " + actingFor : "",
     ].filter(Boolean).join("\n");
 
-    /* Get court heading */
+    /* Get court heading.
+       v5.23: for every tool except draft, the tramline title (docTitle) is
+       replaced with "<TOOL NAME> ON <PROCEDURAL STAGE>" in capitals; the
+       stage name comes from case_subcategories via matters.subcategory_id.
+       No stage selected -> tool name alone. Stored docTitle is ignored for
+       tool outputs. Draft keeps its heading-editor title untouched. */
     var heading = p.courtHeading || null;
-    if (!heading) {
+    var matterStageName = "";
+    if (!heading || tool !== "draft") {
       try {
-        var matterResp = await supabase.from("matters").select("heading_data").eq("id", matterId).single();
-        if (matterResp.data && matterResp.data.heading_data && (matterResp.data.heading_data.court || matterResp.data.heading_data.party1)) {
-          heading = matterResp.data.heading_data;
+        var matterResp = await supabase.from("matters").select("heading_data, subcategory_id").eq("id", matterId).single();
+        if (matterResp.data) {
+          if (!heading && matterResp.data.heading_data && (matterResp.data.heading_data.court || matterResp.data.heading_data.party1)) {
+            heading = matterResp.data.heading_data;
+          }
+          if (tool !== "draft" && matterResp.data.subcategory_id) {
+            try {
+              var stageResp = await supabase.from("case_subcategories").select("name").eq("id", matterResp.data.subcategory_id).single();
+              if (stageResp.data && stageResp.data.name) matterStageName = String(stageResp.data.name);
+            } catch (e2) { /* no stage lookup */ }
+          }
         }
       } catch (e) { /* no heading */ }
+    }
+    if (heading && tool !== "draft") {
+      var TOOL_TITLES = { issues: "ISSUES", briefing: "BRIEFING", chronology: "CHRONOLOGY", persons: "DRAMATIS PERSONAE", proposition: "PROPOSITION EVIDENCE", inconsistency: "INCONSISTENCY TRACKER", citations: "CITATION CHECK", issueBriefing: "ISSUE BRIEFING" };
+      var toolTitle = TOOL_TITLES[tool] || null;
+      if (toolTitle) {
+        heading = { court: heading.court, caseNo: heading.caseNo, party1: heading.party1, party1Role: heading.party1Role, party2: heading.party2, party2Role: heading.party2Role, docTitle: toolTitle + (matterStageName ? " ON " + matterStageName.toUpperCase() : "") };
+      }
     }
     var headingText = heading ? formatCourtHeading(heading) : "";
 

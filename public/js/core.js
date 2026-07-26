@@ -43,7 +43,7 @@
       filled (subElement and focusDocNames are simply not added to the
       body). All callers of /api/analyse outside Issues are unchanged.
    ═══════════════════════════════════════════════════════════════════════════════ */
-var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],isLoading=false,histOpen=false,jurisdiction='Bermuda',pendingTool=null;
+var token=null,currentUser=null,currentMatter=null,matters=[],documents=[],matterHistory=[],isLoading=false,histOpen=false,jurisdiction='Cayman Islands',pendingTool=null;
 var toolHistoryCache={};
 /* v5.0: Folders for the current matter. Loaded on matter select. Each entry:
    { id, name, sort_order, created_at, document_count }. */
@@ -274,6 +274,15 @@ async function selectMatter(id){
   await loadFolders(id);
   await loadHistory(id);
   toolHistoryCache[id]={};
+  /* v5.49: snap the jurisdiction toggle to the loaded matter's own
+     jurisdiction, so tools always run with the matter's legislative
+     context. The toggle remains a manual override after loading. */
+  if(currentMatter.jurisdiction){
+    jurisdiction=currentMatter.jurisdiction;
+    document.querySelectorAll('.jur-tab').forEach(function(b){
+      if(b.dataset.jur===currentMatter.jurisdiction){b.classList.add('active');}else{b.classList.remove('active');}
+    });
+  }
   sysMsg('Matter loaded: **'+currentMatter.name+'** · '+currentMatter.jurisdiction+(currentMatter.acting_for?' · Acting for: '+currentMatter.acting_for:''));
   if(currentMatter.nature)sysMsg('Dispute: '+currentMatter.nature);
   renderMatterRecord();

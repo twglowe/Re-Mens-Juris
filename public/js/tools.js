@@ -1,4 +1,18 @@
-/* EX LIBRIS JURIS v5.15c — public/js/tools.js
+/* EX LIBRIS JURIS v5.54 — public/js/tools.js
+   v5.54 (30 Aug 2026) — Push v5.54 (a running draft survives a refresh
+   visibly, not just actually):
+   1. resumeInProgressJobs' active filter now includes 'pending'. A job
+      created seconds before a refresh had not yet been picked up by the
+      worker, so it was skipped and nothing reattached — even though the
+      job completed server-side and the draft landed in the drafts row.
+   2. When an in-flight draft is found for the matter being opened, say so.
+      Previously the stash was silent (console only), so a user who had
+      refreshed had no way to know the draft was still being generated or
+      that the Drafting tab would pick it up.
+   No change to how jobs are run, polled or written. The work always did
+   continue on the server; this push makes that visible.
+
+   v5.15c (04 May 2026) — Push v5.15c (Tool form modal — sizing + persistence):
    v5.15c (04 May 2026) — Push v5.15c (Tool form modal — sizing + persistence):
    1. Form state persistence (in-memory, per-matter, per-tool). New module-level
       object toolFormState is keyed by `${matterId}|${toolName}` and holds the
@@ -1071,8 +1085,11 @@ async function resumeInProgressJobs(matterId){
   try{
     var resp=await api('/api/jobs?matterId='+matterId);
     if(!resp||!resp.jobs||!resp.jobs.length)return;
+    /* v5.54: 'pending' included. A job created just before a refresh has
+       not been claimed by the worker yet; skipping it orphaned the progress
+       display while the job itself ran to completion. */
     var active=resp.jobs.filter(function(j){
-      return j.status==='running'||j.status==='paused'||j.status==='synthesising';
+      return j.status==='pending'||j.status==='running'||j.status==='paused'||j.status==='synthesising';
     });
     if(!active.length)return;
     console.log('v4.4 resuming '+active.length+' in-progress job(s) for matter '+matterId);
@@ -1089,6 +1106,13 @@ async function resumeInProgressJobs(matterId){
       if(toolName==='draft'){
         window._inflightDraftJob={jobId:job.id,matterId:matterId};
         console.log('v5.16e in-flight draft job '+job.id+' stashed for matter '+matterId);
+        /* v5.54: tell the user. The draft carries on being generated on the
+           server whatever the browser does; it will appear under Previous
+           drafts when it finishes. Opening the Drafting tab reattaches the
+           progress display. */
+        if(typeof showToast==='function'){
+          showToast('A draft is still being generated for this matter — open the Drafting tab to watch it, or leave it: it will appear under Previous drafts.');
+        }
         return;
       }
       if(!toolName||!toolDefs[toolName]){

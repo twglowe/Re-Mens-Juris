@@ -1,3 +1,17 @@
+/* v5.52 — 30 Aug 2026 — Push v5.52 (Draft Sources populate on tab open):
+   onDraftTabActivated returned early whenever the Draft matter dropdown
+   already matched currentMatter — the normal case — so loadDraftMatterDocs
+   never ran and the Instructions / Response / Background / Context selects
+   kept only their placeholder. The early return existed because
+   loadDraftMatterDocs also resets draftSelectedDocs, so calling it on every
+   activation would wipe the user's chosen sources. loadDraftMatterDocs now
+   takes a second argument, preserveSelections: when true it refreshes the
+   lists and leaves the selections, the precedent picks and the exclude
+   ticks alone. The in-sync branch of onDraftTabActivated calls it that way.
+   Same one-word fix applied at the end of draftUploadInPlace, which pushed
+   a freshly uploaded document into a source box and then immediately wiped
+   it by calling loadDraftMatterDocs with a full reset. */
+
 /* v5.44 — 03 Jul 2026 — Push v5.44 (literal paragraph numbers):
    New renderDraftMd used for every draft-editor render (poll completion,
    Previous-drafts load, AI insert, quick dialogue update). Identical to
@@ -708,6 +722,10 @@ function onDraftTabActivated(){
      the previous-drafts list count and exit. */
   if(targetId&&currentId===targetId){
     loadDraftsForMatter(targetId);
+    /* v5.52: refresh the Sources lists too. Without this they were never
+       filled at all on the common path. preserveSelections keeps whatever
+       the user has already chosen. */
+    loadDraftMatterDocs(targetId,true);
     if(typeof attachDraftPoll==='function')attachDraftPoll();
     return;
   }
@@ -908,7 +926,7 @@ async function saveCurrentDraft(){
   }
 }
 
-async function loadDraftMatterDocs(matterId){
+async function loadDraftMatterDocs(matterId,preserveSelections){
   try{
     var d=await api('/api/documents?matter_id='+matterId);
     var docs=d&&d.documents?d.documents:[];
@@ -930,19 +948,33 @@ async function loadDraftMatterDocs(matterId){
       draftCtxFoldersCache=(fd&&fd.folders)?fd.folders:[];
     }catch(fe){draftCtxFoldersCache=[];}
     populateDraftCtxFolderSelect();
-    populateDraftCtxDocSelect('');
+    /* v5.52: keep the chosen folder filter when refreshing in place. */
+    var keepFolder=preserveSelections?(document.getElementById('draftCtxFolder')||{}).value||'':'';
+    if(keepFolder){var _cf=document.getElementById('draftCtxFolder');if(_cf)_cf.value=keepFolder;}
+    populateDraftCtxDocSelect(keepFolder);
     /* Background select — matter docs + tool outputs from history */
     var histDocs=[];
     try{var hd=await api('/api/history?matter_id='+matterId);histDocs=(hd&&hd.history?hd.history:[]).filter(function(h){return h.tool_name;});}catch(e){}
     var bgOpts=docs.map(function(doc){return '<option value="doc:'+doc.id+'">📄 '+esc(doc.name)+'</option>';}).join('')
       +histDocs.map(function(h){return '<option value="hist:'+h.id+'">🔧 '+esc(h.tool_name+': '+h.question.slice(0,50))+'</option>';}).join('');
     document.getElementById('draftSrcDoc3').innerHTML='<option value="">— Select doc or tool output —</option>'+bgOpts;
-    /* Reset selected docs for new matter */
-    draftSelectedDocs={src1:[],src2:[],src3:[],ctx:[]};
-    draftSelectedPrecedents=[];
+    /* v5.52: only a genuine matter switch clears the chosen sources. A
+       refresh in place keeps them. */
+    if(!preserveSelections){
+      draftSelectedDocs={src1:[],src2:[],src3:[],ctx:[]};
+      draftSelectedPrecedents=[];
+    }
     renderDraftSelectedDocs('src1');renderDraftSelectedDocs('src2');renderDraftSelectedDocs('src3');renderDraftSelectedDocs('ctx');renderDraftSelectedPrecs();
-    /* v5.11a: populate "documents to exclude" picker (default: every doc ticked) */
-    populateDraftExcludePicker(docs);
+    /* v5.11a: populate "documents to exclude" picker (default: every doc ticked)
+       v5.52: on a refresh in place, carry the unticked ones across. */
+    var keepUnticked=null;
+    if(preserveSelections){
+      keepUnticked={};
+      Array.prototype.forEach.call(document.querySelectorAll('.draft-exclude-cb'),function(cb){
+        if(!cb.checked)keepUnticked[cb.getAttribute('data-name')]=true;
+      });
+    }
+    populateDraftExcludePicker(docs,keepUnticked);
   }catch(e){console.error('loadDraftMatterDocs:',e);}
 }
 
@@ -997,14 +1029,15 @@ function populateDraftCtxDocSelect(folderId){
 
 /* v5.11a: populate the exclude picker. All docs ticked by default; unticked
    docs flow into excludeDocNames at draft time. */
-function populateDraftExcludePicker(docs){
+function populateDraftExcludePicker(docs,keepUnticked){
   var wrap=document.getElementById('draftExcludeWrap');
   var list=document.getElementById('draftExcludeList');
   if(!wrap||!list)return;
   if(!docs||!docs.length){wrap.style.display='none';return;}
   wrap.style.display='';
   list.innerHTML=docs.map(function(doc){
-    return '<label style="display:flex;align-items:center;gap:.4rem;padding:.15rem .25rem;cursor:pointer"><input type="checkbox" class="draft-exclude-cb" data-name="'+esc(doc.name)+'" checked onchange="updateDraftExcludeCounter()" style="margin:0"><span style="flex:1;font-size:.76rem">'+esc(doc.name)+'</span><span style="font-size:.68rem;color:var(--text-faint)">['+esc(doc.doc_type||'Other')+']</span></label>';
+    var tick=(keepUnticked&&keepUnticked[doc.name])?'':' checked';
+    return '<label style="display:flex;align-items:center;gap:.4rem;padding:.15rem .25rem;cursor:pointer"><input type="checkbox" class="draft-exclude-cb" data-name="'+esc(doc.name)+'"'+tick+' onchange="updateDraftExcludeCounter()" style="margin:0"><span style="flex:1;font-size:.76rem">'+esc(doc.name)+'</span><span style="font-size:.68rem;color:var(--text-faint)">['+esc(doc.doc_type||'Other')+']</span></label>';
   }).join('');
   updateDraftExcludeCounter();
 }
@@ -2354,7 +2387,7 @@ async function draftUploadInPlace(input,boxKey){
       showToast('✓ '+file.name+' uploaded — '+(d.chunks||0)+' passages indexed');
       draftSelectedDocs[boxKey].push({id:d.id||'uploaded',rawVal:d.id||'uploaded',name:file.name.replace(/\.(pdf|docx?)$/i,''),type:'upload'});
       renderDraftSelectedDocs(boxKey);
-      await loadDraftMatterDocs(matterId);
+      await loadDraftMatterDocs(matterId,true);
       await loadDocuments(matterId);
       await loadMatters();
     }

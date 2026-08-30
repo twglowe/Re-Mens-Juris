@@ -1,3 +1,21 @@
+/* v5.53 — 30 Aug 2026 — Push v5.53 (folder upload reports what it found):
+   A folder chosen for upload could do nothing at all — blank progress line,
+   no folders created, no files uploaded, no message. Three silent paths were
+   responsible: the picker's change event fires even when the dialog is
+   cancelled or the folder yields no files; processFolderUpload opened with a
+   bare `return` when items was empty or no matter was selected; and steps 1-5
+   had no error handling, so any exception rejected the async handler with
+   nothing shown. It also said nothing when a folder contained no .pdf or
+   .docx files, which is silence for a perfectly ordinary folder of .doc,
+   .msg or scanned image files.
+
+   Now: the picker reports an empty read; processFolderUpload names why it is
+   stopping; a classification summary goes to the console and, when nothing
+   usable is found, to a toast plus the skipped-files modal; the whole body is
+   wrapped so any exception surfaces as a message and clears the progress bar;
+   and a successful run ends with a count of files and folders. No change to
+   what is uploaded or where — this push only makes the path speak. */
+
 /* v5.15b5: Vercel edge-cache purge no-op. Single-line comment to change the
    file SHA and force a fresh deploy after b4 was correctly committed to main
    but Vercel kept serving b3. No behavioural change. */
@@ -1634,6 +1652,10 @@ if(folderInput){
        same {file, relativePath} shape collectDropEntries returns. */
     var items=files.map(function(f){return {file:f,relativePath:f.webkitRelativePath||''};});
     folderInput.value='';
+    /* v5.53: the change event also fires on cancel and on a folder that
+       yields no files. That used to be completely silent. */
+    if(!items.length){showToast('That folder came back empty — no files were read from it.');return;}
+    console.log('v5.53 folder picker returned',items.length,'files');
     await processFolderUpload(items);
   });
 }
@@ -1741,7 +1763,22 @@ function pickAvailableFolderName(desired,existingLowerMap){
    collide at the destination parent are auto-renamed (2), (3) etc.
    client-side BEFORE the server is called. */
 async function processFolderUpload(items){
-  if(!items||!items.length||!currentMatter)return;
+  /* v5.53: wrapper so an exception anywhere below surfaces as a message
+     instead of a silently rejected promise. Covers all three callers —
+     the drop zone, the zip path and the folder picker. */
+  try{
+    return await _processFolderUpload(items);
+  }catch(err){
+    var pe=document.getElementById('uploadProg');
+    if(pe)pe.classList.remove('on');
+    console.error('v5.53 folder upload failed:',err);
+    showToast('Folder upload failed: '+((err&&err.message)||'unknown error'));
+  }
+}
+async function _processFolderUpload(items){
+  /* v5.53: both guards used to be one silent return. */
+  if(!currentMatter){showToast('Select a matter first');return;}
+  if(!items||!items.length){showToast('Nothing to upload — no files were read.');return;}
 
   /* Step 1: classify everything. */
   var classified=items.map(function(it){
@@ -1762,6 +1799,20 @@ async function processFolderUpload(items){
   for(var k=0;k<folderItems.length;k++){
     if(folderItems[k].klass==='excel')excelSkipped.push(folderItems[k].relativePath);
     else if(folderItems[k].klass==='unsupported')unsupportedSkipped.push(folderItems[k].relativePath);
+  }
+
+  /* v5.53: say out loud what was found. A folder holding no .pdf or .docx
+     produced no valid items, no folders and no message whatsoever. */
+  var validCount=0;
+  for(var vc=0;vc<folderItems.length;vc++){if(folderItems[vc].klass==='valid')validCount++;}
+  var plainValid=0;
+  for(var pv=0;pv<plainFiles.length;pv++){if(plainFiles[pv].klass==='valid')plainValid++;}
+  console.log('v5.53 folder upload: '+items.length+' items — '+validCount+' usable in folders, '
+    +plainValid+' usable loose, '+excelSkipped.length+' excel, '+unsupportedSkipped.length+' unsupported');
+  if(!validCount&&!plainValid){
+    showToast('No PDF or Word files found in that folder — '+items.length+' item'+(items.length===1?'':'s')+' checked.');
+    if(excelSkipped.length||unsupportedSkipped.length)showSkippedFilesModal(excelSkipped,unsupportedSkipped);
+    return;
   }
 
   /* Step 4: figure out which folder paths actually need to exist. */
@@ -1899,6 +1950,10 @@ async function processFolderUpload(items){
   uploadSelectedFolderIds=savedPickerSelection;
   /* Re-render the picker chips to reflect the restored selection. */
   if(typeof renderUploadFolderPicker==='function')renderUploadFolderPicker();
+
+  /* v5.53: confirm the run finished and say what it did. */
+  showToast('Folder upload finished — '+validToUpload.length+' file'+(validToUpload.length===1?'':'s')
+    +' into '+pathsSorted.length+' folder'+(pathsSorted.length===1?'':'s')+'.');
 
   /* Step 10: report skipped files. */
   if(excelSkipped.length||unsupportedSkipped.length){

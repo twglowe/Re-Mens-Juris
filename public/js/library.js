@@ -1,3 +1,10 @@
+/* v5.50 — 30 Aug 2026: the Case Type / Procedural Stage / Document Type
+   dropdowns are back in the precedent panel. They were dropped when the
+   panel was rebuilt, leaving libBoxCaseTypeChanged/libBoxStageChanged as
+   empty stubs and libSavePrecedentChanges sending no classification at
+   all — so a precedent's Case Type was fixed at upload and could never be
+   changed. api/library.js already accepts case_type_id, subcat_id and
+   doc_type_id on update_precedent; no backend change needed. */
 /* ── LIBRARY ──────────────────────────────────────────────────────────────── */
 /* v5.38 — 02 Jul 2026: quickAddSave — when Quick Add is used from the
    Draft tab, the Draft tab's Case Type takes priority for attaching a new
@@ -257,17 +264,10 @@ function libSelectPrecedent(id){
   document.getElementById('libLandingState').style.display='none';
   var wrap=document.getElementById('libBoxesWrap');wrap.style.display='flex';
   document.getElementById('libSelectedDocName').textContent=p.name;
-  /* Show case type / stage / doc type as metadata text */
-  var metaParts=[];
-  var ct=libraryData.caseTypes.find(function(c){return c.id===p.case_type_id;});
-  if(ct)metaParts.push('Case Type: '+ct.name);
-  var subId=p.subcategory_id||p.subcat_id||'';
-  var sc=libraryData.subcats.find(function(s){return s.id===subId;});
-  if(sc)metaParts.push('Stage: '+sc.name);
-  var dt=libraryData.docTypes.find(function(d){return d.id===p.doc_type_id;});
-  if(dt)metaParts.push('Doc Type: '+dt.name);
-  if(p.jurisdiction)metaParts.push('Jurisdiction: '+p.jurisdiction);
-  document.getElementById('libPrecMeta').textContent=metaParts.join(' · ')||'No classification set';
+  /* v5.50: Case Type / Stage / Doc Type moved out of this read-only line and
+     into the editable Classification box below. Jurisdiction stays here. */
+  document.getElementById('libPrecMeta').textContent=p.jurisdiction?('Jurisdiction: '+p.jurisdiction):'';
+  libPopulateClassification(p);
   /* Context */
   document.getElementById('libContextExplanation').value=p.context_relationship||'';
   /* Commentary */
@@ -278,21 +278,60 @@ function libSelectPrecedent(id){
   libFilterSearch();
 }
 
-function libBoxCaseTypeChanged(){}
+/* v5.50: fill the Classification dropdowns from the selected precedent. A
+   leading blank option means an unrecognised or missing case_type_id shows as
+   "— Select —" rather than silently reading as the first case type. */
+function libPopulateClassification(p){
+  var ctSel=document.getElementById('libBoxCaseType');
+  if(!ctSel)return;
+  ctSel.innerHTML='<option value="">— Select —</option>'+libraryData.caseTypes.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>';}).join('');
+  ctSel.value=p.case_type_id||'';
+  libBoxCaseTypeChanged();
+  var stSel=document.getElementById('libBoxStage');
+  var subId=p.subcategory_id||p.subcat_id||'';
+  if(stSel)stSel.value=subId||'';
+  var dtSel=document.getElementById('libBoxDocType');
+  if(dtSel)dtSel.value=p.doc_type_id||'';
+}
+/* v5.50: repopulate Stage and Doc Type for the chosen Case Type. Was an empty
+   stub while the dropdowns did not exist. */
+function libBoxCaseTypeChanged(){
+  var ctSel=document.getElementById('libBoxCaseType');
+  if(!ctSel)return;
+  var ctId=ctSel.value;
+  var stSel=document.getElementById('libBoxStage');
+  var dtSel=document.getElementById('libBoxDocType');
+  if(stSel)stSel.innerHTML='<option value="">— None —</option>'+libraryData.subcats.filter(function(s){return s.case_type_id===ctId;}).map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
+  if(dtSel)dtSel.innerHTML='<option value="">— None —</option>'+libraryData.docTypes.filter(function(d){return d.case_type_id===ctId;}).map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
+}
 function libBoxStageChanged(){}
 
 async function libSavePrecedentChanges(){
   if(!selectedPrecedentId){showToast('No precedent selected');return;}
+  /* v5.50: classification travels with the save again. */
+  var ctSel=document.getElementById('libBoxCaseType');
+  var stSel=document.getElementById('libBoxStage');
+  var dtSel=document.getElementById('libBoxDocType');
+  if(ctSel&&!ctSel.value){showToast('Select a Case Type before saving');return;}
   try{
-    await api('/api/library','POST',{
+    var payload={
       action:'update_precedent',
       id:selectedPrecedentId,
       commentary:document.getElementById('libCommentary').value,
       is_own_style:document.getElementById('libIsOwnDoc').checked,
       ai_instructions:document.getElementById('libAiInstructions').value,
       context_relationship:document.getElementById('libContextExplanation').value
-    });
-    await loadLibrary();showToast('Precedent saved');
+    };
+    if(ctSel){
+      payload.case_type_id=ctSel.value;
+      payload.subcat_id=(stSel&&stSel.value)?stSel.value:null;
+      payload.doc_type_id=(dtSel&&dtSel.value)?dtSel.value:null;
+    }
+    await api('/api/library','POST',payload);
+    await loadLibrary();
+    var keep=selectedPrecedentId;
+    if(keep)libSelectPrecedent(keep);
+    showToast('Precedent saved');
   }catch(e){showToast('Error: '+e.message);}
 }
 

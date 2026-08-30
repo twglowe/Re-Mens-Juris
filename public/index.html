@@ -901,6 +901,27 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <div id="libBoxesWrap" style="display:none;flex-direction:column;gap:.6rem">
             <div style="font-size:.92rem;font-weight:700;color:var(--navy);font-family:'Libre Baskerville',serif;margin-bottom:.2rem" id="libSelectedDocName">—</div>
             <div id="libPrecMeta" style="font-size:.78rem;color:var(--text-mid);margin-bottom:.3rem"></div>
+            <!-- v5.50: Classification is editable again. Saved by the existing
+                 "Save Changes" button at the foot of this panel. -->
+            <div class="lib-box" id="libClassifyBox">
+              <div class="lib-box-head">
+                <div class="lib-box-title">Classification</div>
+              </div>
+              <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+                <div style="flex:1;min-width:145px">
+                  <div class="draft-field-label">Case Type</div>
+                  <select class="draft-field-select" id="libBoxCaseType" onchange="libBoxCaseTypeChanged()"></select>
+                </div>
+                <div style="flex:1;min-width:145px">
+                  <div class="draft-field-label">Procedural Stage</div>
+                  <select class="draft-field-select" id="libBoxStage" onchange="libBoxStageChanged()"><option value="">— None —</option></select>
+                </div>
+                <div style="flex:1;min-width:145px">
+                  <div class="draft-field-label">Document Type</div>
+                  <select class="draft-field-select" id="libBoxDocType"><option value="">— None —</option></select>
+                </div>
+              </div>
+            </div>
             <!-- Box 1: Context Documents -->
             <div class="lib-box">
               <div class="lib-box-head">
@@ -1363,7 +1384,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <datalist id="newFolderSuggestions"></datalist>
 <script src="/js/core.js?v=5.49"></script>
 <script src="/js/tools.js?v=5.45"></script>
-<script src="/js/library.js?v=5.40"></script>
+<script src="/js/library.js?v=5.50"></script>
 <script src="/js/drafting.js?v=5.46"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->

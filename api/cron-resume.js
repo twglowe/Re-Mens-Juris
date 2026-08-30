@@ -24,6 +24,13 @@
    No worker.js change. One logical change, confined to the fire-and-stamp loop.
 
    v5.10c CHANGES (27 Apr 2026) — Push v5.10c (follow-ups survive sleep):
+   v5.55 (30 Aug 2026): a second query rescues jobs stuck at "pending".
+   The original SELECT covers running/paused/synthesising only, so a job whose
+   initial worker fire never landed stayed pending and was never picked up by
+   anything server-side — it started only when the user returned to the tab and
+   the frontend re-fired it. Keyed on created_at rather than updated_at so a
+   healthy freshly-created job is not fired twice. See the comment at the query.
+
    1. SELECT now includes tool_name so we can route the resume call to
       the correct worker.
    2. Worker URL is branched by tool_name prefix. Rows with tool_name
@@ -126,6 +133,45 @@ export default async function handler(req, res) {
   }
 
   var jobs = resp.data || [];
+
+  /* v5.55: also rescue jobs still sitting at "pending".
+
+     api/tools.js creates the row with status "pending" and fires the worker
+     fire-and-forget. If that fire never lands, the job stays "pending" — and
+     the query above never sees it, because "pending" is not in the status
+     list. Nothing server-side ever picked such a job up. The only thing that
+     started it was the frontend's own re-fire, which runs while the user sits
+     on the tab polling. So a draft begun and then left alone could wait
+     indefinitely, and appear to start only when the user returned.
+
+     Deliberately a SEPARATE query keyed on created_at, not updated_at: a row
+     created seconds ago may have a null or fresh updated_at, and the existing
+     or-clause above would match a null immediately. Requiring created_at to be
+     older than the same 240s threshold means a healthy job — where the initial
+     fire did land and the frontend is polling — is never fired a second time.
+
+     Failure mode: a job that has been pending for over 240s while the frontend
+     is at that moment re-firing it could be fired twice, and api/worker.js
+     only refuses jobs already "complete" or "failed", not ones already
+     running. Mitigation: after four minutes without leaving "pending", the
+     frontend's re-fire is demonstrably not succeeding, so firing is the
+     correct action. The residual double-fire window is accepted for v5.55; a
+     claim-on-start guard in worker.js is the proper fix and is a separate
+     push, because worker.js is the highest blast-radius file in the codebase. */
+  var pendResp = await supabase
+    .from("tool_jobs")
+    .select("id, status, updated_at, started_at, matter_id, tool_name")
+    .eq("status", "pending")
+    .lt("created_at", staleCutoff)
+    .limit(20);
+
+  if (pendResp.error) {
+    /* Non-fatal: the existing rescue still runs. */
+    console.error(SERVER_VERSION + " cron-resume: pending query failed:", pendResp.error.message);
+  } else if (pendResp.data && pendResp.data.length) {
+    console.log(SERVER_VERSION + " cron-resume: found " + pendResp.data.length + " job(s) stuck at pending for >" + STALE_SECONDS + "s");
+    jobs = jobs.concat(pendResp.data).slice(0, 20);
+  }
   console.log("v4.3a cron-resume: found " + jobs.length + " stale in-progress job(s) (threshold=" + STALE_SECONDS + "s)");
 
   if (jobs.length === 0) {

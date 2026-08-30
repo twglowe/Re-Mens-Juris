@@ -357,7 +357,7 @@ select.doc-type{margin:.65rem .85rem 0;width:calc(100% - 1.7rem);padding:.35rem 
 .doc-act-del:hover{background:#fdf0f0;border-color:#f0b0b0;color:var(--error)}
 .docs-empty-msg{padding:1.35rem .85rem;text-align:center;color:var(--text-faint);font-size:.84rem;font-style:italic;line-height:1.7}
 .overlay{position:fixed;inset:0;background:rgba(10,30,54,.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:1rem}
-.modal{background:var(--white);border-radius:12px;padding:1.75rem;width:100%;max-width:440px;box-shadow:0 24px 70px rgba(10,30,54,.35)}
+.modal{background:var(--white);border-radius:12px;padding:1.75rem;width:100%;max-width:440px;box-shadow:0 24px 70px rgba(10,30,54,.35);max-height:calc(100vh - 2rem);overflow-y:auto}/* v5.51: .overlay centres its modal with no scroll of its own, so any modal taller than the window was clipped at BOTH ends and the clipped rows could not be reached. The Precedent Upload modal measures 767px empty and grows by about 250px when the commentary step opens. v5.15c gave .tool-modal this treatment; every other modal was left behind. */
 .modal h3{font-family:'Libre Baskerville',serif;font-size:1.15rem;font-weight:700;color:var(--navy);margin-bottom:1.1rem}
 .modal .f-label{margin-top:.85rem}
 .modal .f-label:first-of-type{margin-top:0}

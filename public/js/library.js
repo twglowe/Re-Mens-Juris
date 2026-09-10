@@ -377,6 +377,11 @@ async function precUploadSave(){
   var ctId=document.getElementById('precUpCaseType').value;
   var file=document.getElementById('precUpFile').files[0];
   if(!name){showToast('Please enter a document name');return;}
+  /* v5.65: a hand-typed matter name gets the same challenge as a suggested
+     one — a warning rather than a block, since a template may legitimately
+     share a word with a matter. */
+  var clash=libMatchingMatterName(name);
+  if(clash&&!confirm('"'+name+'" looks like your matter "'+clash+'".\n\nThe Precedent Library holds reusable templates, not documents from one case. A name like "Skeleton Argument — unfair prejudice" will be findable later; a matter name will not.\n\nSave it under this name anyway?'))return;
   if(!ctId){showToast('Please select a case type');return;}
   if(!file){showToast('Please select a PDF file');return;}
   var btn=document.getElementById('precUpSaveBtn');
@@ -430,6 +435,31 @@ function closePrecUpModal(){
   precUpLastId=null;
   closeModal('precUploadModal');
 }
+/* ── v5.65: keep matter names out of the Precedent Library ─────────────────
+   The library holds reusable templates. A precedent named after the matter
+   it came from is findable only by someone who remembers that matter, and it
+   reads as case law sitting among the templates.
+
+   Returns the matter name a proposed precedent name collides with, or ''.
+   Matching ignores case and punctuation and allows either to contain the
+   other, so "Tianrui" catches the matter "Tianrui v China Shanshui" and
+   vice versa. Short names are ignored — a two-letter matter would match
+   almost anything. */
+function libNormaliseName(s){
+  return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+}
+function libMatchingMatterName(name){
+  var n=libNormaliseName(name);
+  if(n.length<4)return '';
+  var list=(typeof matters!=='undefined'&&matters)?matters:[];
+  for(var i=0;i<list.length;i++){
+    var m=libNormaliseName(list[i].name);
+    if(m.length<4)continue;
+    if(n.indexOf(m)!==-1||m.indexOf(n)!==-1)return list[i].name;
+  }
+  return '';
+}
+
 /* A3: AI auto-fills document name when PDF or Word file selected */
 /* v4.5: Rewritten — unwraps page array (fixes v3.2 bug), adds .docx routing */
 async function precUpFileChanged(input){
@@ -451,10 +481,22 @@ async function precUpFileChanged(input){
     if(!text||text.trim().length<30){hint.style.display='none';return;}
     /* Send first 2000 chars to AI for name suggestion */
     var snippet=text.slice(0,2000);
-    var d=await api('/api/analyse','POST',{matterId:'',matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are reading the first pages of a legal document. Extract the most likely document name — this should be the case name (e.g. "Smith v Jones") or the first party name if no case name is found. Return ONLY the suggested name, nothing else. No quotes, no explanation.\n\nTEXT:\n'+snippet}],jurisdiction:jurisdiction,queryType:'Factual Analysis',focusAreas:[]});
+    /* v5.65: this used to ask for "the case name (e.g. Smith v Jones) or the
+       first party name", which is how matter-named entries — Tianrui,
+       Thalassa, 51 Jobs Appeal — ended up in the Precedent Library. A
+       precedent is a reusable template: what matters is the kind of document
+       it is and what it is about, never whose case it came from. */
+    var d=await api('/api/analyse','POST',{matterId:'',matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are reading the first pages of a legal document that is being filed as a REUSABLE PRECEDENT — a template to draft from in other matters.\n\nSuggest a generic name describing WHAT KIND of document it is and WHAT IT IS ABOUT. For example: "Skeleton Argument — unfair prejudice petition", "Winding-up Petition — insolvency", "First Affidavit — freezing injunction application".\n\nNEVER use party names, case names, company names or matter names. A name like "Smith v Jones", "Tianrui" or "Re ABC Ltd" is wrong: those identify one case, and this document must be findable as a template for any case.\n\nReturn ONLY the suggested name, nothing else. No quotes, no explanation.\n\nTEXT:\n'+snippet}],jurisdiction:jurisdiction,queryType:'Factual Analysis',focusAreas:[]});
     if(d&&d.result){
       var suggested=d.result.trim().replace(/^["']|["']$/g,'').slice(0,120);
-      if(suggested&&suggested.length>2){
+      /* Belt and braces: the prompt says not to use a case name, but a
+         suggestion that matches one of this user's matters is refused
+         outright rather than offered for the user to accept by reflex. */
+      var clash=libMatchingMatterName(suggested);
+      if(clash){
+        hint.textContent='Suggestion discarded — it named the matter "'+clash+'". Give this precedent a generic name, e.g. "Skeleton Argument — unfair prejudice".';
+        hint.style.color='var(--error)';
+      }else if(suggested&&suggested.length>2){
         nameField.value=suggested;
         hint.textContent='Suggested: '+suggested+' (edit if needed)';
         hint.style.color='var(--success)';

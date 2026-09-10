@@ -128,10 +128,14 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   If that migration has not been run the RPC fails and the code falls back to
   an unranked PostgREST `websearch` text search, so the draft still works —
   it just picks matching chunks rather than the best-matching ones.
-- Sizes: `CASE_LAW_SEARCH_CHUNKS` = 80 for the library search,
+- Sizes: `CASE_LAW_SEARCH_CHUNKS` = 160 for the library search,
   `CASE_LAW_DOC_CHUNKS` = 80 per matter-linked authority, at most
   `CASE_LAW_MAX_MATTER_DOCS` = 5 of those — the same 80 the precedent search
-  allows per precedent document.
+  allows per precedent document. A chunk is 1500 characters, so 160 is about
+  60k tokens; that block lives in the system prompt, which
+  `runBatchedChained` re-sends with every extraction batch and again for the
+  synthesis, so its cost multiplies by the batch count. Prompt caching on the
+  system prompt is the cheaper way to buy more than raising this again.
 - Subject mode never widens: if nothing is filed under the chosen subject,
   the library search is skipped rather than falling back to everything.
 

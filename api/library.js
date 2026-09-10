@@ -178,6 +178,43 @@ export default async function handler(req, res) {
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ data });
     }
+    /* v5.72: read a matter document's chunks so the Library can import an
+       authority that is already in a matter. The text was extracted and
+       chunked when it was uploaded, so nothing needs reading again — this
+       just hands it back, in order, with the page each chunk came from.
+
+       Paged, because a bundle of authorities runs to thousands of chunks
+       and PostgREST caps a response at 1000 rows. */
+    if (type === "matter_doc_chunks") {
+      const { document_id, offset } = req.query;
+      if (!document_id) return res.status(400).json({ error: "document_id required" });
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+      const { data: doc, error: docErr } = await sb.from("documents")
+        .select("id, matter_id, name, doc_type").eq("id", document_id).maybeSingle();
+      if (docErr) return res.status(500).json({ error: docErr.message });
+      if (!doc) return res.status(404).json({ error: "Document not found" });
+      /* The service key bypasses RLS, so the caller's access to the matter is
+         checked here rather than assumed from holding the document id. */
+      const reachable = await resolveSourceMatter(sb, user.id, doc.matter_id);
+      if (!reachable) return res.status(403).json({ error: "No access to that matter" });
+
+      const from = Math.max(0, parseInt(offset || "0", 10) || 0);
+      const PAGE = 1000;
+      const { data, error } = await sb.from("chunks")
+        .select("content, chunk_index, page_number")
+        .eq("document_id", document_id)
+        .order("chunk_index")
+        .range(from, from + PAGE - 1);
+      if (error) return res.status(500).json({ error: error.message });
+      const rows = data || [];
+      return res.status(200).json({
+        document: { id: doc.id, name: doc.name, doc_type: doc.doc_type, matter_id: doc.matter_id },
+        chunks: rows,
+        nextOffset: rows.length === PAGE ? from + PAGE : null,
+      });
+    }
+
     // v2.3: Law firms list
     if (type === "law_firms") {
       const { data, error } = await supabase.from("law_firms")
@@ -426,6 +463,96 @@ export default async function handler(req, res) {
         };
       });
       return res.status(200).json({ segments: out, named: named.length > 0 });
+    }
+
+    /* v5.72: import authorities out of a matter document into the library.
+
+       The text is already in the database, chunked, with its pages. Sending
+       it to the browser and back again would move megabytes for nothing, so
+       the client sends only what it decided — a name and a chunk range per
+       authority — and the copying happens here.
+
+       Each entry becomes its own case_law_docs row carrying source_matter_id
+       and source_document_id, so the matter copy and the library entry stay
+       tied exactly as a dual-linked upload does. The matter's own document is
+       left alone: importing is a copy, not a move. */
+    if (action === "import_case_law") {
+      const { matter_id, document_id, entries } = body;
+      if (!document_id || !Array.isArray(entries) || entries.length === 0) {
+        return res.status(400).json({ error: "document_id and entries required" });
+      }
+      if (entries.length > 40) return res.status(400).json({ error: "Too many entries (max 40)" });
+
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+      const { data: doc } = await sb.from("documents")
+        .select("id, matter_id").eq("id", document_id).maybeSingle();
+      if (!doc) return res.status(404).json({ error: "Document not found" });
+      const reachable = await resolveSourceMatter(sb, user.id, doc.matter_id);
+      if (!reachable) return res.status(403).json({ error: "No access to that matter" });
+      if (matter_id && matter_id !== doc.matter_id) {
+        return res.status(400).json({ error: "That document does not belong to that matter" });
+      }
+
+      const made = [];
+      for (const entry of entries) {
+        const name = String(entry.name || "").trim();
+        if (!name) return res.status(400).json({ error: "Every entry needs a name" });
+        const fromIdx = Number.isFinite(entry.from_index) ? entry.from_index : 0;
+        const toIdx = Number.isFinite(entry.to_index) ? entry.to_index : fromIdx;
+
+        /* Pull the range first: an entry covering no chunks would otherwise
+           create a library row with nothing in it. */
+        const source = [];
+        let cursor = fromIdx;
+        while (cursor <= toIdx) {
+          const upper = Math.min(toIdx, cursor + 499);
+          const { data: part, error: partErr } = await sb.from("chunks")
+            .select("content, chunk_index, page_number")
+            .eq("document_id", document_id)
+            .gte("chunk_index", cursor).lte("chunk_index", upper)
+            .order("chunk_index");
+          if (partErr) return res.status(500).json({ error: partErr.message });
+          source.push(...(part || []));
+          cursor = upper + 1;
+        }
+        if (source.length === 0) continue;
+
+        let tags = Array.isArray(entry.sub_tags) ? entry.sub_tags
+                 : (typeof entry.sub_tags === "string" ? entry.sub_tags.split(",") : []);
+        tags = tags.map(t => String(t).trim()).filter(Boolean);
+
+        const chars = source.reduce((n, c) => n + (c.content || "").length, 0);
+        const { data: created, error: createErr } = await sb.from("case_law_docs").insert({
+          user_id: user.id,
+          doc_type: entry.doc_type === "textbook" ? "textbook" : "case",
+          name: name,
+          citation: String(entry.citation || "").trim(),
+          jurisdiction: String(entry.jurisdiction || "").trim(),
+          subject_id: entry.subject_id || null,
+          sub_tags: tags,
+          commentary: "",
+          source_matter_id: doc.matter_id,
+          source_document_id: document_id,
+          char_count: chars,
+        }).select("id").single();
+        if (createErr) return res.status(500).json({ error: createErr.message, imported: made.length });
+
+        try {
+          /* chunk_index restarts at 0 for the new entry, so an authority
+             lifted from the middle of a bundle reads from its own beginning. */
+          const rows = source.map((c, i) => ({
+            case_law_id: created.id, user_id: user.id, chunk_index: i,
+            content: c.content, page_number: c.page_number,
+          }));
+          await insertCaseLawChunks(sb, rows);
+        } catch (e) {
+          await sb.from("case_law_docs").delete().eq("id", created.id).eq("user_id", user.id);
+          return res.status(500).json({ error: "Chunk copy failed on \"" + name + "\": " + e.message, imported: made.length });
+        }
+        made.push({ id: created.id, name: name, chunks: source.length });
+      }
+
+      return res.status(201).json({ success: true, imported: made });
     }
 
     /* v5.56 Push B: create a case law subject. UNIQUE (user_id, name), so a

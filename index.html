@@ -708,6 +708,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
             <span id="clHeading" style="font-family:'Libre Baskerville',serif;font-size:.92rem;font-weight:700;color:var(--text-light)">Case Law &amp; Texts</span>
           </div>
           <div id="clBody" style="display:none;flex:1;min-height:0;padding:0 .6rem .5rem;overflow-y:auto">
+            <button class="lib-box-btn" onclick="clImportOpen()" style="width:100%;margin-bottom:.35rem;font-size:.78rem" title="Copy an authority already uploaded to a matter">📥 Import from a matter</button>
             <select class="lib-select" id="clUpDocType" style="width:100%;margin-bottom:.25rem;font-size:.8rem">
               <option value="case">Case</option>
               <option value="textbook">Textbook</option>
@@ -1503,10 +1504,46 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
     </div>
   </div>
 </div>
-<script src="/js/case_law_split.js?v=5.64"></script>
+
+<!-- v5.72: import authorities already sitting in a matter -->
+<div class="overlay" id="clImportModal" role="dialog" aria-modal="true" aria-label="Import authorities from a matter" style="display:none">
+  <div class="modal" style="max-width:640px;width:96%">
+    <h3>📥 Import authorities from a matter</h3>
+    <p style="font-size:.85rem;color:var(--text-faint);margin-bottom:.6rem">
+      A bundle already uploaded to a matter has been read and stored, so it can be copied straight into the library — no re-reading the PDF. The matter keeps its own copy.
+    </p>
+    <label class="f-label">Matter</label>
+    <select class="lib-select" id="clImportMatter" onchange="clImportMatterChanged()" style="margin-bottom:.5rem">
+      <option value="">— None —</option>
+    </select>
+    <div id="clImportDocRow" style="display:none">
+      <label class="f-label">Document</label>
+      <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.5rem">
+        <select class="lib-select" id="clImportDoc" style="flex:1"></select>
+        <button class="lib-box-btn" onclick="clImportAnalyse()" style="white-space:nowrap">Read it</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:.3rem;margin-bottom:.35rem">
+      <select class="lib-select" id="clImportDocType" style="flex:1;font-size:.82rem">
+        <option value="case">Case</option><option value="textbook">Textbook</option>
+      </select>
+      <select class="lib-select" id="clImportSubject" style="flex:1;font-size:.82rem">
+        <option value="">— Subject —</option>
+      </select>
+    </div>
+    <input class="lib-search-input" id="clImportTags" placeholder="Sub-tags, comma separated — applied to all">
+    <div id="clImportStatus" style="display:none;font-size:.8rem;margin:.35rem 0"></div>
+    <div id="clImportSegments" style="max-height:40vh;overflow-y:auto"></div>
+    <div class="modal-btns">
+      <button class="btn-primary" id="clImportApplyBtn" onclick="clImportApply()">Import</button>
+      <button class="btn-dl" onclick="closeModal('clImportModal')" style="background:var(--off-white);color:var(--text-faint)">Close</button>
+    </div>
+  </div>
+</div>
+<script src="/js/case_law_split.js?v=5.72"></script>
 <script src="/js/core.js?v=5.56"></script>
 <script src="/js/tools.js?v=5.54"></script>
-<script src="/js/library.js?v=5.71"></script>
+<script src="/js/library.js?v=5.72"></script>
 <script src="/js/drafting.js?v=5.60"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->

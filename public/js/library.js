@@ -1207,14 +1207,17 @@ async function clDelete(id,name){
 }
 
 function clRenderSubjects(){
-  var sel=document.getElementById('clUpSubject');
-  if(!sel)return;
-  var prev=sel.value;
-  sel.innerHTML='<option value="">— Subject —</option>'
-    +(libraryData.caseLawSubjects||[]).map(function(s){
-      return '<option value="'+s.id+'">'+esc(s.name)+'</option>';
-    }).join('');
-  if(prev)sel.value=prev;
+  /* v5.72: the import modal has its own copy of the subject list. */
+  ['clUpSubject','clImportSubject'].forEach(function(id){
+    var sel=document.getElementById(id);
+    if(!sel)return;
+    var prev=sel.value;
+    sel.innerHTML='<option value="">— Subject —</option>'
+      +(libraryData.caseLawSubjects||[]).map(function(s){
+        return '<option value="'+s.id+'">'+esc(s.name)+'</option>';
+      }).join('');
+    if(prev)sel.value=prev;
+  });
 }
 
 /* switchMainNav('library') calls loadLibrary() on every activation, so the
@@ -1820,4 +1823,220 @@ async function precUploadSaveMulti(){
   showToast('Uploaded '+done+' precedents');
   await loadLibrary();
   closeModal('precUploadModal');
+}
+
+
+/* ══ v5.72: IMPORT AUTHORITIES ALREADY SITTING IN A MATTER ════════════════
+   Bundles of authorities have been uploaded to matters for months. The text
+   is already extracted, chunked and paginated in the database, so importing
+   one into the library is a copy, not a re-read: no PDF, no extraction, no
+   megabytes going up the wire twice.
+
+   The chunks come down once so the boundaries can be found and the
+   judgments named — the same detection an uploaded bundle gets. What goes
+   back is only the decision: a name and a chunk range per authority. The
+   server does the copying.
+
+   The matter's own document is untouched. Importing adds to the library; it
+   does not take anything out of the matter. */
+var clImportDocs=[];      /* documents in the chosen matter */
+var clImportChunks=[];    /* {content, chunk_index, page_number} for the chosen one */
+var clImportDocId='';
+
+function clImportOpen(){
+  libPopulateMatterSelect('clImportMatter',(typeof currentMatter!=='undefined'&&currentMatter)?currentMatter.id:'');
+  clImportDocs=[];clImportChunks=[];clImportDocId='';
+  clSegments=null;
+  document.getElementById('clImportDocRow').style.display='none';
+  document.getElementById('clImportSegments').innerHTML='';
+  clImportStatus('');
+  document.getElementById('clImportModal').style.display='flex';
+  if(document.getElementById('clImportMatter').value)clImportMatterChanged();
+}
+
+function clImportStatus(text,colour){
+  var el=document.getElementById('clImportStatus');
+  if(!el)return;
+  el.style.display=text?'':'none';
+  el.style.color=colour||'var(--blue)';
+  el.textContent=text;
+}
+
+async function clImportMatterChanged(){
+  var matterId=document.getElementById('clImportMatter').value;
+  var row=document.getElementById('clImportDocRow');
+  document.getElementById('clImportSegments').innerHTML='';
+  clSegments=null;clImportChunks=[];clImportDocId='';
+  if(!matterId){row.style.display='none';return;}
+  clImportStatus('Reading the matter’s documents…');
+  try{
+    var d=await api('/api/documents?matter_id='+encodeURIComponent(matterId));
+    clImportDocs=(d&&d.documents)?d.documents:[];
+    var sel=document.getElementById('clImportDoc');
+    /* Authorities first — that is what is being looked for — then the rest,
+       since a bundle is not always filed under the right type. */
+    var ranked=clImportDocs.slice().sort(function(a,b){
+      var aa=(a.doc_type==='Case Law')?0:1, bb=(b.doc_type==='Case Law')?0:1;
+      if(aa!==bb)return aa-bb;
+      return libNameSort(a.name,b.name);
+    });
+    sel.innerHTML='<option value="">— Select a document —</option>'
+      +ranked.map(function(doc){
+        return '<option value="'+doc.id+'">'+esc(doc.name)+' ['+esc(doc.doc_type||'Other')+']</option>';
+      }).join('');
+    row.style.display=ranked.length?'':'none';
+    clImportStatus(ranked.length?'':'That matter has no documents.',ranked.length?'':'var(--text-faint)');
+  }catch(e){
+    clImportStatus('Could not read the matter: '+e.message,'var(--error)');
+  }
+}
+
+/* Pull every chunk, in order. A bundle runs past the 1000-row ceiling, so
+   this follows nextOffset until the server stops handing pages back. */
+async function clImportLoadChunks(documentId){
+  var all=[];var offset=0;
+  while(true){
+    var d=await api('/api/library?type=matter_doc_chunks&document_id='+encodeURIComponent(documentId)+'&offset='+offset);
+    var got=(d&&d.chunks)||[];
+    all=all.concat(got);
+    clImportStatus('Read '+all.length+' passages…');
+    if(!d||d.nextOffset===null||d.nextOffset===undefined||!got.length)break;
+    offset=d.nextOffset;
+  }
+  return all;
+}
+
+/* Rebuild pages from chunks so the same boundary detection can run. Chunks
+   carry the page they came from; where they do not — an older upload, before
+   page-aware chunking — everything falls into one page and the file imports
+   as a single authority, which is the safe outcome. */
+function clImportPagesFromChunks(chunks){
+  var pages=[];var current=null;
+  chunks.forEach(function(c){
+    var pageNo=(typeof c.page_number==='number')?c.page_number:1;
+    if(!current||current.page!==pageNo){
+      current={page:pageNo,text:'',firstChunk:c.chunk_index,lastChunk:c.chunk_index};
+      pages.push(current);
+    }
+    current.text+=(current.text?'\n\n':'')+(c.content||'');
+    current.lastChunk=c.chunk_index;
+  });
+  return pages;
+}
+
+/* A segment covers a run of pages; each page knows which chunks it holds, so
+   the range to copy is the first chunk of its first page to the last chunk of
+   its last page. */
+function clImportChunkRange(segPages,allPages){
+  /* Key on position, never on the page number: in a bundle every judgment
+     restarts at page 1, so page numbers collide and the second judgment
+     would map back to the first one's chunks. clSlicePages carries `idx`
+     through from clPageOffsets for exactly this. */
+  var lo=null,hi=null;
+  segPages.forEach(function(sp){
+    var src=(typeof sp.idx==='number')?allPages[sp.idx]:null;
+    if(!src)return;
+    if(lo===null||src.firstChunk<lo)lo=src.firstChunk;
+    if(hi===null||src.lastChunk>hi)hi=src.lastChunk;
+  });
+  return {from:lo===null?0:lo,to:hi===null?0:hi};
+}
+
+async function clImportAnalyse(){
+  var documentId=document.getElementById('clImportDoc').value;
+  if(!documentId){showToast('Choose a document first');return;}
+  clImportDocId=documentId;
+  document.getElementById('clImportSegments').innerHTML='';
+  clSegments=null;
+  clImportStatus('Reading the stored text…');
+  try{
+    clImportChunks=await clImportLoadChunks(documentId);
+    if(!clImportChunks.length){clImportStatus('That document has no stored text.','var(--error)');return;}
+    var pages=clImportPagesFromChunks(clImportChunks);
+    var segs=clSplitPages(pages);
+    clImportStatus(segs.length>1
+      ? 'Found '+segs.length+' authorities — reading their headings…'
+      : 'One authority — reading its heading…');
+
+    var named=[];
+    try{
+      var d=await api('/api/library','POST',{
+        action:'name_case_law_segments',
+        segments:segs.map(function(sg){return {index:sg.index,excerpt:sg.excerpt};})
+      });
+      named=(d&&d.segments)||[];
+    }catch(e){ console.log('import naming failed:',e.message); }
+    var byIndex={};named.forEach(function(n){byIndex[n.index]=n;});
+
+    clSegments=segs.map(function(sg){
+      var n=byIndex[sg.index]||{};
+      var range=clImportChunkRange(sg.pages,pages);
+      return {index:sg.index,pages:sg.pages,charCount:sg.charCount,
+        from_index:range.from,to_index:range.to,
+        name:n.name||'',citation:n.citation||'',jurisdiction:n.jurisdiction||'',keep:true};
+    });
+    clImportRenderSegments();
+    clImportStatus(segs.length+' to import. Check the names, then Import.','var(--success)');
+  }catch(e){
+    clImportStatus('Could not read the document: '+e.message,'var(--error)');
+  }
+}
+
+function clImportRenderSegments(){
+  var wrap=document.getElementById('clImportSegments');
+  if(!wrap)return;
+  if(!clSegments||!clSegments.length){wrap.innerHTML='';return;}
+  wrap.innerHTML=clSegments.map(function(sg,i){
+    return '<div style="border:1px solid var(--border);border-radius:5px;padding:.35rem;margin-bottom:.3rem">'
+      +'<label class="draft-doc-check" style="padding:0;margin-bottom:.2rem">'
+        +'<input type="checkbox"'+(sg.keep?' checked':'')+' onchange="clImportToggle('+i+',this.checked)"> '
+        +'<span style="font-size:.72rem;color:var(--text-faint)">'
+          +Math.round(sg.charCount/1000)+'k characters · passages '+sg.from_index+'–'+sg.to_index+'</span>'
+      +'</label>'
+      +'<input class="lib-search-input" style="margin-bottom:.2rem;font-size:.8rem" placeholder="Case or work name" '
+        +'value="'+esc(sg.name)+'" oninput="clImportEdit('+i+',\'name\',this.value)">'
+      +'<input class="lib-search-input" style="margin-bottom:0;font-size:.8rem" placeholder="Citation" '
+        +'value="'+esc(sg.citation)+'" oninput="clImportEdit('+i+',\'citation\',this.value)">'
+      +'</div>';
+  }).join('');
+}
+
+function clImportToggle(i,on){ if(clSegments&&clSegments[i]){clSegments[i].keep=!!on;clImportRenderSegments();} }
+function clImportEdit(i,field,v){ if(clSegments&&clSegments[i])clSegments[i][field]=v; }
+
+async function clImportApply(){
+  if(!clSegments||!clSegments.length){showToast('Read a document first');return;}
+  var chosen=clSegments.filter(function(s){return s.keep;});
+  if(!chosen.length){showToast('Nothing ticked');return;}
+  var unnamed=chosen.filter(function(s){return !s.name.trim();});
+  if(unnamed.length){showToast('Give every ticked authority a name');return;}
+
+  var subjectId=document.getElementById('clImportSubject').value;
+  var subTags=document.getElementById('clImportTags').value;
+  var docType=document.getElementById('clImportDocType').value;
+  var btn=document.getElementById('clImportApplyBtn');
+  if(btn)btn.disabled=true;
+  clImportStatus('Copying '+chosen.length+' into the library…');
+  try{
+    var d=await api('/api/library','POST',{
+      action:'import_case_law',
+      document_id:clImportDocId,
+      entries:chosen.map(function(s){
+        return {name:s.name.trim(),citation:s.citation.trim(),
+          jurisdiction:s.jurisdiction.trim(),doc_type:docType,
+          subject_id:subjectId||null,sub_tags:subTags,
+          from_index:s.from_index,to_index:s.to_index};
+      })
+    });
+    var n=(d&&d.imported)?d.imported.length:0;
+    clImportStatus('Imported '+n+'. The matter’s own copy is untouched.','var(--success)');
+    showToast('Imported '+n+' into the case law library');
+    clSegments=null;
+    document.getElementById('clImportSegments').innerHTML='';
+    await loadLibrary();
+  }catch(e){
+    clImportStatus('Import failed: '+e.message,'var(--error)');
+  }finally{
+    if(btn)btn.disabled=false;
+  }
 }

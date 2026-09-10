@@ -2476,8 +2476,10 @@ async function draftDialogueSend(){
 
      1. Authorities dual-linked to this matter (case_law_docs.source_matter_id)
         show as a checklist, ticked by default. Unticking one excludes it.
-     2. A search of the library, either across everything ("General") or
-        confined to one subject and optionally one sub-tag ("By subject").
+     2. A search of the library: across everything ("General"), confined to
+        one subject and optionally one sub-tag ("By subject"), or not at all
+        ("Off"). Off applies only to the library search — the toggle sits
+        under "From the library" — so anything ticked above still goes in.
 
    Both are sent to the worker as body.caseLawContext; the retrieval itself
    happens server-side in buildCaseLawContext, where the matter's issues and
@@ -2501,8 +2503,9 @@ function draftClForMatter(matterId){
     .sort(function(a,b){return libNameSort(a.name,b.name);});
 }
 
+var DRAFT_CL_MODES=['general','subject','off'];
 function draftClSetMode(mode){
-  draftClMode=(mode==='subject')?'subject':'general';
+  draftClMode=(DRAFT_CL_MODES.indexOf(mode)!==-1)?mode:'general';
   draftClRender();
 }
 
@@ -2544,7 +2547,9 @@ function draftClRenderSummary(){
   var kept=draftClForMatter().filter(function(d){return draftClExcluded.indexOf(d.id)===-1;}).length;
   var bits=[];
   bits.push(kept===1?'1 from this matter':kept+' from this matter');
-  if(draftClMode==='subject'){
+  if(draftClMode==='off'){
+    bits.push('library search off');
+  }else if(draftClMode==='subject'){
     var subjSel=document.getElementById('draftClSubject');
     var tagSel=document.getElementById('draftClSubTag');
     var subjName=(subjSel&&subjSel.value&&subjSel.options[subjSel.selectedIndex].text)||'';
@@ -2564,8 +2569,8 @@ function draftClRender(matterId){
   if(!list)return;
 
   /* Mode buttons: the active one is filled, matching .lib-box-btn:hover. */
-  ['general','subject'].forEach(function(m){
-    var btn=document.getElementById('draftClMode'+(m==='general'?'General':'Subject'));
+  DRAFT_CL_MODES.forEach(function(m){
+    var btn=document.getElementById('draftClMode'+m.charAt(0).toUpperCase()+m.slice(1));
     if(!btn)return;
     var on=draftClMode===m;
     btn.style.background=on?'var(--blue-light)':'var(--white)';
@@ -2617,6 +2622,8 @@ function draftClContext(matterId){
     subjectName:(subjectId&&subjSel.options[subjSel.selectedIndex].text)||'',
     subTag:(draftClMode==='subject'&&tagSel&&tagSel.value)?tagSel.value:null
   };
-  if(kept.length===0&&draftClMode==='subject'&&!subjectId)return null;
+  /* Nothing to send at all: no ticked authority, and no library search
+     either because it is off or because subject mode has no subject. */
+  if(kept.length===0&&(draftClMode==='off'||(draftClMode==='subject'&&!subjectId)))return null;
   return ctx;
 }

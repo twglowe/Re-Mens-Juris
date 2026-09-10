@@ -109,7 +109,10 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   calls `draftClRender()` too.
 - Two sources: authorities dual-linked to the matter (a checklist, ticked by
   default — exclusions are stored, so a newly linked authority arrives
-  ticked), and a library search in `general` or `subject` mode.
+  ticked), and a library search in `general`, `subject` or `off` mode.
+  `off` turns off the library search only — the toggle sits under "From the
+  library", so ticked matter-linked authorities still go in. With nothing
+  ticked and the search off, the client sends no `caseLawContext` at all.
 - The client sends `body.caseLawContext`; retrieval happens server-side in
   `buildCaseLawContext` (`api/worker.js`), where the matter's issues and the
   draft instructions are already to hand.

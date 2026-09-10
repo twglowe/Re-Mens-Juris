@@ -100,6 +100,24 @@ export default async function handler(req, res) {
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ data });
     }
+    /* v5.56 Push B: list case law subjects (Library > Case Law & Texts) */
+    if (type === "case_law_subjects") {
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+      const { data, error } = await sb.from("case_law_subjects")
+        .select("id, name, created_at")
+        .eq("user_id", user.id).order("name");
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ data });
+    }
+    /* v5.56 Push B: list case law and textbook entries */
+    if (type === "case_law") {
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+      const { data, error } = await sb.from("case_law_docs")
+        .select("id, doc_type, name, citation, jurisdiction, subject_id, sub_tags, commentary, source_document_id, source_matter_id, char_count, created_at")
+        .eq("user_id", user.id).order("name");
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ data });
+    }
     // v2.3: Law firms list
     if (type === "law_firms") {
       const { data, error } = await supabase.from("law_firms")
@@ -150,6 +168,23 @@ export default async function handler(req, res) {
     if (action === "delete_legislation") {
       const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
       await sb.from("legislation").delete().eq("id", id).eq("user_id", user.id);
+      return res.status(200).json({ success: true });
+    }
+    /* v5.56 Push B: delete a case law / textbook entry. case_law_chunks
+       cascades on the case_law_id foreign key. */
+    if (action === "delete_case_law") {
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+      const { error } = await sb.from("case_law_docs").delete().eq("id", id).eq("user_id", user.id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ success: true });
+    }
+    /* v5.56 Push B: delete a subject. Entries filed under it are kept -
+       case_law_docs.subject_id is ON DELETE SET NULL - and show as
+       Unfiled in the list. */
+    if (action === "delete_case_law_subject") {
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+      const { error } = await sb.from("case_law_subjects").delete().eq("id", id).eq("user_id", user.id);
+      if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ success: true });
     }
     if (action === "delete_law_firm") {
@@ -252,6 +287,95 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: "Chunk storage failed: " + e.message });
       }
       return res.status(201).json({ success: true, id: leg.id });
+    }
+
+    /* v5.56 Push B: create a case law subject. UNIQUE (user_id, name), so a
+       duplicate hands back the existing row rather than failing the caller. */
+    if (action === "create_case_law_subject") {
+      const name = (body.name || "").trim();
+      if (!name) return res.status(400).json({ error: "name required" });
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+      const { data, error } = await sb.from("case_law_subjects")
+        .insert({ user_id: user.id, name: name }).select("id").single();
+      if (error) {
+        const { data: existing } = await sb.from("case_law_subjects")
+          .select("id").eq("user_id", user.id).eq("name", name).maybeSingle();
+        if (existing) return res.status(200).json({ success: true, id: existing.id, existed: true });
+        return res.status(500).json({ error: error.message });
+      }
+      return res.status(201).json({ success: true, id: data.id });
+    }
+
+    /* v5.56 Push B: store a case or textbook. Same shape as
+       create_legislation - the text is extracted in the BROWSER (full text;
+       the server-side PDF extractor's 4096-token ceiling silently truncates
+       a long judgment) and posted as JSON.
+
+       source_matter_id / source_document_id carry the dual-link: when the
+       user ticks "also add to the current matter" the client uploads the
+       same text through /api/upload first and passes the resulting document
+       id here, so the library entry and the matter document stay tied. */
+    if (action === "create_case_law") {
+      const { name, citation, jurisdiction, subject_id, sub_tags, commentary,
+              source_matter_id, source_document_id, text } = body;
+      const docType = body.doc_type === "textbook" ? "textbook" : "case";
+      if (!name || !name.trim()) return res.status(400).json({ error: "name required" });
+      if (!text || !text.trim()) return res.status(400).json({ error: "text required" });
+
+      /* sub_tags is text[]. Accept either an array or a comma-separated
+         string from the free-text field, and drop blanks. */
+      let tags = Array.isArray(sub_tags) ? sub_tags
+               : (typeof sub_tags === "string" ? sub_tags.split(",") : []);
+      tags = tags.map(t => String(t).trim()).filter(Boolean);
+
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+      /* Only accept a matter the caller can actually reach - the service key
+         bypasses RLS, so the foreign key alone is not a permission check. */
+      let matterId = null;
+      if (source_matter_id) {
+        const { data: own } = await sb.from("matters")
+          .select("id").eq("id", source_matter_id).eq("owner_id", user.id).maybeSingle();
+        if (own) {
+          matterId = source_matter_id;
+        } else {
+          const { data: share } = await sb.from("matter_shares")
+            .select("permission").eq("matter_id", source_matter_id).eq("user_id", user.id).maybeSingle();
+          if (share) matterId = source_matter_id;
+        }
+        if (!matterId) return res.status(403).json({ error: "No access to that matter" });
+      }
+
+      const { data: doc, error: docErr } = await sb.from("case_law_docs").insert({
+        user_id: user.id,
+        doc_type: docType,
+        name: name.trim(),
+        citation: (citation || "").trim(),
+        jurisdiction: (jurisdiction || "").trim(),
+        subject_id: subject_id || null,
+        sub_tags: tags,
+        commentary: (commentary || "").trim(),
+        source_matter_id: matterId,
+        source_document_id: matterId ? (source_document_id || null) : null,
+        char_count: text.length,
+      }).select("id").single();
+      if (docErr) return res.status(500).json({ error: docErr.message });
+
+      try {
+        const chunks = chunkText(text);
+        const rows = chunks.map((c, i) => ({
+          case_law_id: doc.id, user_id: user.id, chunk_index: i, content: c,
+        }));
+        /* insert in slices of 500 rows - a textbook can run to thousands */
+        for (let s = 0; s < rows.length; s += 500) {
+          const { error: chErr } = await sb.from("case_law_chunks").insert(rows.slice(s, s + 500));
+          if (chErr) throw new Error(chErr.message);
+        }
+      } catch (e) {
+        await sb.from("case_law_docs").delete().eq("id", doc.id).eq("user_id", user.id);
+        return res.status(500).json({ error: "Chunk storage failed: " + e.message });
+      }
+      return res.status(201).json({ success: true, id: doc.id });
     }
 
     if (action === "create_case_type") {

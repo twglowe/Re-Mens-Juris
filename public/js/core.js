@@ -94,7 +94,7 @@ var ctxMenuDocId=null;
 var ctxMenuMode='root';
 /* v5.1: Long-press timer handle for iPad (touchstart -> 500ms -> show menu) */
 var longPressTimer=null;
-var libraryData={caseTypes:[],subcats:[],docTypes:[],precedents:[],sections:[]};
+var libraryData={caseTypes:[],subcats:[],docTypes:[],precedents:[],sections:[],legislation:[],caseLawSubjects:[],caseLaw:[]};
 var selectedPrecedentId=null;
 var draftHeading={court:'',caseNo:'',party1:'',party1Role:'',party2:'',party2Role:'',docTitle:''};
 var quickAddType='';

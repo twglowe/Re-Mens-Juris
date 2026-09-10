@@ -974,7 +974,9 @@ async function clRunUpload(meta,resume){
       jurisdiction:meta.jurisdiction,
       subject_id:meta.subjectId||null,
       sub_tags:meta.subTags,
-      text:batches[li].map(function(p){return p.text;}).join('\n\n'),
+      /* v5.64: send the pages, not just their text, so each chunk records the
+         page it came from and the draft can cite a pinpoint. */
+      pageTexts:batches[li],
       total_char_count:totalChars
     };
     if(li===0){

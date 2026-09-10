@@ -570,8 +570,19 @@ function caseLawHeading(doc) {
    the model does not read across a jump as though it were one passage. */
 function caseLawJoinChunks(chunks) {
   var parts = [];
+  var lastPage = null;
   for (var i = 0; i < chunks.length; i++) {
     if (i > 0 && chunks[i].chunk_index !== chunks[i - 1].chunk_index + 1) parts.push("[…]");
+    /* v5.64: mark the page a passage came from so the draft can pinpoint it.
+       The number is the authority's own, read from its footer at upload, so
+       it is the one a court expects rather than a position in a bundle.
+       Chunks stored before migration_case_law_pages.sql have no page and go
+       in unmarked. */
+    var page = chunks[i].page_number;
+    if (typeof page === "number" && page !== lastPage) {
+      parts.push("[p." + page + "]");
+      lastPage = page;
+    }
     parts.push(chunks[i].content);
   }
   return parts.join("\n\n");
@@ -598,13 +609,19 @@ async function caseLawSearchChunks(supabase, userId, query, docIds) {
      nothing across a dozen keywords. */
   var terms = caseLawKeywords(query);
   if (terms.length === 0) return [];
-  var q = supabase.from("case_law_chunks")
-    .select("case_law_id, chunk_index, content")
-    .eq("user_id", userId)
-    .textSearch("content", terms.join(" OR "), { type: "websearch", config: "english" })
-    .limit(CASE_LAW_SEARCH_CHUNKS);
-  if (docIds && docIds.length) q = q.in("case_law_id", docIds);
-  var resp = await q;
+  function buildQuery(cols) {
+    var qq = supabase.from("case_law_chunks")
+      .select(cols)
+      .eq("user_id", userId)
+      .textSearch("content", terms.join(" OR "), { type: "websearch", config: "english" })
+      .limit(CASE_LAW_SEARCH_CHUNKS);
+    if (docIds && docIds.length) qq = qq.in("case_law_id", docIds);
+    return qq;
+  }
+  var resp = await buildQuery("case_law_id, chunk_index, page_number, content");
+  if (resp.error && /page_number/i.test(resp.error.message || "")) {
+    resp = await buildQuery("case_law_id, chunk_index, content");
+  }
   if (resp.error) {
     console.log("[draft] case law fallback search failed: " + resp.error.message);
     return [];
@@ -632,8 +649,14 @@ async function buildCaseLawContext(supabase, userId, matterId, ctx, queryText) {
     for (var i = 0; i < mDocs.length; i++) {
       var d = mDocs[i];
       var cResp = await supabase.from("case_law_chunks")
-        .select("content, chunk_index").eq("case_law_id", d.id).eq("user_id", userId)
+        .select("content, chunk_index, page_number").eq("case_law_id", d.id).eq("user_id", userId)
         .order("chunk_index").limit(CASE_LAW_DOC_CHUNKS);
+      if (cResp.error && /page_number/i.test(cResp.error.message || "")) {
+        /* migration_case_law_pages.sql has not been run — no pinpoints. */
+        cResp = await supabase.from("case_law_chunks")
+          .select("content, chunk_index").eq("case_law_id", d.id).eq("user_id", userId)
+          .order("chunk_index").limit(CASE_LAW_DOC_CHUNKS);
+      }
       var chunks = cResp.data || [];
       if (chunks.length === 0) continue;
       var entry = caseLawHeading(d) + "\n";
@@ -707,9 +730,10 @@ async function buildCaseLawContext(supabase, userId, matterId, ctx, queryText) {
   return "\n\n# CASE LAW AND TEXTS\n\n"
     + "HOW TO USE THESE:\n"
     + "1. Any authority you rely on MUST be cited by name and citation exactly as given in its heading above — for example \"Schmidt v Rosewood Trust Ltd [2003] 2 AC 709\".\n"
-    + "2. Do NOT reproduce these passages at length. State the proposition the authority supports in your own words and cite it. Quote only where the precise words matter, and then only a sentence or two.\n"
-    + "3. Cite only what appears below. Do not cite an authority you have not been given here, and do not invent a citation for one that is missing.\n"
-    + "4. Where the material below does not support a proposition you need, say so rather than stretching it.\n\n"
+    + "2. Where a passage is marked with a page, such as [p.712], cite that page as a pinpoint \u2014 \"Schmidt v Rosewood Trust Ltd [2003] 2 AC 709 at 712\". The page markers are the authority\u2019s own pagination. Never give a pinpoint for a passage that carries no marker, and never guess one.\n"
+    + "3. Do NOT reproduce these passages at length. State the proposition the authority supports in your own words and cite it. Quote only where the precise words matter, and then only a sentence or two.\n"
+    + "4. Cite only what appears below. Do not cite an authority you have not been given here, and do not invent a citation for one that is missing.\n"
+    + "5. Where the material below does not support a proposition you need, say so rather than stretching it.\n\n"
     + blocks.join("\n\n---\n\n");
 }
 

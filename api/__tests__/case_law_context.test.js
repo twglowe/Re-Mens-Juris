@@ -363,3 +363,54 @@ describe("prompt caching", () => {
     expect(call).toMatch(/messages:\s*\[\{\s*role:\s*"user",\s*content:\s*userPrompt\s*\}\]/);
   });
 });
+
+/* v5.64 — pinpoint citation. A page marker lets the draft say "at 712"
+   instead of naming the case and stopping there. */
+describe("page markers", () => {
+  it("marks the page each passage came from, once per page", () => {
+    const out = caseLawJoinChunks([
+      { chunk_index: 0, page_number: 712, content: "first" },
+      { chunk_index: 1, page_number: 712, content: "second" },
+      { chunk_index: 2, page_number: 713, content: "third" },
+    ]);
+    expect(out).toBe("[p.712]\n\nfirst\n\nsecond\n\n[p.713]\n\nthird");
+  });
+
+  it("marks a gap and the new page together", () => {
+    const out = caseLawJoinChunks([
+      { chunk_index: 0, page_number: 1, content: "a" },
+      { chunk_index: 9, page_number: 40, content: "b" },
+    ]);
+    expect(out).toBe("[p.1]\n\na\n\n[…]\n\n[p.40]\n\nb");
+  });
+
+  it("leaves chunks stored before the migration unmarked", () => {
+    const out = caseLawJoinChunks([
+      { chunk_index: 0, content: "a" },
+      { chunk_index: 1, page_number: null, content: "b" },
+    ]);
+    expect(out).toBe("a\n\nb");
+  });
+
+  it("tells the model to pinpoint only what is marked", async () => {
+    const sb = stubClient({
+      tables: {
+        case_law_docs: () => [DOC_SCHMIDT],
+        case_law_chunks: () => [{ chunk_index: 0, page_number: 712, content: "text" }],
+      },
+    });
+    const out = await buildCaseLawContext(sb, USER, MATTER, { mode: "off", matterCaseLawIds: ["cl-1"] }, "q");
+    expect(out).toContain("[p.712]");
+    expect(out).toContain("cite that page as a pinpoint");
+    expect(out).toContain("Never give a pinpoint for a passage that carries no marker");
+  });
+
+  it("asks for page_number and copes with the column not existing yet", () => {
+    const fs = require("node:fs");
+    const src = fs.readFileSync(new URL("../worker.js", import.meta.url), "utf8");
+    expect(src).toMatch(/select\("content, chunk_index, page_number"\)/);
+    expect(src).toMatch(/case_law_id, chunk_index, page_number, content/);
+    /* both reads must fall back rather than failing the draft */
+    expect(src.match(/page_number\/i\.test/g) || []).toHaveLength(2);
+  });
+});

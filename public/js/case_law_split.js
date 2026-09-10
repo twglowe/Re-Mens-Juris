@@ -245,7 +245,16 @@ function clPageOffsets(pages) {
   var pos = 0;
   for (var i = 0; i < (pages || []).length; i++) {
     var t = (pages[i] && pages[i].text) || "";
-    offs.push({ page: pages[i].page, start: pos, end: pos + t.length, text: t });
+    /* v5.64: read the judgment's own page number here, from the whole page,
+       before any boundary can cut the footer off a slice. This is the number
+       a pinpoint citation needs — in a bundle the file's page 40 may be the
+       judgment's page 1, and it is the latter a court wants. */
+    var info = clPageNumber(t);
+    offs.push({
+      page: pages[i].page,
+      refPage: info ? info.num : null,
+      start: pos, end: pos + t.length, text: t,
+    });
     pos += t.length + 2;
   }
   return offs;
@@ -261,7 +270,7 @@ function clSlicePages(offsets, start, end) {
     var from = Math.max(0, start - o.start);
     var to = Math.min(o.text.length, end - o.start);
     var t = o.text.slice(from, to);
-    if (t.trim()) out.push({ page: o.page, text: t });
+    if (t.trim()) out.push({ page: o.page, refPage: o.refPage, text: t });
   }
   return out;
 }

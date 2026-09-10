@@ -1,6 +1,9 @@
 # Re-Mens-Juris — working notes
 
 ## Shape of the app
+- Two Vercel projects build from this repo, `re-mens-juris` and
+  `lex-offshore`. **`re-mens-juris` is the live one** — the only one the
+  user uses. A `lex-offshore` deployment status on a commit can be ignored.
 - Static front end: `public/index.html` plus `public/js/*.js`. The root
   `index.html` is a byte-identical copy — **change both together**, they are
   checked for equality by nothing but habit.

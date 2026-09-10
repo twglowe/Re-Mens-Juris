@@ -69,6 +69,25 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
 - `create_case_law` checks the caller owns or shares `source_matter_id`
   before storing it: the service-role key bypasses RLS, so the foreign key
   is not a permission check.
+- **Batching** (v5.57): a textbook's text is far larger than Vercel's 4.5 MB
+  body limit, so the client packs the extracted pages into ~1 MB batches
+  (`packPagesIntoBatches`, shared with the matter uploader) and posts them
+  in order. Both stages batch on the same contract:
+  - `/api/upload` — `batchIndex`, `batchTotal`, `documentId` (existing v5.2
+    protocol, unchanged).
+  - `/api/library` `create_case_law` — `batch_index`, `batch_total`,
+    `case_law_id`, `total_char_count`. Batch 0 creates the row and chunks
+    0..n; later batches append, numbering from the current max
+    `chunk_index`. A single-batch caller sends no batch fields and takes
+    the original path.
+  - An append that fails part-way deletes the chunks it inserted before
+    returning, so a retry resumes from a clean index instead of
+    duplicating content. The client keeps `clResume` and offers a Retry
+    link that restarts at exactly the failed batch — it does not re-send
+    the matter copy when only the library stage failed.
+  - The chunker's 150-character overlap does not carry across a batch
+    boundary, so a few chunk joins in a batched upload are clean cuts.
+    `/api/upload` has the same property.
 
 ## Related earlier work
 - Push A, the legislation library (`legislation`, `legislation_chunks`), is

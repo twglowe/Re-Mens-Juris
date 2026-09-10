@@ -314,21 +314,87 @@ export default async function handler(req, res) {
        source_matter_id / source_document_id carry the dual-link: when the
        user ticks "also add to the current matter" the client uploads the
        same text through /api/upload first and passes the resulting document
-       id here, so the library entry and the matter document stay tied. */
+       id here, so the library entry and the matter document stay tied.
+
+       v5.57: batched, on the same contract /api/upload already uses for
+       oversized files. A textbook's full text does not fit in one request -
+       Vercel caps the body at 4.5 MB - so the client packs it into ~1 MB
+       batches and posts them in order:
+         batch 0            creates the case_law_docs row and chunks 0..n
+         batch 1..total-1   append, numbering from the current max index
+       Single-batch callers send no batch fields at all and behave exactly
+       as before. char_count comes from total_char_count on the first batch,
+       so the row records the whole document's size, not the first slice's.
+
+       An append that fails part-way deletes the chunks it managed to insert
+       before returning, so the client's retry resumes from a clean index
+       rather than duplicating content. */
     if (action === "create_case_law") {
       const { name, citation, jurisdiction, subject_id, sub_tags, commentary,
-              source_matter_id, source_document_id, text } = body;
+              source_matter_id, source_document_id, text,
+              batch_index, batch_total, case_law_id, total_char_count } = body;
+
+      if (!text || !text.trim()) return res.status(400).json({ error: "text required" });
+
+      const isBatched = typeof batch_total === "number" && batch_total > 1;
+      const bIdx = typeof batch_index === "number" ? batch_index : 0;
+      const bTotal = isBatched ? batch_total : 1;
+      const isAppend = isBatched && bIdx > 0 && typeof case_law_id === "string" && case_law_id.length > 0;
+
+      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+      /* ── Append batch ──────────────────────────────────────────────── */
+      if (isAppend) {
+        /* eq user_id as well as id: without it a client could append
+           chunks to another user's entry by guessing a uuid. */
+        const { data: existing, error: exErr } = await sb.from("case_law_docs")
+          .select("id").eq("id", case_law_id).eq("user_id", user.id).maybeSingle();
+        if (exErr) return res.status(500).json({ error: exErr.message });
+        if (!existing) return res.status(404).json({ error: "Case law entry not found for append" });
+
+        const { data: maxRows, error: mErr } = await sb.from("case_law_chunks")
+          .select("chunk_index").eq("case_law_id", case_law_id)
+          .order("chunk_index", { ascending: false }).limit(1);
+        if (mErr) return res.status(500).json({ error: mErr.message });
+        const baseIndex = (maxRows && maxRows.length > 0) ? (maxRows[0].chunk_index || 0) + 1 : 0;
+
+        const rows = chunkText(text).map((c, i) => ({
+          case_law_id: case_law_id, user_id: user.id, chunk_index: baseIndex + i, content: c,
+        }));
+        try {
+          for (let s = 0; s < rows.length; s += 500) {
+            const { error: chErr } = await sb.from("case_law_chunks").insert(rows.slice(s, s + 500));
+            if (chErr) throw new Error(chErr.message);
+          }
+        } catch (e) {
+          /* Undo this batch's partial insert so a retry starts clean. */
+          await sb.from("case_law_chunks").delete()
+            .eq("case_law_id", case_law_id).eq("user_id", user.id).gte("chunk_index", baseIndex);
+          return res.status(500).json({
+            error: "Chunk storage failed: " + e.message,
+            id: case_law_id, batchIndex: bIdx, batchTotal: bTotal,
+          });
+        }
+        const complete = bIdx === bTotal - 1;
+        if (complete && typeof total_char_count === "number" && total_char_count > 0) {
+          await sb.from("case_law_docs")
+            .update({ char_count: total_char_count }).eq("id", case_law_id).eq("user_id", user.id);
+        }
+        return res.status(200).json({
+          success: true, id: case_law_id, chunks: rows.length,
+          batchIndex: bIdx, batchTotal: bTotal, complete: complete,
+        });
+      }
+
+      /* ── First batch, or the single-POST happy path ────────────────── */
       const docType = body.doc_type === "textbook" ? "textbook" : "case";
       if (!name || !name.trim()) return res.status(400).json({ error: "name required" });
-      if (!text || !text.trim()) return res.status(400).json({ error: "text required" });
 
       /* sub_tags is text[]. Accept either an array or a comma-separated
          string from the free-text field, and drop blanks. */
       let tags = Array.isArray(sub_tags) ? sub_tags
                : (typeof sub_tags === "string" ? sub_tags.split(",") : []);
       tags = tags.map(t => String(t).trim()).filter(Boolean);
-
-      const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
       /* Only accept a matter the caller can actually reach - the service key
          bypasses RLS, so the foreign key alone is not a permission check. */
@@ -357,13 +423,13 @@ export default async function handler(req, res) {
         commentary: (commentary || "").trim(),
         source_matter_id: matterId,
         source_document_id: matterId ? (source_document_id || null) : null,
-        char_count: text.length,
+        char_count: (typeof total_char_count === "number" && total_char_count > 0)
+          ? total_char_count : text.length,
       }).select("id").single();
       if (docErr) return res.status(500).json({ error: docErr.message });
 
       try {
-        const chunks = chunkText(text);
-        const rows = chunks.map((c, i) => ({
+        const rows = chunkText(text).map((c, i) => ({
           case_law_id: doc.id, user_id: user.id, chunk_index: i, content: c,
         }));
         /* insert in slices of 500 rows - a textbook can run to thousands */
@@ -372,10 +438,15 @@ export default async function handler(req, res) {
           if (chErr) throw new Error(chErr.message);
         }
       } catch (e) {
+        /* Nothing else references the row yet, so drop it whole - chunks
+           cascade - and let the client start over. */
         await sb.from("case_law_docs").delete().eq("id", doc.id).eq("user_id", user.id);
         return res.status(500).json({ error: "Chunk storage failed: " + e.message });
       }
-      return res.status(201).json({ success: true, id: doc.id });
+      return res.status(201).json({
+        success: true, id: doc.id,
+        batchIndex: bIdx, batchTotal: bTotal, complete: !isBatched,
+      });
     }
 
     if (action === "create_case_type") {

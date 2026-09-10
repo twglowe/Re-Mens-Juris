@@ -738,10 +738,30 @@ function legRender(){
    type "Case Law"), so the matter tools can search it, and the returned
    documentId is kept on the library row as source_document_id.
 
+   Both stages are batched — see clRunUpload. A textbook's text is far
+   larger than Vercel will accept in one body, so the pages are packed into
+   ~1 MB batches and posted in order, and a failure part-way leaves a Retry
+   link that resumes from the batch that failed.
+
    The whole block is collapsed by default. Expanded it takes room from the
    precedent results above it, so it stays shut until it is wanted. */
 var clPendingText=null;
+var clPendingPages=null;   /* [{page,text}] — kept for batched upload */
+var clPendingFile=null;    /* {name,size} — the File itself is not held */
 var clExpanded=false;
+
+/* v5.57: ~1 MB of raw text per POST — the same ceiling, and the same
+   reasoning, as the matter uploader (v5.2a): JSON escaping expands the
+   body well past the raw character count, and Vercel's gateway rejects
+   anything over 4.5 MB. A full textbook is many times that, so both the
+   matter copy and the library entry go up in batches. */
+var CL_BATCH_TARGET_BYTES=1*1024*1024;
+
+/* Set when a batch fails, so the Retry link can resume from exactly that
+   point rather than re-sending what already landed:
+   {stage, batchIndex, documentId, caseLawId, meta}. Cleared on success. */
+var clResume=null;
+
 
 function clToggle(){
   clExpanded=!clExpanded;
@@ -767,7 +787,7 @@ function clToggle(){
 function clAttr(s){return esc(String(s||'')).replace(/'/g,'');}
 
 async function clFileChanged(input){
-  clPendingText=null;
+  clPendingText=null;clPendingPages=null;clPendingFile=null;clResume=null;
   var st=document.getElementById('clUpStatus');
   if(!input.files||!input.files[0])return;
   var file=input.files[0];
@@ -780,7 +800,13 @@ async function clFileChanged(input){
     var text=pages.map(function(p){return p.text;}).join('\n\n');
     if(!text||text.trim().length<200){st.textContent='No readable text — if this is a scanned PDF, OCR it first.';return;}
     clPendingText=text;
-    st.textContent='Read '+text.length.toLocaleString()+' characters.';
+    clPendingPages=pages;
+    clPendingFile={name:file.name,size:file.size};
+    /* Say up front how many POSTs this will take — a textbook runs to
+       dozens, and a silent five-minute upload looks like a hang. */
+    var batchCount=packPagesIntoBatches(pages,CL_BATCH_TARGET_BYTES).length;
+    st.textContent='Read '+text.length.toLocaleString()+' characters'
+      +(batchCount>1?' — will upload in '+batchCount+' batches.':'.');
     var nameField=document.getElementById('clUpName');
     if(nameField&&!nameField.value.trim()){
       nameField.value=file.name.replace(/\.(pdf|docx)$/i,'').replace(/[_-]+/g,' ').trim();
@@ -813,64 +839,162 @@ async function clSubjectDelete(){
   }catch(e){showToast('Error: '+e.message);}
 }
 
-async function clUpload(){
-  var docType=document.getElementById('clUpDocType').value;
-  var nameField=document.getElementById('clUpName');
-  var citationField=document.getElementById('clUpCitation');
-  var tagsField=document.getElementById('clUpTags');
-  var name=nameField.value.trim();
-  var jur=document.getElementById('clUpJur').value;
-  var subjectId=document.getElementById('clUpSubject').value;
-  var fileInput=document.getElementById('clUpFile');
-  var linkBox=document.getElementById('clUpMatterLink');
+function clSetStatus(html){
   var st=document.getElementById('clUpStatus');
+  if(!st)return;
+  st.style.display='';
+  st.innerHTML=html;
+}
+
+function clFail(stage,batchIndex,documentId,caseLawId,meta,err,batchTotal){
+  clResume={stage:stage,batchIndex:batchIndex,documentId:documentId,caseLawId:caseLawId,meta:meta};
+  var where=stage==='matter'
+    ? 'adding to '+esc(meta.matterName)
+    : 'storing in the library';
+  var partial='';
+  if(stage==='library'&&documentId){
+    partial='<div style="color:var(--text-faint)">The matter copy is already in — only the library entry is outstanding.</div>';
+  }else if(stage==='matter'&&batchIndex>0){
+    /* Say what is sitting in the matter half-finished. The retry completes
+       it; abandoning it leaves a partial document to delete by hand. */
+    partial='<div style="color:var(--text-faint)">Part of the document is already in the matter. Retrying finishes it; otherwise remove it from the matter by hand.</div>';
+  }
+  clSetStatus('<div style="color:var(--error)">Failed while '+where
+    +' (batch '+(batchIndex+1)+' of '+batchTotal+'): '+esc(err.message)+'</div>'
+    +partial
+    +'<div><a href="#" onclick="event.preventDefault();clRetryUpload()" style="color:var(--blue);font-weight:700">Retry from batch '+(batchIndex+1)+'</a></div>');
+}
+
+async function clRetryUpload(){
+  if(!clResume){showToast('Nothing to retry');return;}
+  if(!clPendingPages){showToast('The file was cleared — choose it again');clResume=null;return;}
+  var r=clResume;
+  await clRunUpload(r.meta,r);
+}
+
+/* Runs the upload through its two stages — the matter copy first, then the
+   library entry — resuming from `resume` when one is supplied.
+
+   The matter copy goes first deliberately: the other order would leave a
+   library entry pointing at a matter document that was never created.
+
+   Note the chunker's 150-character overlap does not carry across a batch
+   boundary, so a handful of chunk joins in a batched upload are clean
+   cuts. /api/upload has the same property. */
+async function clRunUpload(meta,resume){
+  var pages=clPendingPages;
+  var batches=packPagesIntoBatches(pages,CL_BATCH_TARGET_BYTES);
+  var total=batches.length;
+  var totalChars=pages.reduce(function(n,p){return n+((p.text||'').length);},0);
+  var stage=resume?resume.stage:(meta.wantsLink?'matter':'library');
+  var from=resume?resume.batchIndex:0;
+  var documentId=resume?resume.documentId:null;
+  var caseLawId=resume?resume.caseLawId:null;
+  clResume=null;
+
+  function progress(what,i){
+    clSetStatus(esc(what)+(total>1?' — batch '+(i+1)+' of '+total:'')+'…');
+  }
+
+  if(stage==='matter'){
+    for(var bi=from;bi<total;bi++){
+      progress('Adding to '+meta.matterName,bi);
+      var upBody={matterId:meta.matterId,fileName:meta.fileName,pageTexts:batches[bi],
+        docType:'Case Law',fileSize:meta.fileSize||0};
+      /* Single-batch uploads send no batch fields — that is the server's
+         original happy path, untouched. */
+      if(total>1){
+        upBody.batchIndex=bi;
+        upBody.batchTotal=total;
+        if(bi>0&&documentId)upBody.documentId=documentId;
+      }
+      try{
+        var up=await api('/api/upload','POST',upBody);
+        if(bi===0&&up&&up.documentId)documentId=up.documentId;
+      }catch(e){
+        clFail('matter',bi,documentId,null,meta,e,total);
+        return;
+      }
+    }
+    stage='library';
+    from=0;
+  }
+
+  for(var li=from;li<total;li++){
+    progress('Storing in the library',li);
+    var libBody={
+      action:'create_case_law',
+      doc_type:meta.docType,
+      name:meta.name,
+      citation:meta.citation,
+      jurisdiction:meta.jurisdiction,
+      subject_id:meta.subjectId||null,
+      sub_tags:meta.subTags,
+      text:batches[li].map(function(p){return p.text;}).join('\n\n'),
+      total_char_count:totalChars
+    };
+    if(li===0){
+      libBody.source_matter_id=meta.wantsLink?meta.matterId:null;
+      libBody.source_document_id=documentId;
+    }
+    if(total>1){
+      libBody.batch_index=li;
+      libBody.batch_total=total;
+      if(li>0&&caseLawId)libBody.case_law_id=caseLawId;
+    }
+    try{
+      var d=await api('/api/library','POST',libBody);
+      if(li===0&&d&&d.id)caseLawId=d.id;
+    }catch(e){
+      clFail('library',li,documentId,caseLawId,meta,e,total);
+      return;
+    }
+  }
+
+  /* Success — clear the form only now, so a failure leaves everything in
+     place for the Retry link. */
+  clPendingText=null;clPendingPages=null;clPendingFile=null;clResume=null;
+  var fileInput=document.getElementById('clUpFile');
+  if(fileInput)fileInput.value='';
+  document.getElementById('clUpName').value='';
+  document.getElementById('clUpCitation').value='';
+  document.getElementById('clUpTags').value='';
+  var linkBox=document.getElementById('clUpMatterLink');
+  if(linkBox)linkBox.checked=false;
+  var st=document.getElementById('clUpStatus');
+  if(st)st.style.display='none';
+  showToast(meta.wantsLink
+    ? 'Stored in the library and added to '+meta.matterName
+    : 'Stored in the library');
+  if(meta.wantsLink&&currentMatter&&currentMatter.id===meta.matterId){
+    await loadDocuments(meta.matterId);
+    await loadMatters();
+  }
+  await loadLibrary();
+}
+
+async function clUpload(){
+  var nameField=document.getElementById('clUpName');
+  var name=nameField.value.trim();
   if(!name){showToast('Enter the case or textbook name');return;}
-  if(!clPendingText){showToast('Choose a file first');return;}
+  if(!clPendingText||!clPendingPages){showToast('Choose a file first');return;}
+  var linkBox=document.getElementById('clUpMatterLink');
   var wantsLink=!!(linkBox&&linkBox.checked);
   if(wantsLink&&!currentMatter){showToast('No matter open — open one first, or untick the dual-link box');return;}
-  var fileName=fileInput.files[0]?fileInput.files[0].name:null;
-  var sourceDocId=null;
-  st.style.display='';st.textContent='Uploading…';
-  try{
-    /* Dual-link first: if the matter copy fails there is nothing to undo.
-       Doing it the other way round would leave a library entry claiming a
-       matter document that was never created. */
-    if(wantsLink){
-      st.textContent='Adding to '+currentMatter.name+'…';
-      var up=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:fileName||(name+'.pdf'),textContent:clPendingText,docType:'Case Law'});
-      sourceDocId=(up&&up.documentId)||null;
-    }
-    st.textContent='Storing in the library…';
-    await api('/api/library','POST',{
-      action:'create_case_law',
-      doc_type:docType,
-      name:name,
-      citation:citationField.value.trim(),
-      jurisdiction:jur,
-      subject_id:subjectId||null,
-      sub_tags:tagsField.value,
-      source_matter_id:wantsLink?currentMatter.id:null,
-      source_document_id:sourceDocId,
-      text:clPendingText
-    });
-    clPendingText=null;fileInput.value='';
-    nameField.value='';citationField.value='';tagsField.value='';
-    if(linkBox)linkBox.checked=false;
-    st.style.display='none';
-    showToast(wantsLink?'Stored in the library and added to '+currentMatter.name:'Stored in the library');
-    if(wantsLink&&currentMatter){
-      await loadDocuments(currentMatter.id);
-      await loadMatters();
-    }
-    await loadLibrary();
-  }catch(e){
-    /* Say plainly what did and did not happen — a half-done dual-link is
-       worse than a failure the user can see. */
-    st.textContent=sourceDocId
-      ? 'Added to the matter, but the library entry failed: '+e.message
-      : 'Upload error: '+e.message;
-    if(sourceDocId&&currentMatter){await loadDocuments(currentMatter.id);await loadMatters();}
-  }
+  var meta={
+    docType:document.getElementById('clUpDocType').value,
+    name:name,
+    citation:document.getElementById('clUpCitation').value.trim(),
+    jurisdiction:document.getElementById('clUpJur').value,
+    subjectId:document.getElementById('clUpSubject').value,
+    subTags:document.getElementById('clUpTags').value,
+    fileName:(clPendingFile&&clPendingFile.name)||(name+'.pdf'),
+    fileSize:(clPendingFile&&clPendingFile.size)||0,
+    wantsLink:wantsLink,
+    matterId:wantsLink?currentMatter.id:null,
+    matterName:wantsLink?currentMatter.name:''
+  };
+  await clRunUpload(meta,null);
 }
 
 async function clDelete(id,name){

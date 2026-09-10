@@ -249,6 +249,11 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   together. Suggestions run in sequence and land in editable boxes; Apply is a
   separate press. Meant as a one-off clear-up, not a standing workflow — the
   prompt that caused the mess is fixed.
+- **Scope** (v5.70): Tidy lists matter-named precedents by default, and the
+  whole library when "Show every precedent" is ticked — a stray upload named
+  after a company that was never a matter never matched, so it never appeared
+  and could not be deleted there. An unmatched row defaults to Leave alone,
+  not Rename: its name may be perfectly good already.
 - **Deleting** (v5.68): each tidy row chooses Rename, Delete or Leave alone,
   defaulting to Rename since deleting is the one choice that cannot be undone.
   Deletions are confirmed once, listing the names. `delete_precedent` removes

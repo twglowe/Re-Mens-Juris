@@ -8,6 +8,8 @@ process.env.SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "test-key
 process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "test-key";
 
 import { describe, it, expect } from "vitest";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 const { buildCaseLawContext, caseLawKeywords, caseLawJoinChunks, caseLawHeading } =
   await import("../worker.js");
 
@@ -293,5 +295,53 @@ describe("caseLawContext reaches the worker", () => {
     expect(src).toContain("p.caseLawContext");
     /* and the retrieved block must actually reach the prompt */
     expect(src).toMatch(/libraryText \+ caseLawText/);
+  });
+});
+
+/* v5.62 — prompt caching on the system prompt. runTool is not exported (it
+   closes over the module's Anthropic client), so these assert on the source:
+   that the cache breakpoint is placed, that an empty system prompt is left
+   as a plain string, and that cached tokens are priced rather than silently
+   dropped from the cost. */
+describe("prompt caching", () => {
+  const src = () => {
+    const fs = require("node:fs");
+    return fs.readFileSync(new URL("../worker.js", import.meta.url), "utf8");
+  };
+
+  it("puts the cache breakpoint on the system prompt", async () => {
+    const s = src();
+    expect(s).toMatch(/cache_control:\s*\{\s*type:\s*"ephemeral"\s*\}/);
+    expect(s).toMatch(/system:\s*systemParam/);
+  });
+
+  it("sends a plain string when there is no system prompt", () => {
+    /* An empty text block is rejected by the API, so the block form is used
+       only when there is something to cache. */
+    const s = src();
+    expect(s).toMatch(/typeof system === "string" && system\.length > 0/);
+  });
+
+  it("prices cache writes and reads rather than dropping them", async () => {
+    const mod = await import("../worker.js");
+    expect(mod.CACHE_WRITE_MULTIPLIER).toBe(1.25);
+    expect(mod.CACHE_READ_MULTIPLIER).toBe(0.1);
+    const s = src();
+    expect(s).toMatch(/cacheWriteTokens \* CACHE_WRITE_MULTIPLIER/);
+    expect(s).toMatch(/cacheReadTokens \* CACHE_READ_MULTIPLIER/);
+  });
+
+  it("counts cached tokens in the input total it reports", () => {
+    /* usage_log has always recorded the input tokens a call processed;
+       input_tokens alone now excludes the cached part. */
+    expect(src()).toMatch(/inputTokens: inputTokens \+ cacheWriteTokens \+ cacheReadTokens/);
+  });
+
+  it("keeps the batch text below the breakpoint, in the user message", () => {
+    /* Caching is a prefix match: anything that varies per batch must sit
+       after the cached system prompt or the cache never hits. */
+    const s = src();
+    const call = s.slice(s.indexOf("var systemParam"), s.indexOf("var finalMessage"));
+    expect(call).toMatch(/messages:\s*\[\{\s*role:\s*"user",\s*content:\s*userPrompt\s*\}\]/);
   });
 });

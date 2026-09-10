@@ -822,6 +822,7 @@ function clAttr(s){return esc(String(s||'')).replace(/'/g,'');}
 
 async function clFileChanged(input){
   clPendingText=null;clPendingPages=null;clPendingFile=null;clResume=null;
+  clSegments=null;clSetResume=null;clRenderSegments();
   var st=document.getElementById('clUpStatus');
   if(!input.files||!input.files[0])return;
   var file=input.files[0];
@@ -844,6 +845,13 @@ async function clFileChanged(input){
     var nameField=document.getElementById('clUpName');
     if(nameField&&!nameField.value.trim()){
       nameField.value=file.name.replace(/\.(pdf|docx)$/i,'').replace(/[_-]+/g,' ').trim();
+    }
+    /* v5.62 Push D: does this file hold more than one judgment? */
+    clSegments=await clDetectSegments(pages);
+    clRenderSegments();
+    if(clSegments){
+      st.textContent='Read '+text.length.toLocaleString()+' characters — '
+        +clSegments.length+' authorities found.';
     }
   }catch(e){st.textContent='Read error: '+e.message;}
 }
@@ -901,7 +909,7 @@ function clFail(stage,batchIndex,documentId,caseLawId,meta,err,batchTotal){
 
 async function clRetryUpload(){
   if(!clResume){showToast('Nothing to retry');return;}
-  if(!clPendingPages){showToast('The file was cleared — choose it again');clResume=null;return;}
+  if(!clPendingPages&&!(clResume.meta&&clResume.meta.pages)){showToast('The file was cleared — choose it again');clResume=null;return;}
   var r=clResume;
   await clRunUpload(r.meta,r);
 }
@@ -916,7 +924,9 @@ async function clRetryUpload(){
    boundary, so a handful of chunk joins in a batched upload are clean
    cuts. /api/upload has the same property. */
 async function clRunUpload(meta,resume){
-  var pages=clPendingPages;
+  /* v5.62: pages come from meta when the caller has them — one judgment's
+     worth on the multi-case path — and fall back to the whole file. */
+  var pages=meta.pages||clPendingPages;
   var batches=packPagesIntoBatches(pages,CL_BATCH_TARGET_BYTES);
   var total=batches.length;
   var totalChars=pages.reduce(function(n,p){return n+((p.text||'').length);},0);
@@ -947,7 +957,7 @@ async function clRunUpload(meta,resume){
         if(bi===0&&up&&up.documentId)documentId=up.documentId;
       }catch(e){
         clFail('matter',bi,documentId,null,meta,e,total);
-        return;
+        return false;
       }
     }
     stage='library';
@@ -981,9 +991,13 @@ async function clRunUpload(meta,resume){
       if(li===0&&d&&d.id)caseLawId=d.id;
     }catch(e){
       clFail('library',li,documentId,caseLawId,meta,e,total);
-      return;
+      return false;
     }
   }
+
+  /* On the multi-case path the caller owns the form and the next case, so
+     stop here and let it decide. */
+  if(meta.partOfSet)return true;
 
   /* Success — clear the form only now, so a failure leaves everything in
      place for the Retry link. */
@@ -1005,6 +1019,7 @@ async function clRunUpload(meta,resume){
     await loadMatters();
   }
   await loadLibrary();
+  return true;
 }
 
 async function clUpload(){
@@ -1122,4 +1137,180 @@ function clRender(){
     return '<div style="font-size:.72rem;font-weight:700;color:var(--text-mid);margin:.35rem 0 .15rem;text-transform:uppercase;letter-spacing:.03em">'+esc(sub)+'</div>'
       +bySubject[sub].map(clRow).join('');
   }).join('');
+}
+
+
+/* ══ v5.62 Push D: A FILE HOLDING SEVERAL JUDGMENTS ═══════════════════════
+   A bundle of authorities arrives as one PDF. Stored whole it becomes one
+   library entry with one name — and the drafting prompt tells the model to
+   cite each authority by the name in its heading, so passages from the third
+   judgment would be cited under the first judgment's name. Confidently, and
+   wrongly.
+
+   So after reading a file we look for judgment boundaries
+   (clSplitPages, public/js/case_law_split.js), ask the server to name each
+   segment from its opening, and show the user what was found. They edit
+   anything wrong, untick anything that is not wanted, and choose whether to
+   store separate entries or fall back to one.
+
+   Nothing is stored until they choose. Detection finding nothing leaves the
+   ordinary single-entry path exactly as it was. */
+var clSegments=null;      /* [{index,pages,charCount,name,citation,jurisdiction,keep}] */
+var clSetResume=null;     /* {caseIndex, meta} — which case to restart at */
+
+function clSegmentsPanel(){return document.getElementById('clSegments');}
+
+async function clDetectSegments(pages){
+  var segs=(typeof clSplitPages==='function')?clSplitPages(pages):[];
+  if(!segs||segs.length<2)return null;
+  var st=document.getElementById('clUpStatus');
+  st.style.display='';
+  st.textContent='Looks like '+segs.length+' judgments — reading their headings…';
+  var named=[];
+  try{
+    var d=await api('/api/library','POST',{
+      action:'name_case_law_segments',
+      segments:segs.map(function(sg){return {index:sg.index,excerpt:sg.excerpt};})
+    });
+    named=(d&&d.segments)||[];
+  }catch(e){
+    /* Naming is a convenience. Fall through with blanks for the user to fill. */
+    console.log('clDetectSegments naming failed:',e.message);
+  }
+  var byIndex={};
+  named.forEach(function(n){byIndex[n.index]=n;});
+  return segs.map(function(sg){
+    var n=byIndex[sg.index]||{};
+    return {
+      index:sg.index,pages:sg.pages,charCount:sg.charCount,
+      name:n.name||'',citation:n.citation||'',jurisdiction:n.jurisdiction||'',
+      keep:true
+    };
+  });
+}
+
+function clRenderSegments(){
+  var wrap=clSegmentsPanel();
+  if(!wrap)return;
+  if(!clSegments||!clSegments.length){wrap.style.display='none';wrap.innerHTML='';return;}
+  wrap.style.display='';
+  var kept=clSegments.filter(function(s){return s.keep;}).length;
+  wrap.innerHTML=
+    '<div style="font-size:.75rem;font-weight:700;color:var(--text-mid);margin-bottom:.25rem">'
+      +'This file looks like '+clSegments.length+' separate authorities</div>'
+    +'<div style="font-size:.7rem;color:var(--text-faint);margin-bottom:.35rem">'
+      +'Check the names — they were read from each heading. Untick anything you do not want stored.</div>'
+    +clSegments.map(function(sg,i){
+      return '<div style="border:1px solid var(--border);border-radius:5px;padding:.3rem;margin-bottom:.25rem">'
+        +'<label class="draft-doc-check" style="padding:0;margin-bottom:.2rem">'
+          +'<input type="checkbox"'+(sg.keep?' checked':'')+' onchange="clSegmentToggle('+i+',this.checked)"> '
+          +'<span style="font-size:.72rem;color:var(--text-faint)">'+Math.round(sg.charCount/1000)+'k characters</span>'
+        +'</label>'
+        +'<input class="lib-search-input" style="margin-bottom:.2rem;font-size:.78rem" placeholder="Case or work name" '
+          +'value="'+esc(sg.name)+'" oninput="clSegmentEdit('+i+',\'name\',this.value)">'
+        +'<input class="lib-search-input" style="margin-bottom:0;font-size:.78rem" placeholder="Citation" '
+          +'value="'+esc(sg.citation)+'" oninput="clSegmentEdit('+i+',\'citation\',this.value)">'
+        +'</div>';
+    }).join('')
+    +'<button class="btn-primary" style="width:100%;padding:.35rem;font-size:.82rem;margin-bottom:.25rem" onclick="clUploadSet()">'
+      +'Store '+kept+' separate '+(kept===1?'entry':'entries')+'</button>'
+    +'<button class="lib-box-btn" style="width:100%;padding:.3rem;font-size:.78rem" onclick="clUploadAsOne()">'
+      +'No — store the file as one entry</button>';
+}
+
+function clSegmentToggle(i,on){
+  if(!clSegments||!clSegments[i])return;
+  clSegments[i].keep=!!on;
+  clRenderSegments();
+}
+
+function clSegmentEdit(i,field,value){
+  if(!clSegments||!clSegments[i])return;
+  clSegments[i][field]=value;
+}
+
+/* Dismiss the panel and upload the whole file as one entry, exactly as the
+   single-case path always has. */
+function clUploadAsOne(){
+  clSegments=null;
+  clRenderSegments();
+  clUpload();
+}
+
+/* Store each ticked segment as its own library entry, in order. The shared
+   fields — doc type, subject, sub-tags, jurisdiction, dual-link — come from
+   the form and apply to all of them; name and citation are per case. */
+async function clUploadSet(resume){
+  var chosen=(clSegments||[]).filter(function(s){return s.keep;});
+  if(!chosen.length){showToast('Nothing ticked');return;}
+  var missing=chosen.filter(function(s){return !s.name.trim();});
+  if(missing.length){showToast('Give every ticked authority a name');return;}
+
+  var linkBox=document.getElementById('clUpMatterLink');
+  var wantsLink=!!(linkBox&&linkBox.checked);
+  if(wantsLink&&!currentMatter){showToast('No matter open — open one first, or untick the dual-link box');return;}
+
+  var docType=document.getElementById('clUpDocType').value;
+  var jur=document.getElementById('clUpJur').value;
+  var subjectId=document.getElementById('clUpSubject').value;
+  var subTags=document.getElementById('clUpTags').value;
+  var baseName=(clPendingFile&&clPendingFile.name)||'authorities.pdf';
+  var startAt=(resume&&typeof resume.caseIndex==='number')?resume.caseIndex:0;
+  var st=document.getElementById('clUpStatus');
+
+  for(var i=startAt;i<chosen.length;i++){
+    var sg=chosen[i];
+    st.style.display='';
+    st.textContent='Storing '+(i+1)+' of '+chosen.length+': '+sg.name+'…';
+    var meta={
+      docType:docType,
+      name:sg.name.trim(),
+      citation:sg.citation.trim(),
+      jurisdiction:sg.jurisdiction.trim()||jur,
+      subjectId:subjectId,
+      subTags:subTags,
+      /* One file, several entries: each carries the file name so they can be
+         traced back to the bundle they came from. */
+      fileName:baseName,
+      fileSize:(clPendingFile&&clPendingFile.size)||0,
+      wantsLink:wantsLink,
+      matterId:wantsLink?currentMatter.id:null,
+      matterName:wantsLink?currentMatter.name:'',
+      pages:sg.pages,
+      partOfSet:true
+    };
+    var ok=await clRunUpload(meta,null);
+    if(!ok){
+      /* clFail has already written what went wrong and a Retry link for the
+         batch. Record which case to restart at so the set can carry on. */
+      clSetResume={caseIndex:i};
+      st.innerHTML=st.innerHTML
+        +'<div style="color:var(--text-faint)">Stored '+i+' of '+chosen.length
+        +'. <a href="#" onclick="event.preventDefault();clRetrySet()" style="color:var(--blue);font-weight:700">Retry from '+esc(sg.name)+'</a></div>';
+      return;
+    }
+  }
+
+  clSegments=null;clSetResume=null;clRenderSegments();
+  clPendingText=null;clPendingPages=null;clPendingFile=null;
+  var fileInput=document.getElementById('clUpFile');
+  if(fileInput)fileInput.value='';
+  document.getElementById('clUpName').value='';
+  document.getElementById('clUpCitation').value='';
+  document.getElementById('clUpTags').value='';
+  if(linkBox)linkBox.checked=false;
+  st.style.display='none';
+  showToast('Stored '+chosen.length+' authorities'+(wantsLink?' and added them to '+currentMatter.name:''));
+  if(wantsLink&&currentMatter){
+    await loadDocuments(currentMatter.id);
+    await loadMatters();
+  }
+  await loadLibrary();
+}
+
+async function clRetrySet(){
+  if(!clSetResume){showToast('Nothing to retry');return;}
+  var at=clSetResume.caseIndex;
+  clSetResume=null;clResume=null;
+  await clUploadSet({caseIndex:at});
 }

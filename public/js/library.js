@@ -202,14 +202,18 @@ async function libIndexMarkNotRelevant(documentId){
 async function loadLibrary(){
   if(!token)return;
   try{
-    var results=await Promise.all([api('/api/library?type=case_types'),api('/api/library?type=subcats'),api('/api/library?type=doc_types'),api('/api/library?type=precedents'),api('/api/library?type=sections'),api('/api/library?type=legislation')]);
+    var results=await Promise.all([api('/api/library?type=case_types'),api('/api/library?type=subcats'),api('/api/library?type=doc_types'),api('/api/library?type=precedents'),api('/api/library?type=sections'),api('/api/library?type=legislation'),api('/api/library?type=case_law_subjects'),api('/api/library?type=case_law')]);
     libraryData.caseTypes=results[0].data||[];
     libraryData.subcats=results[1].data||[];
     libraryData.docTypes=results[2].data||[];
     libraryData.precedents=results[3].data||[];
     libraryData.sections=results[4].data||[];
     libraryData.legislation=results[5].data||[];
+    /* v5.56 Push B: case law subjects and entries */
+    libraryData.caseLawSubjects=results[6].data||[];
+    libraryData.caseLaw=results[7].data||[];
     legRender();
+    clRender();
     libPopulateSearchFilters();
     libFilterSearch();
     libPopulateDraftSelects();
@@ -711,5 +715,246 @@ function legRender(){
           +'<button class="lib-box-btn del" style="flex-shrink:0;padding:.1rem .4rem;font-size:.78rem" title="Delete" onclick="legDelete(\''+a.id+'\',\''+esc(a.act_name).replace(/'/g,'')+'\')">\u2212</button>'
           +'</div>';
       }).join('');
+  }).join('');
+}
+
+
+/* ══ v5.56 Push B: CASE LAW & TEXTBOOK LIBRARY ═══════════════════════════
+   Same shape as Push A's legislation library: the file is read in the
+   BROWSER (full text — the server-side PDF extractor truncates at 4096
+   tokens) and posted as JSON to /api/library, which chunks it into
+   case_law_chunks.
+
+   Live schema — these are the real column names, do not invent others:
+     case_law_subjects (id, user_id, name, created_at)  UNIQUE(user_id,name)
+     case_law_docs     (id, user_id, doc_type, name, citation, jurisdiction,
+                        subject_id, sub_tags text[], commentary,
+                        source_document_id, source_matter_id, char_count,
+                        created_at)
+     case_law_chunks   (id, case_law_id, user_id, chunk_index, content)
+
+   Dual-link: when "also add to the current matter" is ticked the same
+   extracted text is first POSTed to /api/upload as a matter document (doc
+   type "Case Law"), so the matter tools can search it, and the returned
+   documentId is kept on the library row as source_document_id.
+
+   The whole block is collapsed by default. Expanded it takes room from the
+   precedent results above it, so it stays shut until it is wanted. */
+var clPendingText=null;
+var clExpanded=false;
+
+function clToggle(){
+  clExpanded=!clExpanded;
+  var sect=document.getElementById('clSection');
+  var body=document.getElementById('clBody');
+  var caret=document.getElementById('clCaret');
+  if(body)body.style.display=clExpanded?'':'none';
+  if(caret)caret.textContent=clExpanded?'▾':'▸';
+  /* Expanded, the section splits the leftover height evenly with the
+     precedent results above it (both flex:1 1 0%) and keeps a working
+     floor on a short screen; clBody scrolls inside it. An earlier
+     percentage max-height plus flex-shrink:0 clipped the Upload button
+     off the foot of the panel. Collapsed, it is just its header. */
+  if(sect){
+    sect.style.flex=clExpanded?'1 1 0%':'0 0 auto';
+    sect.style.minHeight=clExpanded?'160px':'0';
+  }
+}
+
+/* Attribute-safe: matches the legislation list's approach — apostrophes are
+   dropped so they cannot break out of the inline onclick string. Only the
+   confirm() message is affected; the stored name keeps its punctuation. */
+function clAttr(s){return esc(String(s||'')).replace(/'/g,'');}
+
+async function clFileChanged(input){
+  clPendingText=null;
+  var st=document.getElementById('clUpStatus');
+  if(!input.files||!input.files[0])return;
+  var file=input.files[0];
+  var lower=file.name.toLowerCase();
+  var isPdf=lower.endsWith('.pdf'),isDocx=lower.endsWith('.docx');
+  if(!isPdf&&!isDocx){st.style.display='';st.textContent='PDF or DOCX only.';return;}
+  st.style.display='';st.textContent='Reading document…';
+  try{
+    var pages=isDocx?await extractDocxText(file):await extractPdfText(file);
+    var text=pages.map(function(p){return p.text;}).join('\n\n');
+    if(!text||text.trim().length<200){st.textContent='No readable text — if this is a scanned PDF, OCR it first.';return;}
+    clPendingText=text;
+    st.textContent='Read '+text.length.toLocaleString()+' characters.';
+    var nameField=document.getElementById('clUpName');
+    if(nameField&&!nameField.value.trim()){
+      nameField.value=file.name.replace(/\.(pdf|docx)$/i,'').replace(/[_-]+/g,' ').trim();
+    }
+  }catch(e){st.textContent='Read error: '+e.message;}
+}
+
+async function clSubjectAdd(){
+  var name=prompt('New subject (e.g. Trusts, Insolvency, Company Law):');
+  if(!name||!name.trim())return;
+  try{
+    var d=await api('/api/library','POST',{action:'create_case_law_subject',name:name.trim()});
+    await loadLibrary();
+    var sel=document.getElementById('clUpSubject');
+    if(sel&&d&&d.id)sel.value=d.id;
+    showToast(d&&d.existed?'Subject already exists':'Subject added: '+name.trim());
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+async function clSubjectDelete(){
+  var sel=document.getElementById('clUpSubject');
+  if(!sel||!sel.value){showToast('Select a subject first');return;}
+  var name=sel.options[sel.selectedIndex].text;
+  if(!confirm('Delete subject "'+name+'"? Entries filed under it are kept and shown as Unfiled.'))return;
+  try{
+    await api('/api/library','DELETE',{action:'delete_case_law_subject',id:sel.value});
+    sel.value='';
+    showToast('Deleted: '+name);
+    await loadLibrary();
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+async function clUpload(){
+  var docType=document.getElementById('clUpDocType').value;
+  var nameField=document.getElementById('clUpName');
+  var citationField=document.getElementById('clUpCitation');
+  var tagsField=document.getElementById('clUpTags');
+  var name=nameField.value.trim();
+  var jur=document.getElementById('clUpJur').value;
+  var subjectId=document.getElementById('clUpSubject').value;
+  var fileInput=document.getElementById('clUpFile');
+  var linkBox=document.getElementById('clUpMatterLink');
+  var st=document.getElementById('clUpStatus');
+  if(!name){showToast('Enter the case or textbook name');return;}
+  if(!clPendingText){showToast('Choose a file first');return;}
+  var wantsLink=!!(linkBox&&linkBox.checked);
+  if(wantsLink&&!currentMatter){showToast('No matter open — open one first, or untick the dual-link box');return;}
+  var fileName=fileInput.files[0]?fileInput.files[0].name:null;
+  var sourceDocId=null;
+  st.style.display='';st.textContent='Uploading…';
+  try{
+    /* Dual-link first: if the matter copy fails there is nothing to undo.
+       Doing it the other way round would leave a library entry claiming a
+       matter document that was never created. */
+    if(wantsLink){
+      st.textContent='Adding to '+currentMatter.name+'…';
+      var up=await api('/api/upload','POST',{matterId:currentMatter.id,fileName:fileName||(name+'.pdf'),textContent:clPendingText,docType:'Case Law'});
+      sourceDocId=(up&&up.documentId)||null;
+    }
+    st.textContent='Storing in the library…';
+    await api('/api/library','POST',{
+      action:'create_case_law',
+      doc_type:docType,
+      name:name,
+      citation:citationField.value.trim(),
+      jurisdiction:jur,
+      subject_id:subjectId||null,
+      sub_tags:tagsField.value,
+      source_matter_id:wantsLink?currentMatter.id:null,
+      source_document_id:sourceDocId,
+      text:clPendingText
+    });
+    clPendingText=null;fileInput.value='';
+    nameField.value='';citationField.value='';tagsField.value='';
+    if(linkBox)linkBox.checked=false;
+    st.style.display='none';
+    showToast(wantsLink?'Stored in the library and added to '+currentMatter.name:'Stored in the library');
+    if(wantsLink&&currentMatter){
+      await loadDocuments(currentMatter.id);
+      await loadMatters();
+    }
+    await loadLibrary();
+  }catch(e){
+    /* Say plainly what did and did not happen — a half-done dual-link is
+       worse than a failure the user can see. */
+    st.textContent=sourceDocId
+      ? 'Added to the matter, but the library entry failed: '+e.message
+      : 'Upload error: '+e.message;
+    if(sourceDocId&&currentMatter){await loadDocuments(currentMatter.id);await loadMatters();}
+  }
+}
+
+async function clDelete(id,name){
+  if(!confirm('Delete "'+name+'" from the case law library? Any copy in a matter is left alone.'))return;
+  try{
+    await api('/api/library','DELETE',{action:'delete_case_law',id:id});
+    showToast('Deleted');
+    await loadLibrary();
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+function clRenderSubjects(){
+  var sel=document.getElementById('clUpSubject');
+  if(!sel)return;
+  var prev=sel.value;
+  sel.innerHTML='<option value="">— Subject —</option>'
+    +(libraryData.caseLawSubjects||[]).map(function(s){
+      return '<option value="'+s.id+'">'+esc(s.name)+'</option>';
+    }).join('');
+  if(prev)sel.value=prev;
+}
+
+/* switchMainNav('library') calls loadLibrary() on every activation, so the
+   dual-link label is re-read from currentMatter each time the tab is opened
+   and cannot go stale. */
+function clRenderMatterLink(){
+  var label=document.getElementById('clUpMatterLabel');
+  var box=document.getElementById('clUpMatterLink');
+  if(!label)return;
+  if(currentMatter){
+    label.textContent='Also add to '+currentMatter.name;
+    label.style.color='var(--text-mid)';
+    if(box)box.disabled=false;
+  }else{
+    label.textContent='Also add to the current matter — none open';
+    label.style.color='var(--text-faint)';
+    if(box){box.checked=false;box.disabled=true;}
+  }
+}
+
+function clRow(d){
+  var meta=[];
+  if(d.citation)meta.push(esc(d.citation));
+  if(d.jurisdiction)meta.push(esc(d.jurisdiction));
+  if(d.char_count)meta.push(Math.round(d.char_count/1000)+'k');
+  var tags=(d.sub_tags||[]).filter(Boolean);
+  return '<div style="padding:.25rem .1rem;border-bottom:1px solid var(--border)">'
+    +'<div style="display:flex;align-items:center;gap:.35rem">'
+      +'<span style="flex-shrink:0;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint)">'+(d.doc_type==='textbook'?'Text':'Case')+'</span>'
+      +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem" title="'+esc(d.name)+'">'+esc(d.name)+'</span>'
+      +(d.source_document_id?'<span title="Also held in a matter" style="flex-shrink:0;font-size:.72rem;color:var(--blue)">⧉</span>':'')
+      +'<button class="lib-box-btn del" style="flex-shrink:0;padding:.1rem .4rem;font-size:.78rem" title="Delete" onclick="clDelete(\''+d.id+'\',\''+clAttr(d.name)+'\')">−</button>'
+    +'</div>'
+    +(meta.length?'<div style="font-size:.7rem;color:var(--text-faint);padding-left:2.1rem">'+meta.join(' · ')+'</div>':'')
+    +(tags.length?'<div style="font-size:.7rem;color:var(--text-mid);padding-left:2.1rem">'+tags.map(function(t){return esc(t);}).join(', ')+'</div>':'')
+    +'</div>';
+}
+
+function clRender(){
+  clRenderSubjects();
+  clRenderMatterLink();
+  var wrap=document.getElementById('clList');
+  if(!wrap)return;
+  var docs=libraryData.caseLaw||[];
+  var countEl=document.getElementById('clCount');
+  if(countEl)countEl.textContent=docs.length?String(docs.length):'';
+  if(!docs.length){
+    wrap.innerHTML='<div style="font-size:.78rem;color:var(--text-faint);padding:.3rem .1rem">No case law or textbooks uploaded yet.</div>';
+    return;
+  }
+  var subjectNames={};
+  (libraryData.caseLawSubjects||[]).forEach(function(s){subjectNames[s.id]=s.name;});
+  var bySubject={};
+  docs.forEach(function(d){
+    var key=subjectNames[d.subject_id]||'Unfiled';
+    (bySubject[key]=bySubject[key]||[]).push(d);
+  });
+  var keys=Object.keys(bySubject).sort(function(a,b){
+    if(a==='Unfiled')return 1;
+    if(b==='Unfiled')return -1;
+    return a.localeCompare(b);
+  });
+  wrap.innerHTML=keys.map(function(sub){
+    return '<div style="font-size:.72rem;font-weight:700;color:var(--text-mid);margin:.35rem 0 .15rem;text-transform:uppercase;letter-spacing:.03em">'+esc(sub)+'</div>'
+      +bySubject[sub].map(clRow).join('');
   }).join('');
 }

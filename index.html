@@ -692,6 +692,43 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <button class="btn-primary" style="width:100%;padding:.35rem;font-size:.82rem" onclick="legUpload()">Upload legislation</button>
           <div id="legList" style="margin-top:.4rem"></div>
         </div>
+        <!-- v5.56 Push B: Case law & textbook library. Collapsed by default —
+             expanded it takes room from the precedent results above. -->
+        <div id="clSection" style="border-top:2px solid var(--border);display:flex;flex-direction:column;min-height:0;flex:0 0 auto">
+          <div onclick="clToggle()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();clToggle();}" style="display:flex;align-items:center;gap:.35rem;padding:.5rem .6rem;cursor:pointer;flex-shrink:0">
+            <span id="clCaret" style="font-size:.72rem;color:var(--text-faint)">▸</span>
+            <span style="font-family:'Libre Baskerville',serif;font-size:.92rem;font-weight:700;color:var(--text-light)">Case Law &amp; Texts</span>
+            <span id="clCount" style="margin-left:auto;font-size:.7rem;color:var(--text-faint)"></span>
+          </div>
+          <div id="clBody" style="display:none;flex:1;min-height:0;padding:0 .6rem .5rem;overflow-y:auto">
+            <select class="lib-select" id="clUpDocType" style="width:100%;margin-bottom:.25rem;font-size:.8rem">
+              <option value="case">Case</option>
+              <option value="textbook">Textbook</option>
+            </select>
+            <input class="lib-search-input" id="clUpName" placeholder="Name, e.g. Salomon v A Salomon &amp; Co Ltd" style="margin-bottom:.25rem">
+            <input class="lib-search-input" id="clUpCitation" placeholder="Citation, e.g. [1897] AC 22" style="margin-bottom:.25rem">
+            <select class="lib-select" id="clUpJur" style="width:100%;margin-bottom:.25rem;font-size:.8rem">
+              <option>Cayman Islands</option><option>Bermuda</option><option>British Virgin Islands</option>
+              <option>England and Wales</option><option>Privy Council</option><option>Other</option>
+            </select>
+            <div style="display:flex;gap:.25rem;margin-bottom:.25rem;align-items:center">
+              <select class="lib-select" id="clUpSubject" style="flex:1;font-size:.78rem">
+                <option value="">— Subject —</option>
+              </select>
+              <button class="lib-box-btn" onclick="clSubjectAdd()" title="Add subject" style="flex-shrink:0;padding:.25rem .5rem;font-size:.82rem;min-width:28px">+</button>
+              <button class="lib-box-btn del" onclick="clSubjectDelete()" title="Delete selected subject" style="flex-shrink:0;padding:.25rem .5rem;font-size:.82rem;min-width:28px">−</button>
+            </div>
+            <input class="lib-search-input" id="clUpTags" placeholder="Sub-tags, comma separated" style="margin-bottom:.25rem">
+            <input type="file" id="clUpFile" accept=".pdf,.docx" style="width:100%;font-size:.78rem;margin-bottom:.25rem" onchange="clFileChanged(this)">
+            <label style="display:flex;gap:.35rem;align-items:flex-start;font-size:.75rem;margin-bottom:.3rem;cursor:pointer">
+              <input type="checkbox" id="clUpMatterLink" style="margin-top:.15rem;flex-shrink:0">
+              <span id="clUpMatterLabel" style="color:var(--text-faint)">Also add to the current matter — none open</span>
+            </label>
+            <div id="clUpStatus" style="display:none;font-size:.75rem;color:var(--blue);margin-bottom:.25rem"></div>
+            <button class="btn-primary" style="width:100%;padding:.35rem;font-size:.82rem" onclick="clUpload()">Upload authority</button>
+            <div id="clList" style="margin-top:.4rem"></div>
+          </div>
+        </div>
       </div>
 
       <!-- DRAFT left panel — v5.16a: Two-tab merged column. Case + Sources. -->
@@ -1382,9 +1419,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
-<script src="/js/core.js?v=5.53"></script>
+<script src="/js/core.js?v=5.56"></script>
 <script src="/js/tools.js?v=5.54"></script>
-<script src="/js/library.js?v=5.50"></script>
+<script src="/js/library.js?v=5.56"></script>
 <script src="/js/drafting.js?v=5.52"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->

@@ -63,6 +63,16 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   DELETE `delete_case_law_subject`, `delete_case_law`.
 - Client code is the `cl*` block at the foot of `public/js/library.js`, with
   the collapsible panel under Legislation in the Library left panel.
+- **Collapse** (v5.58): Legislation and Case Law share `libSectionToggle`,
+  keyed on an element-id prefix (`leg` / `cl`) and backed by
+  `libSectionExpanded` — state lives in JS, not the DOM, so a
+  `loadLibrary()` refresh leaves open sections open. Both start shut; the
+  header carries the count (`libSectionCount`) so a shut section still
+  reads. Open sections split the leftover panel height with the precedent
+  results (`flex:1 1 0%`, 160px floor) and scroll internally. List order is
+  sorted client-side with `libNameSort` (case-insensitive `localeCompare`)
+  rather than trusting the order rows arrive in; case law with no subject
+  groups under `CL_UNCLASSIFIED`, pinned last.
 - **Dual-link**: ticking "also add to the current matter" POSTs the same
   extracted text to `/api/upload` first (doc type `Case Law`, so the matter
   tools can search it), then stores the returned `documentId` on the library

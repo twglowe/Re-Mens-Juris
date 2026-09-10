@@ -650,6 +650,47 @@ function draftDeleteFromSelect(type){
 }
 
 
+/* ══ v5.58: LIBRARY SECTION COLLAPSE ═════════════════════════════════════
+   Legislation and Case Law behave identically, so they share one toggle.
+   Both start shut: the Precedent Library above them is the panel's main
+   business, and two open sections leave it almost nothing.
+
+   Expanded, a section splits the leftover height with whatever else is
+   open (flex:1 1 0%) and keeps a 160px floor so a short screen still
+   shows something usable; its body scrolls inside it. An earlier
+   percentage max-height plus flex-shrink:0 clipped the Upload button off
+   the foot of the panel. Collapsed, a section is just its header.
+
+   Section state lives here rather than in the DOM so a loadLibrary()
+   refresh — after an upload or a delete — leaves open sections open. */
+var libSectionExpanded={leg:false,cl:false};
+
+function libSectionToggle(prefix){
+  var open=!libSectionExpanded[prefix];
+  libSectionExpanded[prefix]=open;
+  var sect=document.getElementById(prefix+'Section');
+  var body=document.getElementById(prefix+'Body');
+  var caret=document.getElementById(prefix+'Caret');
+  if(body)body.style.display=open?'':'none';
+  if(caret)caret.textContent=open?'▾':'▸';
+  if(sect){
+    sect.style.flex=open?'1 1 0%':'0 0 auto';
+    sect.style.minHeight=open?'160px':'0';
+  }
+}
+
+/* The header carries the count so both sections can be read shut. */
+function libSectionCount(prefix,label,n){
+  var heading=document.getElementById(prefix+'Heading');
+  if(heading)heading.textContent=label+' ('+n+')';
+}
+
+/* Alphabetical, case-insensitive, and stable enough for a list of names:
+   "abbott" sorts next to "Abbott", not after "Zurich". */
+function libNameSort(a,b){
+  return String(a||'').localeCompare(String(b||''),undefined,{sensitivity:'base'});
+}
+
 /* ══ v5.40 Push A: LEGISLATION LIBRARY ═══════════════════════════════════
    Acts are extracted in the browser (full text) and stored chunked on the
    server. Text extraction reuses the matter-document extractors. */
@@ -700,13 +741,22 @@ async function legDelete(id,name){
   }catch(e){showToast('Error: '+e.message);}
 }
 function legRender(){
+  var acts=libraryData.legislation||[];
+  /* v5.58: the count shows on the header, so it reads while shut. */
+  libSectionCount('leg','Legislation',acts.length);
   var wrap=document.getElementById('legList');
   if(!wrap)return;
-  var acts=libraryData.legislation||[];
   if(!acts.length){wrap.innerHTML='<div style="font-size:.78rem;color:var(--text-faint);padding:.3rem .1rem">No legislation uploaded yet.</div>';return;}
   var byJur={};
   acts.forEach(function(a){(byJur[a.jurisdiction]=byJur[a.jurisdiction]||[]).push(a);});
-  wrap.innerHTML=Object.keys(byJur).sort().map(function(j){
+  /* v5.58: sort here rather than trusting the order the rows arrive in.
+     The API does order by act_name, but that is Postgres collation on the
+     server's locale; sorting client-side makes it explicit and
+     case-insensitive, and survives any change to that query. */
+  Object.keys(byJur).forEach(function(j){
+    byJur[j].sort(function(a,b){return libNameSort(a.act_name,b.act_name);});
+  });
+  wrap.innerHTML=Object.keys(byJur).sort(libNameSort).map(function(j){
     return '<div style="font-size:.72rem;font-weight:700;color:var(--text-mid);margin:.35rem 0 .15rem;text-transform:uppercase;letter-spacing:.03em">'+esc(j)+'</div>'
       +byJur[j].map(function(a){
         return '<div style="display:flex;align-items:center;gap:.35rem;padding:.22rem .1rem;font-size:.82rem;border-bottom:1px solid var(--border)">'
@@ -745,10 +795,10 @@ function legRender(){
 
    The whole block is collapsed by default. Expanded it takes room from the
    precedent results above it, so it stays shut until it is wanted. */
+var CL_UNCLASSIFIED='Unclassified';  /* group label for entries with no subject */
 var clPendingText=null;
 var clPendingPages=null;   /* [{page,text}] — kept for batched upload */
 var clPendingFile=null;    /* {name,size} — the File itself is not held */
-var clExpanded=false;
 
 /* v5.57: ~1 MB of raw text per POST — the same ceiling, and the same
    reasoning, as the matter uploader (v5.2a): JSON escaping expands the
@@ -762,24 +812,6 @@ var CL_BATCH_TARGET_BYTES=1*1024*1024;
    {stage, batchIndex, documentId, caseLawId, meta}. Cleared on success. */
 var clResume=null;
 
-
-function clToggle(){
-  clExpanded=!clExpanded;
-  var sect=document.getElementById('clSection');
-  var body=document.getElementById('clBody');
-  var caret=document.getElementById('clCaret');
-  if(body)body.style.display=clExpanded?'':'none';
-  if(caret)caret.textContent=clExpanded?'▾':'▸';
-  /* Expanded, the section splits the leftover height evenly with the
-     precedent results above it (both flex:1 1 0%) and keeps a working
-     floor on a short screen; clBody scrolls inside it. An earlier
-     percentage max-height plus flex-shrink:0 clipped the Upload button
-     off the foot of the panel. Collapsed, it is just its header. */
-  if(sect){
-    sect.style.flex=clExpanded?'1 1 0%':'0 0 auto';
-    sect.style.minHeight=clExpanded?'160px':'0';
-  }
-}
 
 /* Attribute-safe: matches the legislation list's approach — apostrophes are
    dropped so they cannot break out of the inline onclick string. Only the
@@ -830,7 +862,7 @@ async function clSubjectDelete(){
   var sel=document.getElementById('clUpSubject');
   if(!sel||!sel.value){showToast('Select a subject first');return;}
   var name=sel.options[sel.selectedIndex].text;
-  if(!confirm('Delete subject "'+name+'"? Entries filed under it are kept and shown as Unfiled.'))return;
+  if(!confirm('Delete subject "'+name+'"? Entries filed under it are kept and shown as Unclassified.'))return;
   try{
     await api('/api/library','DELETE',{action:'delete_case_law_subject',id:sel.value});
     sel.value='';
@@ -1056,11 +1088,11 @@ function clRow(d){
 function clRender(){
   clRenderSubjects();
   clRenderMatterLink();
+  var docs=libraryData.caseLaw||[];
+  /* v5.58: the count shows on the header, so it reads while shut. */
+  libSectionCount('cl','Case Law & Texts',docs.length);
   var wrap=document.getElementById('clList');
   if(!wrap)return;
-  var docs=libraryData.caseLaw||[];
-  var countEl=document.getElementById('clCount');
-  if(countEl)countEl.textContent=docs.length?String(docs.length):'';
   if(!docs.length){
     wrap.innerHTML='<div style="font-size:.78rem;color:var(--text-faint);padding:.3rem .1rem">No case law or textbooks uploaded yet.</div>';
     return;
@@ -1069,13 +1101,20 @@ function clRender(){
   (libraryData.caseLawSubjects||[]).forEach(function(s){subjectNames[s.id]=s.name;});
   var bySubject={};
   docs.forEach(function(d){
-    var key=subjectNames[d.subject_id]||'Unfiled';
+    /* Anything with no subject — never tagged, or tagged with a subject
+       since deleted, since subject_id is ON DELETE SET NULL. */
+    var key=subjectNames[d.subject_id]||CL_UNCLASSIFIED;
     (bySubject[key]=bySubject[key]||[]).push(d);
   });
+  /* v5.58: subjects A-Z with Unclassified pinned last, and entries A-Z
+     within each subject. */
+  Object.keys(bySubject).forEach(function(k){
+    bySubject[k].sort(function(a,b){return libNameSort(a.name,b.name);});
+  });
   var keys=Object.keys(bySubject).sort(function(a,b){
-    if(a==='Unfiled')return 1;
-    if(b==='Unfiled')return -1;
-    return a.localeCompare(b);
+    if(a===CL_UNCLASSIFIED)return 1;
+    if(b===CL_UNCLASSIFIED)return -1;
+    return libNameSort(a,b);
   });
   wrap.innerHTML=keys.map(function(sub){
     return '<div style="font-size:.72rem;font-weight:700;color:var(--text-mid);margin:.35rem 0 .15rem;text-transform:uppercase;letter-spacing:.03em">'+esc(sub)+'</div>'

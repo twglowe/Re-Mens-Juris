@@ -649,6 +649,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
       <div id="libraryLeftPanel" style="display:none;flex-direction:column;flex:1;overflow:hidden">
         <div class="panel-head">
           <span class="panel-head-title">Precedent Library</span>
+          <button class="btn-add" onclick="libTidyOpen()" title="Find precedents named after a matter and give them template names" style="margin-right:.3rem">Tidy</button>
           <button class="btn-add" onclick="libNewPrecedent()">+ New</button>
         </div>
         <!-- v5.12a: matter-document index indicator (states A-E rendered by libIndexRender) -->
@@ -1476,10 +1477,27 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
+
+<!-- v5.67: bulk tidy for precedents named after a matter -->
+<div class="overlay" id="libTidyModal" role="dialog" aria-modal="true" aria-label="Tidy precedent names" style="display:none">
+  <div class="modal" style="max-width:760px;width:96%">
+    <h3>🧹 Tidy precedent names</h3>
+    <p style="font-size:.85rem;color:var(--text-faint);margin-bottom:.6rem">
+      These precedents are named after one of your matters. The Precedent Library holds reusable templates, so the name should describe the document — which matter it came from is recorded separately and still reaches the AI when drafting.
+    </p>
+    <div id="libTidyStatus" style="display:none;font-size:.82rem;margin-bottom:.5rem"></div>
+    <div id="libTidyList" style="max-height:52vh;overflow-y:auto"></div>
+    <div class="modal-btns">
+      <button class="btn-dl" id="libTidySuggestBtn" onclick="libTidySuggestAll()">Suggest names</button>
+      <button class="btn-primary" id="libTidyApplyBtn" onclick="libTidyApply()">Apply</button>
+      <button class="btn-dl" onclick="closeModal('libTidyModal')" style="background:var(--off-white);color:var(--text-faint)">Close</button>
+    </div>
+  </div>
+</div>
 <script src="/js/case_law_split.js?v=5.64"></script>
 <script src="/js/core.js?v=5.56"></script>
 <script src="/js/tools.js?v=5.54"></script>
-<script src="/js/library.js?v=5.66"></script>
+<script src="/js/library.js?v=5.67"></script>
 <script src="/js/drafting.js?v=5.60"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->

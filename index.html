@@ -680,25 +680,31 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
         <div class="lib-search-results" id="libSearchResults">
           <div class="empty-state">Add case types and precedents to build your library.</div>
         </div>
-        <!-- v5.40 Push A: Legislation library -->
-        <div style="border-top:2px solid var(--border);padding:.5rem .6rem;flex-shrink:0;max-height:40%;overflow-y:auto">
-          <div style="font-family:'Libre Baskerville',serif;font-size:.92rem;font-weight:700;color:var(--text-light);margin-bottom:.35rem">Legislation</div>
-          <select class="lib-select" id="legUpJur" style="width:100%;margin-bottom:.25rem;font-size:.8rem">
-            <option>Cayman Islands</option><option>Bermuda</option><option>British Virgin Islands</option>
-          </select>
-          <input class="lib-search-input" id="legUpName" placeholder="Act name, e.g. Companies Act (2025 Revision)" style="margin-bottom:.25rem">
-          <input type="file" id="legUpFile" accept=".pdf,.docx" style="width:100%;font-size:.78rem;margin-bottom:.25rem" onchange="legFileChanged(this)">
-          <div id="legUpStatus" style="display:none;font-size:.75rem;color:var(--blue);margin-bottom:.25rem"></div>
-          <button class="btn-primary" style="width:100%;padding:.35rem;font-size:.82rem" onclick="legUpload()">Upload legislation</button>
-          <div id="legList" style="margin-top:.4rem"></div>
+        <!-- v5.40 Push A: Legislation library.
+             v5.58: collapsible, on the same pattern as Case Law below —
+             both start shut so the precedent results keep the panel. -->
+        <div id="legSection" style="border-top:2px solid var(--border);display:flex;flex-direction:column;min-height:0;flex:0 0 auto">
+          <div onclick="libSectionToggle('leg')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();libSectionToggle('leg');}" style="display:flex;align-items:center;gap:.35rem;padding:.5rem .6rem;cursor:pointer;flex-shrink:0">
+            <span id="legCaret" style="font-size:.72rem;color:var(--text-faint)">▸</span>
+            <span id="legHeading" style="font-family:'Libre Baskerville',serif;font-size:.92rem;font-weight:700;color:var(--text-light)">Legislation</span>
+          </div>
+          <div id="legBody" style="display:none;flex:1;min-height:0;padding:0 .6rem .5rem;overflow-y:auto">
+            <select class="lib-select" id="legUpJur" style="width:100%;margin-bottom:.25rem;font-size:.8rem">
+              <option>Cayman Islands</option><option>Bermuda</option><option>British Virgin Islands</option>
+            </select>
+            <input class="lib-search-input" id="legUpName" placeholder="Act name, e.g. Companies Act (2025 Revision)" style="margin-bottom:.25rem">
+            <input type="file" id="legUpFile" accept=".pdf,.docx" style="width:100%;font-size:.78rem;margin-bottom:.25rem" onchange="legFileChanged(this)">
+            <div id="legUpStatus" style="display:none;font-size:.75rem;color:var(--blue);margin-bottom:.25rem"></div>
+            <button class="btn-primary" style="width:100%;padding:.35rem;font-size:.82rem" onclick="legUpload()">Upload legislation</button>
+            <div id="legList" style="margin-top:.4rem"></div>
+          </div>
         </div>
         <!-- v5.56 Push B: Case law & textbook library. Collapsed by default —
              expanded it takes room from the precedent results above. -->
         <div id="clSection" style="border-top:2px solid var(--border);display:flex;flex-direction:column;min-height:0;flex:0 0 auto">
-          <div onclick="clToggle()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();clToggle();}" style="display:flex;align-items:center;gap:.35rem;padding:.5rem .6rem;cursor:pointer;flex-shrink:0">
+          <div onclick="libSectionToggle('cl')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();libSectionToggle('cl');}" style="display:flex;align-items:center;gap:.35rem;padding:.5rem .6rem;cursor:pointer;flex-shrink:0">
             <span id="clCaret" style="font-size:.72rem;color:var(--text-faint)">▸</span>
-            <span style="font-family:'Libre Baskerville',serif;font-size:.92rem;font-weight:700;color:var(--text-light)">Case Law &amp; Texts</span>
-            <span id="clCount" style="margin-left:auto;font-size:.7rem;color:var(--text-faint)"></span>
+            <span id="clHeading" style="font-family:'Libre Baskerville',serif;font-size:.92rem;font-weight:700;color:var(--text-light)">Case Law &amp; Texts</span>
           </div>
           <div id="clBody" style="display:none;flex:1;min-height:0;padding:0 .6rem .5rem;overflow-y:auto">
             <select class="lib-select" id="clUpDocType" style="width:100%;margin-bottom:.25rem;font-size:.8rem">
@@ -1421,7 +1427,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <datalist id="newFolderSuggestions"></datalist>
 <script src="/js/core.js?v=5.56"></script>
 <script src="/js/tools.js?v=5.54"></script>
-<script src="/js/library.js?v=5.57"></script>
+<script src="/js/library.js?v=5.58"></script>
 <script src="/js/drafting.js?v=5.52"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->

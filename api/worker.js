@@ -281,6 +281,9 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const INPUT_COST_PER_M = 3.00;
 const OUTPUT_COST_PER_M = 15.00;
+/* v5.62: prompt-caching rates, as multiples of the input rate. */
+const CACHE_WRITE_MULTIPLIER = 1.25;
+const CACHE_READ_MULTIPLIER = 0.10;
 /* v4.5c: raised from 250000 to 700000 to use the new 800s maxDuration ceiling.
    Leaves a 100s margin below the hard ceiling for the in-flight Anthropic call
    to wind down before Vercel kills the function. */
@@ -779,10 +782,30 @@ async function runTool(system, userPrompt, maxTokens) {
   while (attempt < MAX_ATTEMPTS) {
     attempt++;
     try {
+      /* v5.62: prompt caching. The system prompt is byte-identical across
+         every extraction batch and the synthesis that follows — the same
+         matter context, precedents, case law and tool history go up with
+         each call — so it is the ideal cache prefix. A cache write costs
+         1.25x the input rate and a read 0.1x, so from the second call on
+         the block is roughly 90% cheaper. Caching is a prefix match, and
+         everything that varies (the batch text) is in the user message
+         below the breakpoint, so the prefix stays stable.
+
+         Only the block form carries cache_control, and an empty text block
+         is rejected — a caller with no system prompt sends the plain
+         string, exactly as before. A prompt shorter than the model's
+         minimum cacheable prefix simply is not cached; that is silent and
+         harmless, not an error.
+
+         The default 5-minute TTL suits this: batches run back to back
+         within one worker invocation. */
+      var systemParam = (typeof system === "string" && system.length > 0)
+        ? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }]
+        : system;
       var stream = anthropic.messages.stream({
         model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
         max_tokens: maxTokens,
-        system: system,
+        system: systemParam,
         messages: [{ role: "user", content: userPrompt }],
       });
       var finalMessage = await stream.finalMessage();
@@ -792,13 +815,34 @@ async function runTool(system, userPrompt, maxTokens) {
           if (finalMessage.content[i].type === "text") { text = finalMessage.content[i].text; break; }
         }
       }
-      var inputTokens = (finalMessage.usage && finalMessage.usage.input_tokens) || 0;
-      var outputTokens = (finalMessage.usage && finalMessage.usage.output_tokens) || 0;
-      var cost = (inputTokens * INPUT_COST_PER_M / 1000000) + (outputTokens * OUTPUT_COST_PER_M / 1000000);
+      var usage = finalMessage.usage || {};
+      var inputTokens = usage.input_tokens || 0;
+      var outputTokens = usage.output_tokens || 0;
+      /* v5.62: input_tokens counts only the uncached part, so cache tokens
+         have to be priced separately or the cost is silently understated.
+         Writes bill at 1.25x the input rate, reads at 0.1x. */
+      var cacheWriteTokens = usage.cache_creation_input_tokens || 0;
+      var cacheReadTokens = usage.cache_read_input_tokens || 0;
+      var cost = ((inputTokens
+                   + cacheWriteTokens * CACHE_WRITE_MULTIPLIER
+                   + cacheReadTokens * CACHE_READ_MULTIPLIER) * INPUT_COST_PER_M / 1000000)
+                 + (outputTokens * OUTPUT_COST_PER_M / 1000000);
+      if (cacheReadTokens > 0 || cacheWriteTokens > 0) {
+        console.log("v5.62 cache: read=" + cacheReadTokens + " write=" + cacheWriteTokens + " fresh=" + inputTokens);
+      }
       if (attempt > 1) {
         console.log("v4.3b runTool: succeeded on attempt " + attempt + " of " + MAX_ATTEMPTS);
       }
-      return { text: text, inputTokens: inputTokens, outputTokens: outputTokens, cost: cost };
+      /* inputTokens carries every input token the call actually processed —
+         cached or not — so usage_log keeps meaning what it always did. */
+      return {
+        text: text,
+        inputTokens: inputTokens + cacheWriteTokens + cacheReadTokens,
+        outputTokens: outputTokens,
+        cacheWriteTokens: cacheWriteTokens,
+        cacheReadTokens: cacheReadTokens,
+        cost: cost,
+      };
     } catch (err) {
       lastErr = err;
       if (!isRetryableAnthropicError(err)) {
@@ -2065,3 +2109,4 @@ var toolLabels = {
    api/__tests__/case_law_context.test.js can exercise them against a stub
    client. The default export — the Vercel handler — is unchanged. */
 export { buildCaseLawContext, caseLawKeywords, caseLawJoinChunks, caseLawHeading };
+export { CACHE_WRITE_MULTIPLIER, CACHE_READ_MULTIPLIER };

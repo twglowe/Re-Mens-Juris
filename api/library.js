@@ -289,6 +289,68 @@ export default async function handler(req, res) {
       return res.status(201).json({ success: true, id: leg.id });
     }
 
+    /* v5.62 Push D: name the judgments found in a multi-case file. The client
+       detects the boundaries itself (case_law_split.js) and sends only the
+       opening of each segment — a few thousand characters, not the whole
+       bundle, which would not fit in a request body. Claude reads each
+       opening and returns the case name, citation and jurisdiction.
+
+       This never stores anything. The user sees the proposed names, edits
+       what is wrong, and decides whether to store separate entries or one. */
+    if (action === "name_case_law_segments") {
+      const segments = Array.isArray(body.segments) ? body.segments : [];
+      if (segments.length === 0) return res.status(400).json({ error: "segments required" });
+      if (segments.length > 40) return res.status(400).json({ error: "Too many segments (max 40)" });
+
+      const trimmed = segments.slice(0, 40).map((s, i) => ({
+        index: typeof s.index === "number" ? s.index : i,
+        excerpt: String(s.excerpt || "").slice(0, 3000),
+      }));
+
+      const listing = trimmed.map(seg =>
+        "--- SEGMENT " + seg.index + " ---\n" + seg.excerpt
+      ).join("\n\n");
+
+      let named = [];
+      try {
+        const resp = await anthropic.messages.create({
+          model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+          max_tokens: 4096,
+          system: "You identify law reports. You are given the opening of each segment of a file that appears to hold several judgments. For each segment return the case name, the citation, and the jurisdiction, taken only from the text. Never invent a citation: if the opening does not show one, return an empty string for it.",
+          messages: [{ role: "user", content:
+            "For each segment below return one JSON object with keys: index (the segment number), name (the case or work name, e.g. \"Schmidt v Rosewood Trust Ltd\"), citation (e.g. \"[2003] 2 AC 709\", or \"\" if none is shown), jurisdiction (e.g. \"Cayman Islands\", \"Privy Council\", or \"\" if unclear).\n\nReturn ONLY a JSON array, no commentary and no code fence.\n\n" + listing }],
+        });
+        const text = resp.content?.find(b => b.type === "text")?.text || "";
+        /* The model has been told not to fence the JSON, but a stray fence
+           is the usual failure — strip one before parsing. */
+        const cleaned = text.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+        const start = cleaned.indexOf("[");
+        const end = cleaned.lastIndexOf("]");
+        if (start !== -1 && end > start) named = JSON.parse(cleaned.slice(start, end + 1));
+        if (!Array.isArray(named)) named = [];
+      } catch (e) {
+        /* Naming is a convenience, not a gate: hand back blanks and let the
+           user type the names rather than failing the upload. */
+        console.log("name_case_law_segments: " + e.message);
+        named = [];
+      }
+
+      const byIndex = {};
+      named.forEach(function (n) {
+        if (n && typeof n.index === "number") byIndex[n.index] = n;
+      });
+      const out = trimmed.map(function (seg) {
+        const n = byIndex[seg.index] || {};
+        return {
+          index: seg.index,
+          name: String(n.name || "").trim(),
+          citation: String(n.citation || "").trim(),
+          jurisdiction: String(n.jurisdiction || "").trim(),
+        };
+      });
+      return res.status(200).json({ segments: out, named: named.length > 0 });
+    }
+
     /* v5.56 Push B: create a case law subject. UNIQUE (user_id, name), so a
        duplicate hands back the existing row rather than failing the caller. */
     if (action === "create_case_law_subject") {

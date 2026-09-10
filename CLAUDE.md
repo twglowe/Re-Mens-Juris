@@ -139,6 +139,44 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
 - Subject mode never widens: if nothing is filed under the chosen subject,
   the library search is skipped rather than falling back to everything.
 
+## Multi-case files (Push D, v5.62)
+- `public/js/case_law_split.js` — pure helpers, loaded as a plain script
+  before `core.js` and exported through `module.exports` so
+  `api/__tests__/case_law_split.test.js` runs against the same source.
+- Detection is deliberately conservative: only a line that is itself a court
+  header, or a case title standing alone, counts, and only when at least
+  `CL_MIN_SEGMENT_CHARS` past the previous boundary. `IN THE MATTER OF …`
+  lines are excluded — they belong to a judgment's own header block, and
+  splitting there would cut one judgment in half. A false negative stores the
+  file as one entry (the old behaviour); a false positive would shred a
+  judgment, so the thresholds lean towards missing a split.
+- `name_case_law_segments` (`api/library.js`) asks Claude to name and cite
+  each segment from its opening ~3000 characters. Naming is a convenience,
+  never a gate: a failure hands back blanks for the user to type.
+- The user confirms in the `clSegments` panel — editable name and citation
+  per case, a tick per case, and a "store the file as one entry" escape.
+  Nothing is stored until they choose.
+- `clRunUpload` takes its pages from `meta.pages` when the caller supplies
+  them, so the set path feeds it one judgment at a time; `meta.partOfSet`
+  stops it clearing the form between cases.
+
+## Prompt caching (v5.62)
+- `runTool` puts a `cache_control: {type:"ephemeral"}` breakpoint on the
+  system prompt. It is byte-identical across every extraction batch and the
+  synthesis, so from the second call on that block bills at ~0.1x.
+- Caching is a **prefix match**: anything that varies per batch must stay in
+  the user message, below the breakpoint. Adding a timestamp, a batch number
+  or a job id to `systemBase` would silently destroy the cache — check
+  `cache_read_input_tokens` in the logs if drafts get expensive again.
+- An empty system prompt is sent as a plain string; an empty text block is
+  rejected by the API. A prompt below the model's minimum cacheable length
+  simply is not cached — silent and harmless.
+- Cost accounting prices writes at `CACHE_WRITE_MULTIPLIER` (1.25x) and reads
+  at `CACHE_READ_MULTIPLIER` (0.1x); `input_tokens` alone excludes cached
+  tokens, so without this the cost would be understated. The `inputTokens`
+  runTool returns includes cached tokens, so `usage_log` still records every
+  input token a call processed.
+
 ## Related earlier work
 - Push A, the legislation library (`legislation`, `legislation_chunks`), is
   the pattern Push B follows — see the `leg*` functions in `library.js` and

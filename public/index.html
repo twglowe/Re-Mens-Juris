@@ -730,6 +730,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
               <input type="checkbox" id="clUpMatterLink" style="margin-top:.15rem;flex-shrink:0">
               <span id="clUpMatterLabel" style="color:var(--text-faint)">Also add to the current matter — none open</span>
             </label>
+            <div id="clSegments" style="display:none;margin-bottom:.35rem"></div>
             <div id="clUpStatus" style="display:none;font-size:.75rem;color:var(--blue);margin-bottom:.25rem"></div>
             <button class="btn-primary" style="width:100%;padding:.35rem;font-size:.82rem" onclick="clUpload()">Upload authority</button>
             <div id="clList" style="margin-top:.4rem"></div>
@@ -1446,9 +1447,10 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
      "New folder" button (showNewFolderInputMain). Lives at top-level so it
      exists from page load, before any picker has been rendered. -->
 <datalist id="newFolderSuggestions"></datalist>
+<script src="/js/case_law_split.js?v=5.62"></script>
 <script src="/js/core.js?v=5.56"></script>
 <script src="/js/tools.js?v=5.54"></script>
-<script src="/js/library.js?v=5.59"></script>
+<script src="/js/library.js?v=5.62"></script>
 <script src="/js/drafting.js?v=5.60"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->

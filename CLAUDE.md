@@ -188,6 +188,29 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   retries without the column and both reads fall back to a select that omits
   it — uploads still work, drafts simply carry no pinpoints.
 
+## Importing authorities out of a matter (v5.72)
+- Bundles have been uploaded to matters for months; the text is already
+  extracted, chunked and paginated in `chunks`, so importing one into the
+  library is a **copy, not a re-read**. "📥 Import from a matter" in the Case
+  Law section.
+- The chunks come down once (`type=matter_doc_chunks`, paged at 1000 —
+  PostgREST's ceiling) so boundaries can be found and the judgments named.
+  What goes back is only the decision: a name and a **chunk range** per
+  authority. `import_case_law` does the copying server-side, so the text
+  never travels twice.
+- Each entry gets its own `case_law_docs` row with `source_matter_id` and
+  `source_document_id`, exactly as a dual-linked upload does, and its
+  `chunk_index` restarts at 0 so an authority lifted from mid-bundle reads
+  from its own beginning. The matter's own document is untouched.
+- Pages are reconstructed from chunks via `page_number`; where that is null
+  (an upload predating page-aware chunking) everything falls into one page
+  and the file imports as a single authority — the safe outcome.
+- **`page` is not unique in a bundle** — every judgment restarts at 1 — so
+  `clPageOffsets` stamps each page with `idx`, its position in the input
+  array, and `clSlicePages` carries it through. Anything mapping a segment
+  back to its source must key on `idx`. Keying on `page` mapped a bundle's
+  second judgment onto the first judgment's chunks.
+
 ## Prompt caching (v5.62)
 - `runTool` puts a `cache_control: {type:"ephemeral"}` breakpoint on the
   system prompt. It is byte-identical across every extraction batch and the

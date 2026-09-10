@@ -252,6 +252,10 @@ function clPageOffsets(pages) {
     var info = clPageNumber(t);
     offs.push({
       page: pages[i].page,
+      /* v5.72: position in the input array. Page NUMBERS are not unique in a
+         bundle — each judgment restarts at 1 — so anything mapping a segment
+         back to where it came from has to key on this, not on `page`. */
+      idx: i,
       refPage: info ? info.num : null,
       start: pos, end: pos + t.length, text: t,
     });
@@ -270,7 +274,7 @@ function clSlicePages(offsets, start, end) {
     var from = Math.max(0, start - o.start);
     var to = Math.min(o.text.length, end - o.start);
     var t = o.text.slice(from, to);
-    if (t.trim()) out.push({ page: o.page, refPage: o.refPage, text: t });
+    if (t.trim()) out.push({ page: o.page, idx: o.idx, refPage: o.refPage, text: t });
   }
   return out;
 }

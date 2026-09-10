@@ -123,20 +123,22 @@ describe("clPageOffsets and clSlicePages", () => {
   it("returns whole pages inside the range and keeps their numbers", () => {
     const offs = clPageOffsets(pages);
     expect(clSlicePages(offs, 6, 16)).toEqual([
-      { page: 2, refPage: null, text: "bbbb" }, { page: 3, refPage: null, text: "cccc" },
+      { page: 2, idx: 1, refPage: null, text: "bbbb" },
+      { page: 3, idx: 2, refPage: null, text: "cccc" },
     ]);
   });
 
   it("cuts a page where a boundary falls inside it", () => {
     const offs = clPageOffsets(pages);
     expect(clSlicePages(offs, 2, 8)).toEqual([
-      { page: 1, refPage: null, text: "aa" }, { page: 2, refPage: null, text: "bb" },
+      { page: 1, idx: 0, refPage: null, text: "aa" },
+      { page: 2, idx: 1, refPage: null, text: "bb" },
     ]);
   });
 
   it("drops pages that contribute only whitespace", () => {
     const offs = clPageOffsets([{ page: 1, text: "aa" }, { page: 2, text: "   " }]);
-    expect(clSlicePages(offs, 0, 99)).toEqual([{ page: 1, refPage: null, text: "aa" }]);
+    expect(clSlicePages(offs, 0, 99)).toEqual([{ page: 1, idx: 0, refPage: null, text: "aa" }]);
   });
 
   it("carries the judgment's own page number, read before any cut", () => {
@@ -145,7 +147,7 @@ describe("clPageOffsets and clSlicePages", () => {
     const paged = [{ page: 40, text: "argument here\n\nPage 1 of 12" }];
     const offs = clPageOffsets(paged);
     expect(offs[0].refPage).toBe(1);
-    expect(clSlicePages(offs, 0, 5)).toEqual([{ page: 40, refPage: 1, text: "argum" }]);
+    expect(clSlicePages(offs, 0, 5)).toEqual([{ page: 40, idx: 0, refPage: 1, text: "argum" }]);
   });
 });
 
@@ -154,7 +156,7 @@ describe("clSplitPages", () => {
     const pages = [{ page: 1, text: "IN THE GRAND COURT OF THE CAYMAN ISLANDS\n" + body(40) }];
     const segs = clSplitPages(pages);
     expect(segs).toHaveLength(1);
-    expect(segs[0].pages).toEqual(pages.map((p) => ({ ...p, refPage: null })));
+    expect(segs[0].pages).toEqual(pages.map((p, i) => ({ ...p, idx: i, refPage: null })));
   });
 
   it("splits a bundle into one segment per judgment, preserving page numbers", () => {
@@ -325,5 +327,37 @@ describe("clSplitPages — which signal decided", () => {
     const rejoined = clSplitPages(pages)
       .map((s) => s.pages.map((p) => p.text).join("")).join("").replace(/\s+/g, "");
     expect(rejoined).toBe(whole);
+  });
+});
+
+/* v5.72 — pages carry their position in the input array. Page NUMBERS are
+   not unique in a bundle: every judgment restarts at 1. Anything mapping a
+   segment back to where it came from has to key on position. */
+describe("page position", () => {
+  it("numbers pages by position as well as by their printed number", () => {
+    const offs = clPageOffsets([
+      { page: 1, text: "a" }, { page: 2, text: "b" }, { page: 3, text: "c" },
+    ]);
+    expect(offs.map((o) => o.idx)).toEqual([0, 1, 2]);
+  });
+
+  it("carries the position through a slice", () => {
+    const offs = clPageOffsets([{ page: 40, text: "aaaa" }, { page: 41, text: "bbbb" }]);
+    expect(clSlicePages(offs, 6, 10)).toEqual([{ page: 41, idx: 1, refPage: null, text: "bbbb" }]);
+  });
+
+  it("keeps positions distinct where two judgments both start at page 1", () => {
+    /* the collision that mapped a bundle's second judgment onto the first
+       judgment's chunks */
+    const pages = [
+      { page: 1, text: bodyPage(1, 2) }, { page: 2, text: bodyPage(2, 2) },
+      { page: 1, text: bodyPage(1, 2) }, { page: 2, text: bodyPage(2, 2) },
+    ];
+    const segs = clSplitPages(pages);
+    expect(segs).toHaveLength(2);
+    expect(segs[0].pages.map((p) => p.idx)).toEqual([0, 1]);
+    expect(segs[1].pages.map((p) => p.idx)).toEqual([2, 3]);
+    /* printed numbers are identical across the two — position is not */
+    expect(segs[0].pages.map((p) => p.page)).toEqual(segs[1].pages.map((p) => p.page));
   });
 });

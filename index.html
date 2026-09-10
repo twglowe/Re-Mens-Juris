@@ -866,6 +866,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
               <div style="display:flex;gap:.3rem;margin-bottom:.3rem">
                 <button class="lib-box-btn" id="draftClModeGeneral" onclick="draftClSetMode('general')" title="Search the whole case law library for what bears on this draft" style="flex:1;font-size:.75rem">General</button>
                 <button class="lib-box-btn" id="draftClModeSubject" onclick="draftClSetMode('subject')" title="Confine the search to one subject" style="flex:1;font-size:.75rem">By subject</button>
+                <button class="lib-box-btn" id="draftClModeOff" onclick="draftClSetMode('off')" title="Do not search the library — anything ticked above still goes in" style="flex:1;font-size:.75rem">Off</button>
               </div>
               <div id="draftClSubjectWrap" style="display:none">
                 <select class="draft-field-select" id="draftClSubject" onchange="draftClSubjectChanged()" style="width:100%;font-size:.8rem;margin-bottom:.25rem">
@@ -1448,7 +1449,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <script src="/js/core.js?v=5.56"></script>
 <script src="/js/tools.js?v=5.54"></script>
 <script src="/js/library.js?v=5.59"></script>
-<script src="/js/drafting.js?v=5.59"></script>
+<script src="/js/drafting.js?v=5.60"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->
 <div class="overlay" id="prevDraftsModal" role="dialog" aria-modal="true" aria-label="Previous drafts" style="display:none" onclick="if(event.target===this)closePreviousDraftsModal()">

@@ -495,10 +495,11 @@ function docsToText(byDoc) {
         source_matter_id. The client sends the ids still ticked in the Draft
         tab's checklist; unticking one drops it here.
 
-     2. A search of the case law library, in one of two modes:
+     2. A search of the case law library, in one of three modes:
           general — the whole library
           subject — confined to one case_law_subjects row, and optionally to
                     one sub-tag within it
+          off     — no library search; source 1 above is unaffected
 
    Relevance: case_law_search() ranks with ts_rank_cd, so a chunk that turns
    on the issue repeatedly beats one mentioning a word in passing. That
@@ -635,12 +636,17 @@ async function buildCaseLawContext(supabase, userId, matterId, ctx, queryText) {
   }
 
   /* ── 2. The library search ─────────────────────────────────────────────── */
-  var mode = ctx.mode === "subject" ? "subject" : "general";
+  var mode = (ctx.mode === "subject" || ctx.mode === "off") ? ctx.mode : "general";
   var docIds = null;
   var scopeLabel = "whole library";
   var skipSearch = false;
 
-  if (mode === "subject") {
+  /* "Off" turns off the library search only. Authorities the user ticked
+     under "from this matter" are an explicit choice and still go in. */
+  if (mode === "off") {
+    skipSearch = true;
+    console.log("[draft] case law: library search off");
+  } else if (mode === "subject") {
     if (!ctx.subjectId) {
       skipSearch = true;
       console.log("[draft] case law: subject mode with no subject chosen, library search skipped");

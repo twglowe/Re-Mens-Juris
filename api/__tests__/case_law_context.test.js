@@ -225,6 +225,31 @@ describe("buildCaseLawContext", () => {
     expect(out).not.toContain("AUTHORITIES FROM THE LIBRARY");
   });
 
+  it("does no library search in off mode, but keeps the ticked authorities", async () => {
+    const sb = stubClient({
+      rpc: () => ({ data: [{ case_law_id: "cl-9", chunk_index: 0, content: "should not appear" }], error: null }),
+      tables: {
+        case_law_docs: () => [DOC_SCHMIDT],
+        case_law_chunks: () => [{ chunk_index: 0, content: "linked passage" }],
+      },
+    });
+    const out = await buildCaseLawContext(sb, USER, MATTER, { mode: "off", matterCaseLawIds: ["cl-1"] }, "breach of trust");
+    expect(sb.calls.rpc).toHaveLength(0);
+    expect(sb.calls.from.some((c) => c.textSearch)).toBe(false);
+    expect(out).toContain("linked passage");
+    expect(out).not.toContain("AUTHORITIES FROM THE LIBRARY");
+  });
+
+  it("returns nothing in off mode with nothing ticked", async () => {
+    const sb = stubClient({
+      rpc: () => ({ data: [{ case_law_id: "cl-9", chunk_index: 0, content: "should not appear" }], error: null }),
+      tables: {},
+    });
+    const out = await buildCaseLawContext(sb, USER, MATTER, { mode: "off", matterCaseLawIds: [] }, "q");
+    expect(sb.calls.rpc).toHaveLength(0);
+    expect(out).toBe("");
+  });
+
   it("caps the library search at the precedent search's per-document size", async () => {
     const sb = stubClient({
       rpc: () => ({ data: [], error: null }),

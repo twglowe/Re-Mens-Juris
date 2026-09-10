@@ -256,6 +256,16 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   and nothing in the client called it at all, so a precedent could not be
   deleted in the app and the API path would have orphaned its chunks. An
   orphaned chunk still feeds the drafting prompt.
+- **Several at once** (v5.69): the upload modal takes multiple files. One file
+  behaves exactly as before; two or more swap the single Name and matter
+  fields for a row each — own name (AI-suggested per file), own
+  `source_matter_id` — while sharing the case type, stage, doc type and
+  jurisdiction set above. The point is a set of the same kind of document
+  from different matters: one skeleton teaches the AI what a skeleton is,
+  four across four cases teach it how the form varies. Uploads run in
+  sequence (each is a multipart POST that extracts and chunks server-side)
+  and a failure stops, reporting how many are already in, so the user can
+  retry the rest without duplicating.
 - Cleanup SQL lives in `migrations/`: `review_precedent_library.sql` is read
   only, `delete_precedent_entries.sql` takes an explicit id list and deletes
   `precedent_chunks` first — the foreign key's ON DELETE behaviour is not

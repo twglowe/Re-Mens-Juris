@@ -1365,8 +1365,10 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <div class="overlay" id="precUploadModal" role="dialog" aria-modal="true" aria-label="Upload Precedent" style="display:none">
   <div class="modal" style="max-width:500px;width:95%">
     <h3>Upload Precedent Document</h3>
-    <label class="f-label">Document Name *</label>
-    <input type="text" id="precUpName" placeholder="e.g. Skeleton — ABC v DEF (2024)">
+    <div id="precUpSingleNameRow">
+      <label class="f-label">Document Name *</label>
+      <input type="text" id="precUpName" placeholder="e.g. Skeleton Argument — unfair prejudice petition">
+    </div>
     <label class="f-label" style="margin-top:.85rem">Case Type *</label>
     <div style="display:flex;gap:.3rem;align-items:center">
       <select id="precUpCaseType" style="flex:1;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)"></select>
@@ -1391,12 +1393,18 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
     </select>
     <!-- v5.65: where this precedent came from. Not part of its name — the
          name describes the document, this records the context the AI reads. -->
-    <label class="f-label" style="margin-top:.85rem">From which matter? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-faint)">(optional — lets the AI see the context this precedent was written for)</span></label>
-    <select id="precUpSourceMatter" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)">
-      <option value="">— None —</option>
-    </select>
-    <label class="f-label" style="margin-top:.85rem">PDF Document *</label>
-    <input type="file" id="precUpFile" accept=".pdf,.docx" style="width:100%;padding:.5rem;border:2px solid var(--border);border-radius:7px;font-size:.92rem;background:var(--off-white)" onchange="precUpFileChanged(this)">
+    <div id="precUpSingleMatterRow">
+      <label class="f-label" style="margin-top:.85rem">From which matter? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-faint)">(optional — lets the AI see the context this precedent was written for)</span></label>
+      <select id="precUpSourceMatter" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)">
+        <option value="">— None —</option>
+      </select>
+    </div>
+    <label class="f-label" style="margin-top:.85rem">Document(s) *</label>
+    <!-- v5.69: several at once. Each keeps its own name and its own source
+         matter; the classification above is shared by all of them. -->
+    <input type="file" id="precUpFile" accept=".pdf,.docx" multiple style="width:100%;padding:.5rem;border:2px solid var(--border);border-radius:7px;font-size:.92rem;background:var(--off-white)" onchange="precUpFileChanged(this)">
+    <div style="font-size:.75rem;color:var(--text-faint);margin-top:.2rem">Choose several to file a set of the same kind of document from different matters — the AI learns more from seeing how one form of document varies across cases.</div>
+    <div id="precUpMultiList" style="display:none;margin-top:.5rem"></div>
     <div id="precUpAiHint" style="display:none;margin-top:.3rem;padding:.4rem .6rem;background:var(--blue-faint);border:1px solid var(--border);border-radius:5px;font-size:.78rem;color:var(--blue);font-weight:500">Reading PDF to suggest a name…</div>
     <div style="font-size:.75rem;color:var(--text-faint);margin-top:.2rem">The document will be chunked and stored in your library.</div>
     <div id="precUpProgress" style="display:none;margin-top:.5rem;padding:.5rem;background:var(--blue-pale);border-radius:6px;font-size:.82rem;font-weight:600;color:var(--blue)">Uploading and processing…</div>
@@ -1498,7 +1506,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <script src="/js/case_law_split.js?v=5.64"></script>
 <script src="/js/core.js?v=5.56"></script>
 <script src="/js/tools.js?v=5.54"></script>
-<script src="/js/library.js?v=5.68"></script>
+<script src="/js/library.js?v=5.69"></script>
 <script src="/js/drafting.js?v=5.60"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->

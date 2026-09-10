@@ -635,9 +635,13 @@ export default async function handler(req, res) {
 
     // v2.3: Update precedent (save changes from Library 5-box panel)
     if (action === "update_precedent") {
-      const { id, case_type_id, subcat_id, doc_type_id, commentary, is_own_style, ai_instructions, context_relationship, party, source_matter_id } = body;
+      const { id, name, case_type_id, subcat_id, doc_type_id, commentary, is_own_style, ai_instructions, context_relationship, party, source_matter_id } = body;
       if (!id) return res.status(400).json({ error: "Precedent id required" });
       const updates = {};
+      /* v5.66: renaming. precedent_docs.name is NOT NULL, so a blank is
+         ignored rather than stored — an empty box means "leave it alone",
+         never "wipe the name". */
+      if (typeof name === "string" && name.trim()) updates.name = name.trim();
       if (case_type_id !== undefined) updates.case_type_id = case_type_id;
       if (subcat_id !== undefined) updates.subcategory_id = subcat_id;
       if (doc_type_id !== undefined) updates.doc_type_id = doc_type_id;

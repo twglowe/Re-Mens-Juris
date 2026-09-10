@@ -233,6 +233,15 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   the document met that situation and to say so where the present facts
   differ. `resolveSourceMatter` checks owner-or-sharer server-side — the
   service key bypasses RLS, so the foreign key is not a permission check.
+- **Renaming** (v5.66): until then *nothing in the app could rename a
+  precedent* — `update_precedent` never accepted a `name` and the panel had no
+  name field, so an entry filed under a matter's name was stuck with it. The
+  panel now has an editable Name with a **Suggest** button that reads the
+  stored chunks back through `type=prec_chunks` and runs them past
+  `PREC_NAME_PROMPT` — the same prompt the upload path uses, defined once so
+  the two cannot drift. A suggestion lands in the box for the user to accept;
+  nothing is renamed until Save Changes. A blank name is refused client-side
+  and ignored server-side, since `precedent_docs.name` is NOT NULL.
 - Cleanup SQL lives in `migrations/`: `review_precedent_library.sql` is read
   only, `delete_precedent_entries.sql` takes an explicit id list and deletes
   `precedent_chunks` first — the foreign key's ON DELETE behaviour is not

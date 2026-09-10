@@ -221,7 +221,7 @@ describe("bulk tidy", () => {
     const apply = src.slice(src.indexOf("async function libTidyApply"));
     expect(apply).toMatch(/action:'update_precedent'/);
     expect(apply).toMatch(/name:r\.proposed\.trim\(\)/);
-    expect(apply).toMatch(/source_matter_id:matterId\|\|null/);
+    expect(apply).toMatch(/source_matter_id:r\.matterId\|\|null/);
   });
 
   it("skips a row with no name rather than saving a blank", () => {
@@ -352,6 +352,36 @@ describe("multi-file precedent upload", () => {
   it("no longer offers a case name as the example to follow", () => {
     const html = fs.readFileSync(new URL("../../public/index.html", import.meta.url), "utf8");
     expect(html).not.toContain("Skeleton — ABC v DEF (2024)");
+  });
+});
+
+/* v5.71 — every row picks its own matter. The auto match only seeds it: a
+   precedent named after a case that is not one of your matters matches
+   nothing, and the document still came from somewhere. */
+describe("tidy source matter", () => {
+  it("seeds from what is stored, then the auto match, and keeps it editable", () => {
+    const open = src.slice(src.indexOf("function libTidyOpen"), src.indexOf("function libTidyRender"));
+    expect(open).toMatch(/p\.source_matter_id\|\|libMatterIdByName\(matter\)/);
+    expect(open).toMatch(/matterId:seeded\|\|''/);
+  });
+
+  it("offers a matter select on every row being renamed", () => {
+    const render = src.slice(src.indexOf("function libTidyRender"), src.indexOf("function libTidySetAction"));
+    expect(render).toMatch(/From which matter/);
+    expect(render).toMatch(/libTidyEdit\('\+i\+',\\'matterId\\'/);
+  });
+
+  it("saves the row's chosen matter, not one re-derived from the name", () => {
+    const apply = src.slice(src.indexOf("async function libTidyApply"));
+    expect(apply).toMatch(/source_matter_id:r\.matterId\|\|null/);
+    /* the old lookup-by-name is gone */
+    expect(apply).not.toMatch(/list\[j\]\.name===r\.matter/);
+  });
+
+  it("can record a matter for a row that matched none", () => {
+    /* "Evergrande" matches no matter; the expert report still came from it */
+    const open = src.slice(src.indexOf("function libTidyOpen"), src.indexOf("function libTidyRender"));
+    expect(open).not.toMatch(/matterId:matter\?/);
   });
 });
 

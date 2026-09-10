@@ -97,8 +97,8 @@ describe("renaming", () => {
 
   it("suggests from the stored chunks, sharing one prompt with the upload path", () => {
     expect(src).toMatch(/var PREC_NAME_PROMPT=/);
-    /* defined once, used by both callers */
-    expect((src.match(/PREC_NAME_PROMPT/g) || []).length).toBe(3);
+    /* defined once; used by the upload path, the single rename, and the tidy */
+    expect((src.match(/PREC_NAME_PROMPT/g) || []).length).toBe(4);
     const sug = src.slice(src.indexOf("async function libSuggestPrecedentName"), src.indexOf("v5.65: keep matter names out"));
     expect(sug).toMatch(/type=prec_chunks/);
     expect(sug).toMatch(/libMatchingMatterName\(suggested\)/);
@@ -183,5 +183,57 @@ describe("source matter", () => {
     const block = worker.slice(worker.indexOf("v5.65: the matter this precedent was written for"),
                                worker.indexOf("Author instructions"));
     expect(block).toMatch(/catch \(e\)/);
+  });
+});
+
+/* v5.67 — the bulk tidy. A one-off clear-up for the entries filed under a
+   matter's name before the prompt was fixed. */
+describe("bulk tidy", () => {
+  it("offers only matter-named precedents, never a well-named one", () => {
+    const open = src.slice(src.indexOf("function libTidyOpen"), src.indexOf("function libTidyRender"));
+    expect(open).toMatch(/libMatchingMatterName\(p\.name\)/);
+    expect(open).toMatch(/return matter\?/);
+  });
+
+  it("flags entries sharing a name, since this library has duplicate uploads", () => {
+    const open = src.slice(src.indexOf("function libTidyOpen"), src.indexOf("function libTidyRender"));
+    expect(open).toContain("duplicate name");
+    expect(open).toMatch(/libNormaliseName\(r\.original\)/);
+  });
+
+  it("suggests in sequence, not all at once", () => {
+    const sug = src.slice(src.indexOf("async function libTidySuggestAll"), src.indexOf("async function libTidyApply"));
+    expect(sug).toMatch(/for\s*\(var i=0;i<todo\.length/);
+    expect(sug).toMatch(/await api/);
+    /* a burst of parallel analyse calls buys nothing for a handful of docs */
+    expect(sug).not.toMatch(/Promise\.all/);
+  });
+
+  it("shares one prompt with the upload and single-rename paths", () => {
+    expect((src.match(/PREC_NAME_PROMPT/g) || []).length).toBe(4);
+  });
+
+  it("saves the new name and the source matter together", () => {
+    const apply = src.slice(src.indexOf("async function libTidyApply"));
+    expect(apply).toMatch(/action:'update_precedent'/);
+    expect(apply).toMatch(/name:r\.proposed\.trim\(\)/);
+    expect(apply).toMatch(/source_matter_id:matterId\|\|null/);
+  });
+
+  it("skips a row with no name rather than saving a blank", () => {
+    const apply = src.slice(src.indexOf("async function libTidyApply"));
+    expect(apply).toMatch(/r\.keep&&r\.proposed\.trim\(\)/);
+  });
+
+  it("stops at the first failure and says how many were saved", () => {
+    const apply = src.slice(src.indexOf("async function libTidyApply"));
+    expect(apply).toMatch(/Stopped at/);
+    expect(apply).toMatch(/saved\+' saved\.'/);
+  });
+
+  it("challenges a proposed name that still carries a matter name", () => {
+    const apply = src.slice(src.indexOf("async function libTidyApply"));
+    expect(apply).toMatch(/stillNamed/);
+    expect(apply).toMatch(/confirm\(/);
   });
 });

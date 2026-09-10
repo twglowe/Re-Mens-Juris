@@ -1442,3 +1442,141 @@ async function clRetrySet(){
   clSetResume=null;clResume=null;
   await clUploadSet({caseIndex:at});
 }
+
+
+/* ══ v5.67: BULK TIDY FOR MATTER-NAMED PRECEDENTS ═════════════════════════
+   Renaming these one at a time is a chore, and the reason they need renaming
+   at all is a prompt that has since been fixed — so this is a one-off clear
+   up rather than a permanent workflow. It finds every precedent whose name
+   matches one of the user's matters, proposes a template name for each from
+   the text stored at upload, and links it to that matter in the same save.
+
+   Nothing is renamed without being seen: suggestions land in editable boxes,
+   rows can be unticked, and Apply is a separate press. */
+var libTidyRows=[];
+
+function libTidyOpen(){
+  libTidyRows=(libraryData.precedents||[])
+    .map(function(p){
+      var matter=libMatchingMatterName(p.name);
+      return matter?{id:p.id,original:p.name,proposed:'',matter:matter,keep:true,note:''}:null;
+    })
+    .filter(Boolean)
+    .sort(function(a,b){return libNameSort(a.original,b.original);});
+
+  /* Flag same-named entries — this library has duplicate uploads, and a
+     rename is a good moment to notice them. */
+  var seen={};
+  libTidyRows.forEach(function(r){
+    var k=libNormaliseName(r.original);
+    seen[k]=(seen[k]||0)+1;
+  });
+  libTidyRows.forEach(function(r){
+    if(seen[libNormaliseName(r.original)]>1)r.note='duplicate name';
+  });
+
+  libTidyRender();
+  document.getElementById('libTidyModal').style.display='flex';
+}
+
+function libTidyRender(){
+  var wrap=document.getElementById('libTidyList');
+  if(!wrap)return;
+  if(!libTidyRows.length){
+    wrap.innerHTML='<div style="font-size:.85rem;color:var(--text-faint);padding:.6rem">No precedent is named after one of your matters. Nothing to tidy.</div>';
+    return;
+  }
+  wrap.innerHTML=libTidyRows.map(function(r,i){
+    return '<div style="border:1px solid var(--border);border-radius:6px;padding:.45rem;margin-bottom:.4rem">'
+      +'<label class="draft-doc-check" style="padding:0;margin-bottom:.3rem">'
+        +'<input type="checkbox"'+(r.keep?' checked':'')+' onchange="libTidyToggle('+i+',this.checked)"> '
+        +'<span style="font-weight:600">'+esc(r.original)+'</span>'
+        +'<span style="font-size:.72rem;color:var(--text-faint)"> · from '+esc(r.matter)+'</span>'
+        +(r.note?'<span style="font-size:.72rem;color:var(--error)"> · '+esc(r.note)+'</span>':'')
+      +'</label>'
+      +'<input class="lib-search-input" style="margin-bottom:0;font-size:.82rem" placeholder="New name — e.g. Skeleton Argument — unfair prejudice" '
+        +'value="'+esc(r.proposed)+'" oninput="libTidyEdit('+i+',this.value)">'
+      +'</div>';
+  }).join('');
+}
+
+function libTidyToggle(i,on){ if(libTidyRows[i]){libTidyRows[i].keep=!!on;} }
+function libTidyEdit(i,v){ if(libTidyRows[i]){libTidyRows[i].proposed=v;} }
+
+function libTidyStatus(text,colour){
+  var el=document.getElementById('libTidyStatus');
+  if(!el)return;
+  el.style.display='';
+  el.style.color=colour||'var(--blue)';
+  el.textContent=text;
+}
+
+/* Read each precedent's stored text back and ask for a template name. Run in
+   sequence rather than at once: this is a handful of documents, and a burst
+   of parallel calls to the analyse endpoint buys nothing. */
+async function libTidySuggestAll(){
+  var todo=libTidyRows.filter(function(r){return r.keep&&!r.proposed.trim();});
+  if(!todo.length){libTidyStatus('Nothing to suggest — every ticked row already has a name.','var(--text-faint)');return;}
+  var btn=document.getElementById('libTidySuggestBtn');
+  if(btn)btn.disabled=true;
+  var done=0,failed=0;
+  for(var i=0;i<todo.length;i++){
+    var r=todo[i];
+    libTidyStatus('Reading '+(i+1)+' of '+todo.length+': '+r.original+'…');
+    try{
+      var ch=await api('/api/library?type=prec_chunks&prec_id='+encodeURIComponent(r.id));
+      var chunks=(ch&&ch.data)||[];
+      if(!chunks.length){r.note='no stored text — type a name';failed++;continue;}
+      var snippet=chunks.map(function(c){return c.content;}).join('\n\n').slice(0,2000);
+      var d=await api('/api/analyse','POST',{matterId:'',matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:PREC_NAME_PROMPT+snippet}],jurisdiction:jurisdiction,queryType:'Factual Analysis',focusAreas:[]});
+      var suggested=(d&&d.result)?d.result.trim().replace(/^["']|["']$/g,'').slice(0,120):'';
+      if(libMatchingMatterName(suggested)){r.note='suggestion named the matter — type a name';failed++;continue;}
+      if(suggested&&suggested.length>2){r.proposed=suggested;done++;}
+      else{r.note='no suggestion — type a name';failed++;}
+    }catch(e){
+      r.note='could not read: '+e.message;failed++;
+    }
+    libTidyRender();
+  }
+  if(btn)btn.disabled=false;
+  libTidyStatus('Suggested '+done+' of '+todo.length
+    +(failed?' — '+failed+(failed===1?' needs':' need')+' a name typed in.':'. Check them, then Apply.'),
+    failed?'var(--error)':'var(--success)');
+}
+
+/* Save the ticked rows: the new name and the matter it came from, together. */
+async function libTidyApply(){
+  var rows=libTidyRows.filter(function(r){return r.keep&&r.proposed.trim();});
+  if(!rows.length){libTidyStatus('Nothing to apply — tick a row and give it a name.','var(--error)');return;}
+  var stillNamed=rows.filter(function(r){return libMatchingMatterName(r.proposed);});
+  if(stillNamed.length&&!confirm(stillNamed.length+' of these still carry a matter name. Save them anyway?'))return;
+
+  var btn=document.getElementById('libTidyApplyBtn');
+  if(btn)btn.disabled=true;
+  var saved=0;
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i];
+    libTidyStatus('Saving '+(i+1)+' of '+rows.length+'…');
+    try{
+      var matterId='';
+      var list=(typeof matters!=='undefined'&&matters)?matters:[];
+      for(var j=0;j<list.length;j++){ if(list[j].name===r.matter){matterId=list[j].id;break;} }
+      await api('/api/library','POST',{
+        action:'update_precedent',
+        id:r.id,
+        name:r.proposed.trim(),
+        source_matter_id:matterId||null
+      });
+      saved++;
+    }catch(e){
+      libTidyStatus('Stopped at "'+r.original+'": '+e.message+'. '+saved+' saved.','var(--error)');
+      if(btn)btn.disabled=false;
+      await loadLibrary();
+      return;
+    }
+  }
+  if(btn)btn.disabled=false;
+  libTidyStatus('Renamed '+saved+' precedent'+(saved===1?'':'s')+'.','var(--success)');
+  await loadLibrary();
+  libTidyOpen();
+}

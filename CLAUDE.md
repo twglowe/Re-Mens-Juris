@@ -242,6 +242,13 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   the two cannot drift. A suggestion lands in the box for the user to accept;
   nothing is renamed until Save Changes. A blank name is refused client-side
   and ignored server-side, since `precedent_docs.name` is NOT NULL.
+- **Bulk tidy** (v5.67): the "Tidy" button in the Precedent Library panel head
+  finds every precedent whose name matches a matter, suggests a template name
+  for each from the text stored at upload, flags entries sharing a name (this
+  library had duplicate uploads), and saves the new name and the source matter
+  together. Suggestions run in sequence and land in editable boxes; Apply is a
+  separate press. Meant as a one-off clear-up, not a standing workflow — the
+  prompt that caused the mess is fixed.
 - Cleanup SQL lives in `migrations/`: `review_precedent_library.sql` is read
   only, `delete_precedent_entries.sql` takes an explicit id list and deletes
   `precedent_chunks` first — the foreign key's ON DELETE behaviour is not

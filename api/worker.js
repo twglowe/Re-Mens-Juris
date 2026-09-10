@@ -511,11 +511,18 @@ function docsToText(byDoc) {
    The query text is the matter's issues and nature plus the draft
    instructions — "the draft's issues".
 
-   Size: the library search is capped at CASE_LAW_SEARCH_CHUNKS, and each
-   matter-linked authority at CASE_LAW_DOC_CHUNKS — the same 80 chunks the
-   precedent search allows per precedent document. A textbook runs to
+   Size: a chunk is 1500 characters, so the library's CASE_LAW_SEARCH_CHUNKS
+   is about 60k tokens. That block sits in the system prompt, which
+   runBatchedChained re-sends with every extraction batch and again for the
+   synthesis — so its cost is multiplied by the number of batches, and a
+   matter large enough to make ten of them pays for it eleven times. Raising
+   this further is a cost decision before it is a context decision; prompt
+   caching on the system prompt would be the cheaper way to buy more.
+
+   Each matter-linked authority stays at CASE_LAW_DOC_CHUNKS — the 80 chunks
+   the precedent search allows per precedent document. A textbook runs to
    thousands of chunks, so an uncapped fetch would swamp the prompt. */
-const CASE_LAW_SEARCH_CHUNKS = 80;
+const CASE_LAW_SEARCH_CHUNKS = 160;
 const CASE_LAW_DOC_CHUNKS = 80;
 const CASE_LAW_MAX_MATTER_DOCS = 5;
 const CASE_LAW_SUBJECT_DOC_CAP = 500;

@@ -180,7 +180,7 @@ describe("buildCaseLawContext", () => {
     const search = sb.calls.from.find((c) => c.textSearch);
     expect(search.textSearch.opts.type).toBe("websearch");
     expect(search.textSearch.query).toContain(" OR ");
-    expect(search.limit).toBe(80);
+    expect(search.limit).toBe(160);
     expect(out).toContain("fallback passage");
   });
 
@@ -250,13 +250,25 @@ describe("buildCaseLawContext", () => {
     expect(out).toBe("");
   });
 
-  it("caps the library search at the precedent search's per-document size", async () => {
+  it("caps the library search at CASE_LAW_SEARCH_CHUNKS", async () => {
     const sb = stubClient({
       rpc: () => ({ data: [], error: null }),
       tables: { case_law_docs: () => [] },
     });
     await buildCaseLawContext(sb, USER, MATTER, { mode: "general", matterCaseLawIds: [] }, "trust");
-    expect(sb.calls.rpc[0].args.p_limit).toBe(80);
+    expect(sb.calls.rpc[0].args.p_limit).toBe(160);
+  });
+
+  it("caps each matter-linked authority at the precedent search's per-document size", async () => {
+    const sb = stubClient({
+      tables: {
+        case_law_docs: () => [DOC_SCHMIDT],
+        case_law_chunks: () => [{ chunk_index: 0, content: "text" }],
+      },
+    });
+    await buildCaseLawContext(sb, USER, MATTER, { mode: "off", matterCaseLawIds: ["cl-1"] }, "trust");
+    const chunkQuery = sb.calls.from.find((c) => c.table === "case_law_chunks");
+    expect(chunkQuery.limit).toBe(80);
   });
 });
 

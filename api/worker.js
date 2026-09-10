@@ -1783,12 +1783,38 @@ export default async function handler(req, res) {
         for (var pi = 0; pi < allPrecedentIds.length; pi++) {
           var docId = allPrecedentIds[pi];
           var pChunksResp = await supabase.from("precedent_chunks").select("content, chunk_index").eq("precedent_doc_id", docId).order("chunk_index").limit(80);
-          var precMetaResp = await supabase.from("precedent_docs").select("name, context_relationship, context_doc_id, ai_instructions, is_own_style, commentary").eq("id", docId).single();
+          var precMetaResp = await supabase.from("precedent_docs").select("name, context_relationship, context_doc_id, ai_instructions, is_own_style, commentary, source_matter_id").eq("id", docId).single();
+          if (precMetaResp.error && /source_matter_id/i.test(precMetaResp.error.message || "")) {
+            /* migration_precedent_source_matter.sql has not been run yet. */
+            precMetaResp = await supabase.from("precedent_docs").select("name, context_relationship, context_doc_id, ai_instructions, is_own_style, commentary").eq("id", docId).single();
+          }
           var pChunks = pChunksResp.data;
           var precMeta = precMetaResp.data;
           if (pChunks && pChunks.length > 0) {
             var label = precMeta ? precMeta.name : docId;
             var precEntry = "=== PRECEDENT: " + label + " ===\n";
+            /* v5.65: the matter this precedent was written for. Knowing that
+               is what lets the model judge how far the precedent's situation
+               matches the one being drafted, and learn how the document was
+               used rather than copying its shape blind. The link used to be
+               carried in the precedent's name, which made templates findable
+               only by whoever remembered the matter. */
+            if (precMeta && precMeta.source_matter_id) {
+              try {
+                var srcResp = await supabase.from("matters")
+                  .select("name, nature, issues, jurisdiction")
+                  .eq("id", precMeta.source_matter_id).maybeSingle();
+                var src = srcResp.data;
+                if (src) {
+                  var srcBits = ["[Written for the matter \"" + src.name + "\""
+                    + (src.jurisdiction ? " (" + src.jurisdiction + ")" : "") + "."];
+                  if (src.nature) srcBits.push("That dispute: " + src.nature + ".");
+                  if (src.issues) srcBits.push("Its issues: " + src.issues + ".");
+                  srcBits.push("Read this precedent in that light: learn how it met that situation, and say so if the present draft's facts differ in a way that changes the approach.]");
+                  precEntry += srcBits.join(" ") + "\n\n";
+                }
+              } catch (e) { console.log("[draft] precedent source matter skipped: " + e.message); }
+            }
             if (precMeta && precMeta.ai_instructions) precEntry += "[Author instructions: " + precMeta.ai_instructions + "]\n\n";
             if (precMeta && precMeta.commentary) precEntry += "[Commentary \u2014 read carefully and apply: " + precMeta.commentary + "]\n\n";
             precEntry += pChunks.map(function(c) { return c.content; }).join("\n\n");

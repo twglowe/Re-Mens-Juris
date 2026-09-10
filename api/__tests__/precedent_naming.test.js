@@ -96,3 +96,54 @@ describe("the naming prompt", () => {
     expect(save).toMatch(/confirm\(/);
   });
 });
+
+/* v5.65 — the source matter. The name used to carry which matter a precedent
+   came from; that link now has a column, and it is what the AI reads to judge
+   the precedent's context. */
+describe("source matter", () => {
+  const worker = fs.readFileSync(new URL("../worker.js", import.meta.url), "utf8");
+  const lib = fs.readFileSync(new URL("../library.js", import.meta.url), "utf8");
+
+  it("is stored on upload, and only for a matter the caller can reach", () => {
+    expect(lib).toMatch(/source_matter_id: sourceMatterId/);
+    expect(lib).toMatch(/async function resolveSourceMatter/);
+    /* owner or sharer, checked server-side — the service key bypasses RLS */
+    const fn = lib.slice(lib.indexOf("async function resolveSourceMatter"), lib.indexOf("const SERVER_VERSION"));
+    expect(fn).toContain("owner_id");
+    expect(fn).toContain("matter_shares");
+    expect(fn).toMatch(/if \(!matterId\) return null/);
+  });
+
+  it("can be set or cleared afterwards from the precedent panel", () => {
+    const upd = lib.slice(lib.indexOf('action === "update_precedent"'), lib.indexOf('action === "create_precedent"'));
+    expect(upd).toMatch(/source_matter_id !== undefined/);
+    expect(upd).toMatch(/resolveSourceMatter/);
+  });
+
+  it("reaches the drafting prompt with the matter's nature and issues", () => {
+    const block = worker.slice(worker.indexOf("v5.65: the matter this precedent was written for"),
+                               worker.indexOf("Author instructions"));
+    expect(block).toMatch(/\.from\("matters"\)/);
+    expect(block).toMatch(/select\("name, nature, issues, jurisdiction"\)/);
+    expect(block).toContain("Written for the matter");
+    expect(block).toContain("That dispute:");
+    expect(block).toContain("Its issues:");
+  });
+
+  it("tells the model to learn from the context, not copy it blind", () => {
+    expect(worker).toContain("learn how it met that situation");
+    expect(worker).toMatch(/say so if the present draft's facts differ/);
+  });
+
+  it("still drafts if the migration has not been run", () => {
+    /* select() naming a column that does not exist is rejected outright, so
+       the read falls back rather than failing the whole draft. */
+    expect(worker).toMatch(/source_matter_id\/i\.test/);
+  });
+
+  it("never lets a failed lookup break the draft", () => {
+    const block = worker.slice(worker.indexOf("v5.65: the matter this precedent was written for"),
+                               worker.indexOf("Author instructions"));
+    expect(block).toMatch(/catch \(e\)/);
+  });
+});

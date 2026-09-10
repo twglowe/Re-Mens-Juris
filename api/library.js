@@ -86,6 +86,19 @@ async function insertCaseLawChunks(sb, rows) {
   }
 }
 
+/* v5.65: only accept a matter the caller can actually reach. Returns the id
+   or null; never throws, so a stale id from an old tab simply stores nothing
+   rather than failing an upload the user has waited on. */
+async function resolveSourceMatter(sb, userId, matterId) {
+  if (!matterId) return null;
+  const { data: own } = await sb.from("matters")
+    .select("id").eq("id", matterId).eq("owner_id", userId).maybeSingle();
+  if (own) return matterId;
+  const { data: share } = await sb.from("matter_shares")
+    .select("permission").eq("matter_id", matterId).eq("user_id", userId).maybeSingle();
+  return share ? matterId : null;
+}
+
 const SERVER_VERSION = "v5.24";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " library handler: " + (req.method || "?") + " " + (req.url || ""));
@@ -115,6 +128,8 @@ export default async function handler(req, res) {
       return res.status(200).json({ data });
     }
     if (type === "precedents") {
+      /* select("*") already carries source_matter_id once the migration has
+         run; before that the column is absent and the client sees undefined. */
       const { data, error } = await supabase.from("precedent_docs")
         .select("*").eq("user_id", user.id).order("created_at", { ascending: false });
       if (error) return res.status(500).json({ error: error.message });
@@ -255,9 +270,15 @@ export default async function handler(req, res) {
       const docTypeId = Array.isArray(fields.doc_type_id) ? fields.doc_type_id[0] : fields.doc_type_id;
       const jurisdiction = Array.isArray(fields.jurisdiction) ? fields.jurisdiction[0] : fields.jurisdiction;
       const description = Array.isArray(fields.description) ? fields.description[0] : fields.description;
+      const sourceMatterField = Array.isArray(fields.source_matter_id) ? fields.source_matter_id[0] : fields.source_matter_id;
       const file = Array.isArray(files.file) ? files.file[0] : files.file;
 
       if (!file) return res.status(400).json({ error: "No file uploaded" });
+
+      /* v5.65: which matter this precedent came from. The service key
+         bypasses RLS, so the caller's access is checked here rather than
+         relying on the foreign key. */
+      const sourceMatterId = await resolveSourceMatter(supabase, user.id, sourceMatterField);
 
       const { data: precDoc, error: precErr } = await supabase.from("precedent_docs").insert({
         user_id: user.id,
@@ -267,6 +288,7 @@ export default async function handler(req, res) {
         name,
         description: description || null,
         jurisdiction: jurisdiction || null,
+        source_matter_id: sourceMatterId,
       }).select("id").single();
       if (precErr) return res.status(500).json({ error: precErr.message });
 
@@ -613,7 +635,7 @@ export default async function handler(req, res) {
 
     // v2.3: Update precedent (save changes from Library 5-box panel)
     if (action === "update_precedent") {
-      const { id, case_type_id, subcat_id, doc_type_id, commentary, is_own_style, ai_instructions, context_relationship, party } = body;
+      const { id, case_type_id, subcat_id, doc_type_id, commentary, is_own_style, ai_instructions, context_relationship, party, source_matter_id } = body;
       if (!id) return res.status(400).json({ error: "Precedent id required" });
       const updates = {};
       if (case_type_id !== undefined) updates.case_type_id = case_type_id;
@@ -624,6 +646,10 @@ export default async function handler(req, res) {
       if (ai_instructions !== undefined) updates.ai_instructions = ai_instructions;
       if (context_relationship !== undefined) updates.context_relationship = context_relationship;
       if (party !== undefined) updates.party = party;
+      /* v5.65: null clears the link; an id is accepted only if reachable. */
+      if (source_matter_id !== undefined) {
+        updates.source_matter_id = await resolveSourceMatter(supabase, user.id, source_matter_id);
+      }
       const { error } = await supabase.from("precedent_docs")
         .update(updates).eq("id", id).eq("user_id", user.id);
       if (error) return res.status(500).json({ error: error.message });

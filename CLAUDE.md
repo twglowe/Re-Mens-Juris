@@ -221,11 +221,25 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   company and matter names. `libMatchingMatterName` then discards a
   suggestion that collides with one of the user's matters, and challenges a
   hand-typed one at save with a confirm rather than a block.
+- **The name was doing a real job**: it recorded which matter a precedent came
+  from, so the AI could judge its context. `precedent_docs.source_matter_id`
+  (`migration_precedent_source_matter.sql`, mirroring `case_law_docs`) gives
+  that link a column, so the name can describe the document while the
+  association survives. Set at upload (defaulting to the open matter) and
+  editable afterwards in the precedent panel, so entries uploaded before the
+  field existed can be linked.
+- The drafting prompt reads it: for each precedent it names the source matter
+  and carries that matter's nature and issues, telling the model to learn how
+  the document met that situation and to say so where the present facts
+  differ. `resolveSourceMatter` checks owner-or-sharer server-side — the
+  service key bypasses RLS, so the foreign key is not a permission check.
 - Cleanup SQL lives in `migrations/`: `review_precedent_library.sql` is read
   only, `delete_precedent_entries.sql` takes an explicit id list and deletes
   `precedent_chunks` first — the foreign key's ON DELETE behaviour is not
   recorded in this repo, and an orphaned chunk still feeds the drafting
-  prompt.
+  prompt. **Prefer relinking to deleting**: a matter-named precedent still
+  holds a usable template, and the backfill helper in
+  `migration_precedent_source_matter.sql` pairs it with its matter.
 
 ## Related earlier work
 - Push A, the legislation library (`legislation`, `legislation_chunks`), is

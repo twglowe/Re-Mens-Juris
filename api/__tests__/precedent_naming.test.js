@@ -73,6 +73,44 @@ describe("libMatchingMatterName", () => {
   });
 });
 
+describe("renaming", () => {
+  const lib = fs.readFileSync(new URL("../library.js", import.meta.url), "utf8");
+
+  it("update_precedent accepts a name — nothing could rename a precedent before", () => {
+    const upd = lib.slice(lib.indexOf('action === "update_precedent"'), lib.indexOf('action === "create_precedent"'));
+    expect(upd).toMatch(/typeof name === "string" && name\.trim\(\)/);
+    expect(upd).toMatch(/updates\.name = name\.trim\(\)/);
+  });
+
+  it("ignores a blank rather than wiping a NOT NULL column", () => {
+    const upd = lib.slice(lib.indexOf('action === "update_precedent"'), lib.indexOf('action === "create_precedent"'));
+    /* the guard is on the truthiness of the trimmed value, so "" is skipped */
+    expect(upd).not.toMatch(/if \(name !== undefined\) updates\.name/);
+  });
+
+  it("the panel sends the name and refuses to save it empty", () => {
+    const save = src.slice(src.indexOf("async function libSavePrecedentChanges"), src.indexOf("action:'update_precedent'"));
+    expect(save).toMatch(/libPrecName/);
+    expect(save).toMatch(/Give the precedent a name/);
+    expect(save).toMatch(/libMatchingMatterName\(newName\)/);
+  });
+
+  it("suggests from the stored chunks, sharing one prompt with the upload path", () => {
+    expect(src).toMatch(/var PREC_NAME_PROMPT=/);
+    /* defined once, used by both callers */
+    expect((src.match(/PREC_NAME_PROMPT/g) || []).length).toBe(3);
+    const sug = src.slice(src.indexOf("async function libSuggestPrecedentName"), src.indexOf("v5.65: keep matter names out"));
+    expect(sug).toMatch(/type=prec_chunks/);
+    expect(sug).toMatch(/libMatchingMatterName\(suggested\)/);
+  });
+
+  it("puts a suggestion in the box rather than saving it", () => {
+    const sug = src.slice(src.indexOf("async function libSuggestPrecedentName"), src.indexOf("v5.65: keep matter names out"));
+    expect(sug).toMatch(/nameBox\.value=suggested/);
+    expect(sug).not.toMatch(/update_precedent/);
+  });
+});
+
 describe("the naming prompt", () => {
   it("no longer asks for the case name", () => {
     /* This instruction is what filed precedents under their matter's name. */

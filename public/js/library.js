@@ -279,6 +279,11 @@ function libSelectPrecedent(id){
   /* v5.65: show the matter this precedent came from, so it can be set or
      corrected on an entry uploaded before the field existed. */
   libPopulateMatterSelect('libSourceMatter',p.source_matter_id||'');
+  /* v5.66: the editable name. */
+  var nameBox=document.getElementById('libPrecName');
+  if(nameBox)nameBox.value=p.name||'';
+  var nameHint=document.getElementById('libPrecNameHint');
+  if(nameHint)nameHint.style.display='none';
   /* Commentary */
   document.getElementById('libCommentary').value=p.commentary||'';
   document.getElementById('libIsOwnDoc').checked=!!p.is_own_style;
@@ -323,9 +328,17 @@ async function libSavePrecedentChanges(){
   var dtSel=document.getElementById('libBoxDocType');
   if(ctSel&&!ctSel.value){showToast('Select a Case Type before saving');return;}
   try{
+    /* v5.66: renaming gets the same challenge as naming — the Precedent
+       Library holds templates, and a matter name makes one unfindable. */
+    var newName=(document.getElementById('libPrecName')||{}).value||'';
+    newName=newName.trim();
+    if(!newName){showToast('Give the precedent a name');return;}
+    var nameClash=libMatchingMatterName(newName);
+    if(nameClash&&!confirm('"'+newName+'" looks like your matter "'+nameClash+'".\n\nThe Precedent Library holds reusable templates. Which matter this came from is recorded separately, so the name is free to describe the document — "Skeleton Argument — unfair prejudice" rather than the case.\n\nSave it under this name anyway?'))return;
     var payload={
       action:'update_precedent',
       id:selectedPrecedentId,
+      name:newName,
       commentary:document.getElementById('libCommentary').value,
       is_own_style:document.getElementById('libIsOwnDoc').checked,
       ai_instructions:document.getElementById('libAiInstructions').value,
@@ -457,6 +470,55 @@ function libPopulateMatterSelect(id,selectedId){
   if(selectedId)sel.value=selectedId;
 }
 
+/* v5.66: one prompt, used both when a file is chosen at upload and when
+   renaming an entry already in the library, so the two cannot drift apart. */
+var PREC_NAME_PROMPT='You are reading the first pages of a legal document that is being filed as a REUSABLE PRECEDENT — a template to draft from in other matters.\n\nSuggest a generic name describing WHAT KIND of document it is and WHAT IT IS ABOUT. For example: "Skeleton Argument — unfair prejudice petition", "Winding-up Petition — insolvency", "First Affidavit — freezing injunction application".\n\nNEVER use party names, case names, company names or matter names. A name like "Smith v Jones", "Tianrui" or "Re ABC Ltd" is wrong: those identify one case, and this document must be findable as a template for any case.\n\nReturn ONLY the suggested name, nothing else. No quotes, no explanation.\n\nTEXT:\n';
+
+/* v5.66: propose a template name for a precedent already in the library, by
+   reading back the chunks stored at upload. Same prompt as the upload path,
+   so the two agree on what a good precedent name looks like. The user is
+   never renamed behind their back — the suggestion lands in the box for them
+   to accept, edit, or ignore, and nothing is saved until Save Changes. */
+async function libSuggestPrecedentName(){
+  if(!selectedPrecedentId){showToast('Select a precedent first');return;}
+  var hint=document.getElementById('libPrecNameHint');
+  var btn=document.getElementById('libPrecNameSuggest');
+  var nameBox=document.getElementById('libPrecName');
+  if(!hint||!nameBox)return;
+  hint.style.display='';hint.style.color='var(--blue)';
+  hint.textContent='Reading the document…';
+  if(btn)btn.disabled=true;
+  try{
+    var ch=await api('/api/library?type=prec_chunks&prec_id='+encodeURIComponent(selectedPrecedentId));
+    var chunks=(ch&&ch.data)||[];
+    if(!chunks.length){
+      hint.style.color='var(--text-faint)';
+      hint.textContent='No stored text for this precedent — type a name instead.';
+      return;
+    }
+    var snippet=chunks.map(function(c){return c.content;}).join('\n\n').slice(0,2000);
+    var d=await api('/api/analyse','POST',{matterId:'',matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:PREC_NAME_PROMPT+snippet}],jurisdiction:jurisdiction,queryType:'Factual Analysis',focusAreas:[]});
+    var suggested=(d&&d.result)?d.result.trim().replace(/^["']|["']$/g,'').slice(0,120):'';
+    var clash=libMatchingMatterName(suggested);
+    if(clash){
+      hint.style.color='var(--error)';
+      hint.textContent='Suggestion discarded — it named the matter "'+clash+'". Type a name describing the document.';
+    }else if(suggested&&suggested.length>2){
+      nameBox.value=suggested;
+      hint.style.color='var(--success)';
+      hint.textContent='Suggested — edit if needed, then Save Changes.';
+    }else{
+      hint.style.color='var(--text-faint)';
+      hint.textContent='No suggestion came back — type a name instead.';
+    }
+  }catch(e){
+    hint.style.color='var(--error)';
+    hint.textContent='Could not suggest a name: '+e.message;
+  }finally{
+    if(btn)btn.disabled=false;
+  }
+}
+
 /* ── v5.65: keep matter names out of the Precedent Library ─────────────────
    The library holds reusable templates. A precedent named after the matter
    it came from is findable only by someone who remembers that matter, and it
@@ -508,7 +570,7 @@ async function precUpFileChanged(input){
        Thalassa, 51 Jobs Appeal — ended up in the Precedent Library. A
        precedent is a reusable template: what matters is the kind of document
        it is and what it is about, never whose case it came from. */
-    var d=await api('/api/analyse','POST',{matterId:'',matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are reading the first pages of a legal document that is being filed as a REUSABLE PRECEDENT — a template to draft from in other matters.\n\nSuggest a generic name describing WHAT KIND of document it is and WHAT IT IS ABOUT. For example: "Skeleton Argument — unfair prejudice petition", "Winding-up Petition — insolvency", "First Affidavit — freezing injunction application".\n\nNEVER use party names, case names, company names or matter names. A name like "Smith v Jones", "Tianrui" or "Re ABC Ltd" is wrong: those identify one case, and this document must be findable as a template for any case.\n\nReturn ONLY the suggested name, nothing else. No quotes, no explanation.\n\nTEXT:\n'+snippet}],jurisdiction:jurisdiction,queryType:'Factual Analysis',focusAreas:[]});
+    var d=await api('/api/analyse','POST',{matterId:'',matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:PREC_NAME_PROMPT+snippet}],jurisdiction:jurisdiction,queryType:'Factual Analysis',focusAreas:[]});
     if(d&&d.result){
       var suggested=d.result.trim().replace(/^["']|["']$/g,'').slice(0,120);
       /* Belt and braces: the prompt says not to use a case name, but a

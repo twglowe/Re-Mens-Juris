@@ -966,6 +966,20 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <div id="libBoxesWrap" style="display:none;flex-direction:column;gap:.6rem">
             <div style="font-size:.92rem;font-weight:700;color:var(--navy);font-family:'Libre Baskerville',serif;margin-bottom:.2rem" id="libSelectedDocName">—</div>
             <div id="libPrecMeta" style="font-size:.78rem;color:var(--text-mid);margin-bottom:.3rem"></div>
+            <!-- v5.66: the name is editable. Until now nothing in the app could
+                 rename a precedent, so entries filed under a matter's name were
+                 stuck with it. -->
+            <div class="lib-box">
+              <div class="lib-box-head">
+                <div class="lib-box-title">Name</div>
+              </div>
+              <div style="display:flex;gap:.3rem;align-items:center">
+                <input class="lib-search-input" id="libPrecName" style="flex:1;margin-bottom:0" placeholder="e.g. Skeleton Argument — unfair prejudice petition">
+                <button class="lib-box-btn" id="libPrecNameSuggest" onclick="libSuggestPrecedentName()" title="Read the document and suggest a template name" style="flex-shrink:0;white-space:nowrap">Suggest</button>
+              </div>
+              <div id="libPrecNameHint" style="display:none;font-size:.75rem;margin-top:.25rem"></div>
+              <div style="font-size:.72rem;color:var(--text-faint);margin-top:.2rem">Describe the document, not the case — "Winding-up Petition — insolvency", not "Tianrui". Which matter it came from is recorded separately below.</div>
+            </div>
             <!-- v5.50: Classification is editable again. Saved by the existing
                  "Save Changes" button at the foot of this panel. -->
             <div class="lib-box" id="libClassifyBox">
@@ -1465,7 +1479,7 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 <script src="/js/case_law_split.js?v=5.64"></script>
 <script src="/js/core.js?v=5.56"></script>
 <script src="/js/tools.js?v=5.54"></script>
-<script src="/js/library.js?v=5.65"></script>
+<script src="/js/library.js?v=5.66"></script>
 <script src="/js/drafting.js?v=5.60"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->

@@ -222,18 +222,67 @@ describe("bulk tidy", () => {
 
   it("skips a row with no name rather than saving a blank", () => {
     const apply = src.slice(src.indexOf("async function libTidyApply"));
-    expect(apply).toMatch(/r\.keep&&r\.proposed\.trim\(\)/);
+    expect(apply).toMatch(/r\.action==='rename'&&r\.proposed\.trim\(\)/);
   });
 
-  it("stops at the first failure and says how many were saved", () => {
+  it("stops at the first failure and says how many were done", () => {
     const apply = src.slice(src.indexOf("async function libTidyApply"));
     expect(apply).toMatch(/Stopped at/);
-    expect(apply).toMatch(/saved\+' saved\.'/);
+    expect(apply).toMatch(/renamed\+' renamed, '\+removed\+' deleted\.'/);
   });
 
   it("challenges a proposed name that still carries a matter name", () => {
     const apply = src.slice(src.indexOf("async function libTidyApply"));
     expect(apply).toMatch(/stillNamed/);
     expect(apply).toMatch(/confirm\(/);
+  });
+});
+
+/* v5.68 — deleting from the tidy. */
+describe("deleting a precedent", () => {
+  const lib = fs.readFileSync(new URL("../library.js", import.meta.url), "utf8");
+
+  it("removes the stored text before the row", () => {
+    const del = lib.slice(lib.indexOf('action === "delete_precedent"'), lib.indexOf('action === "delete_section"'));
+    const chunksAt = del.indexOf("precedent_chunks");
+    const docsAt = del.indexOf('from("precedent_docs")');
+    expect(chunksAt).toBeGreaterThan(-1);
+    /* order matters: an orphaned chunk still feeds the drafting prompt */
+    expect(chunksAt).toBeLessThan(docsAt);
+  });
+
+  it("scopes both deletes to the caller", () => {
+    const del = lib.slice(lib.indexOf('action === "delete_precedent"'), lib.indexOf('action === "delete_section"'));
+    expect((del.match(/eq\("user_id", user\.id\)/g) || []).length).toBe(2);
+  });
+
+  it("reports a failure to clear the text rather than deleting the row anyway", () => {
+    const del = lib.slice(lib.indexOf('action === "delete_precedent"'), lib.indexOf('action === "delete_section"'));
+    expect(del).toMatch(/if \(chErr\) return res\.status\(500\)/);
+  });
+
+  it("offers rename, delete and leave alone, defaulting to rename", () => {
+    const open = src.slice(src.indexOf("function libTidyOpen"), src.indexOf("function libTidyRender"));
+    expect(open).toMatch(/action:'rename'/);
+    const set = src.slice(src.indexOf("function libTidySetAction"), src.indexOf("function libTidyEdit"));
+    expect(set).toMatch(/v==='delete'\|\|v==='leave'/);
+  });
+
+  it("confirms a deletion by name before doing it", () => {
+    const apply = src.slice(src.indexOf("async function libTidyApply"));
+    expect(apply).toMatch(/deletes\.map/);
+    expect(apply).toMatch(/cannot be undone/);
+    expect(apply).toMatch(/upload them again/);
+  });
+
+  it("renames before it deletes, and reports both counts on a failure", () => {
+    const apply = src.slice(src.indexOf("async function libTidyApply"));
+    expect(apply.indexOf("for(var i=0;i<renames.length")).toBeLessThan(apply.indexOf("for(var k=0;k<deletes.length"));
+    expect(apply).toMatch(/renamed\+' renamed, '\+removed\+' deleted\.'/);
+  });
+
+  it("only suggests names for rows being renamed", () => {
+    const sug = src.slice(src.indexOf("async function libTidySuggestAll"), src.indexOf("async function libTidyApply"));
+    expect(sug).toMatch(/r\.action==='rename'/);
   });
 });

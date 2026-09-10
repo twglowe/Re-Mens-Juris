@@ -205,8 +205,18 @@ export default async function handler(req, res) {
       await supabase.from("case_types").delete().eq("id", id).eq("user_id", user.id);
       return res.status(200).json({ success: true });
     }
+    /* v5.68: the chunks go first. The foreign key's ON DELETE behaviour is
+       not recorded anywhere in this repository, and an orphaned chunk still
+       feeds the drafting prompt — the document would go on being quoted
+       after its library entry had gone. eq user_id on both, so a guessed
+       uuid cannot delete another user's text. */
     if (action === "delete_precedent") {
-      await supabase.from("precedent_docs").delete().eq("id", id).eq("user_id", user.id);
+      const { error: chErr } = await supabase.from("precedent_chunks")
+        .delete().eq("precedent_doc_id", id).eq("user_id", user.id);
+      if (chErr) return res.status(500).json({ error: "Could not delete the stored text: " + chErr.message });
+      const { error: docErr } = await supabase.from("precedent_docs")
+        .delete().eq("id", id).eq("user_id", user.id);
+      if (docErr) return res.status(500).json({ error: docErr.message });
       return res.status(200).json({ success: true });
     }
     if (action === "delete_section") {

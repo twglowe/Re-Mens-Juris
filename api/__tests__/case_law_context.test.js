@@ -289,6 +289,24 @@ describe("caseLawContext reaches the worker", () => {
     expect(params).toMatch(/caseLawContext:\s*caseLawContext/);
   });
 
+  it("also stores the two fields that were previously dropped", async () => {
+    /* v5.63: the worker has always read p.matterToolHistory and
+       p.learnFromComparable; tools.js never stored them, so the draft
+       prompt's "WHAT WE ALREADY KNOW ABOUT THIS MATTER" block never
+       appeared. */
+    const fs = require("node:fs");
+    const src = fs.readFileSync(new URL("../tools.js", import.meta.url), "utf8");
+    const destructure = src.slice(src.indexOf("const { tool, matterId"), src.indexOf("} = req.body;"));
+    expect(destructure).toContain("matterToolHistory");
+    expect(destructure).toContain("learnFromComparable");
+    const params = src.slice(src.indexOf("const parameters = {"), src.indexOf("/* Create job row */"));
+    expect(params).toMatch(/matterToolHistory:/);
+    expect(params).toMatch(/learnFromComparable:/);
+    /* `|| true` would discard the only value that carries meaning, since the
+       worker reads it as (p.learnFromComparable !== false). */
+    expect(params).not.toMatch(/learnFromComparable:\s*learnFromComparable\s*\|\|/);
+  });
+
   it("is read from the job parameters by the worker", async () => {
     const fs = await import("node:fs");
     const src = fs.readFileSync(new URL("../worker.js", import.meta.url), "utf8");

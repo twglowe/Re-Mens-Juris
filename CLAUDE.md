@@ -120,9 +120,12 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   field the client sends but `tools.js` does not name is dropped silently and
   the worker sees nothing. Add any new draft field in *both* the destructure
   and the `parameters` object. `api/__tests__/case_law_context.test.js`
-  guards `caseLawContext` against this. Note `matterToolHistory` and
-  `learnFromComparable` are *not* whitelisted, so the worker reads them empty
-  — pre-existing, not yet fixed.
+  guards `caseLawContext`, `matterToolHistory` and `learnFromComparable`
+  against this. The latter two were dropped from v5.11a until v5.63, so the
+  draft prompt's "WHAT WE ALREADY KNOW ABOUT THIS MATTER" block never
+  appeared. `learnFromComparable` must not be stored as `x || true` — the
+  worker reads it as `!== false`, so that would discard the only meaningful
+  value.
 - Relevance uses the `case_law_search` SQL function
   (`migrations/migration_case_law_search.sql`, ranked with `ts_rank_cd`).
   If that migration has not been run the RPC fails and the code falls back to
@@ -143,13 +146,22 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
 - `public/js/case_law_split.js` — pure helpers, loaded as a plain script
   before `core.js` and exported through `module.exports` so
   `api/__tests__/case_law_split.test.js` runs against the same source.
-- Detection is deliberately conservative: only a line that is itself a court
-  header, or a case title standing alone, counts, and only when at least
-  `CL_MIN_SEGMENT_CHARS` past the previous boundary. `IN THE MATTER OF …`
-  lines are excluded — they belong to a judgment's own header block, and
-  splitting there would cut one judgment in half. A false negative stores the
-  file as one entry (the old behaviour); a false positive would shred a
-  judgment, so the thresholds lean towards missing a split.
+- **Pagination decides first** (v5.63). Each judgment in a bundle carries its
+  own internal numbering and starts again at 1, which no quoted heading can
+  fake: `clDetectPageBoundaries` splits on a reset to 1, a change in the
+  "of N" total, or a short front page carrying a court header. When that
+  yields two or more segments it decides alone; `seg.method` says which
+  signal spoke. A front-page boundary resets the numbering context, or the
+  body's "Page 1" one page later reads as a second boundary and the case is
+  split from its own cover.
+- The heading scan is the fallback, for a DOCX (one page) or a PDF whose
+  footers did not extract. It is deliberately conservative: only a line that
+  is itself a court header, or a case title standing alone, counts, and only
+  when at least `CL_MIN_SEGMENT_CHARS` past the previous boundary.
+  `IN THE MATTER OF …` lines are excluded — they belong to a judgment's own
+  header block, and splitting there would cut one judgment in half. A false
+  negative stores the file as one entry (the old behaviour); a false positive
+  would shred a judgment, so the thresholds lean towards missing a split.
 - `name_case_law_segments` (`api/library.js`) asks Claude to name and cite
   each segment from its opening ~3000 characters. Naming is a convenience,
   never a gate: a failure hands back blanks for the user to type.

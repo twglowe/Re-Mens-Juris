@@ -100,6 +100,143 @@ function clDetectCaseBoundaries(text) {
   return bounds;
 }
 
+
+/* ── v5.63: PAGINATION AS THE PRIMARY SIGNAL ────────────────────────────────
+   Scanning prose for court headers works, but the plainer signal is how the
+   judgments are paginated. Each judgment in a bundle carries its own internal
+   numbering — "Page 1 of 34" in a footer, or a bare number — and starts again
+   at 1 for the next one. A reset is close to proof of a new document, in a way
+   that no line of text is: a judgment can quote another judgment's heading,
+   but it cannot restart its own page numbering half way through.
+
+   Two page-level signals, both read from the extracted pages rather than the
+   joined text:
+
+     reset      — the internal page number goes back to 1, or the "of N" total
+                  changes. "Page 1 of 34" following "Page 34 of 34" is the
+                  clearest case there is.
+     front page — a short page carrying a court header or a standalone
+                  citation. A judgment's first page is mostly white space:
+                  court, parties, citation, counsel. A body page is dense.
+
+   When pagination yields two or more segments it is used alone, because it is
+   the better evidence. Where there is none to read — a DOCX arrives as a
+   single page, and some PDFs extract without footers — the line scan above
+   still runs. */
+
+/* Roughly the length below which a page is a cover rather than argument. */
+var CL_FRONT_PAGE_MAX_CHARS = 900;
+/* Where in a page a footer or header number is looked for. */
+var CL_EDGE_CHARS = 260;
+
+var CL_PAGE_OF_TOTAL = /\bpage\s+(\d{1,4})\s+of\s+(\d{1,4})\b/i;
+var CL_PAGE_N = /\bpage\s+(\d{1,4})\b/i;
+/* A number alone on its line, optionally in dashes or brackets: 7, - 7 -, [7] */
+var CL_BARE_NUMBER_LINE = /^[\s\-–—[(]*(\d{1,4})[\s\-–—\])]*$/;
+
+/* The internal page number a page shows, read from its top and bottom edges.
+   Returns {num, total} — total is null when the page says only "Page 7". */
+function clPageNumber(pageText) {
+  var t = String(pageText || "");
+  if (!t.trim()) return null;
+  var head = t.slice(0, CL_EDGE_CHARS);
+  var foot = t.slice(Math.max(0, t.length - CL_EDGE_CHARS));
+  var edges = [foot, head]; /* footers are the commoner place, so look there first */
+
+  for (var i = 0; i < edges.length; i++) {
+    var m = edges[i].match(CL_PAGE_OF_TOTAL);
+    if (m) return { num: parseInt(m[1], 10), total: parseInt(m[2], 10) };
+  }
+  for (var j = 0; j < edges.length; j++) {
+    var m2 = edges[j].match(CL_PAGE_N);
+    if (m2) return { num: parseInt(m2[1], 10), total: null };
+  }
+  /* A bare number on its own line at either edge. */
+  for (var k = 0; k < edges.length; k++) {
+    var lines = edges[k].split("\n");
+    for (var l = 0; l < lines.length; l++) {
+      var line = lines[l].trim();
+      if (!line) continue;
+      var m3 = line.match(CL_BARE_NUMBER_LINE);
+      if (m3) {
+        var n = parseInt(m3[1], 10);
+        /* A four-digit number at a page edge is a year, not a page. */
+        if (n >= 1 && n <= 999) return { num: n, total: null };
+      }
+    }
+  }
+  return null;
+}
+
+/* Does this page read as the front page of a judgment? */
+function clIsFrontPage(pageText) {
+  var t = String(pageText || "");
+  if (!t.trim() || t.length > CL_FRONT_PAGE_MAX_CHARS) return false;
+  var lines = t.split("\n");
+  for (var i = 0; i < lines.length; i++) {
+    if (clIsCourtHeaderLine(lines[i])) return true;
+  }
+  /* A cover with no court line but a citation and a BETWEEN still counts. */
+  var titles = 0;
+  for (var j = 0; j < lines.length; j++) {
+    if (clIsTitleLine(lines[j])) titles++;
+  }
+  return titles >= 2;
+}
+
+/* Indexes into `pages` at which a new judgment appears to start. Always
+   includes 0. Fewer than two means pagination told us nothing. */
+function clDetectPageBoundaries(pages) {
+  var list = pages || [];
+  if (list.length < 2) return [0];
+
+  var bounds = [0];
+  var prev = null;
+  var prevTotal = null;
+  var ascending = 0;
+
+  for (var i = 0; i < list.length; i++) {
+    var text = list[i].text || "";
+    var info = clPageNumber(text);
+    var isBoundary = false;
+
+    if (info) {
+      if (prevTotal !== null && info.total !== null && info.total !== prevTotal) {
+        /* "of N" changed — a different document, whatever the numbers do. */
+        isBoundary = true;
+      } else if (prev !== null && info.num === 1 && prev !== 1) {
+        /* Numbering restarted. */
+        isBoundary = true;
+      } else if (prev !== null && info.num <= prev && ascending >= 2) {
+        /* Went backwards after a run of ascending pages. */
+        isBoundary = true;
+      }
+      ascending = (prev !== null && info.num === prev + 1) ? ascending + 1 : 0;
+      prev = info.num;
+      if (info.total !== null) prevTotal = info.total;
+    }
+
+    /* A front page is a boundary in its own right — it also covers the cover
+       sheet that carries no number at all. */
+    var fromFrontPage = false;
+    if (!isBoundary && i > 0 && clIsFrontPage(text)) {
+      isBoundary = true;
+      fromFrontPage = true;
+    }
+
+    if (isBoundary && i > 0 && bounds[bounds.length - 1] !== i) {
+      bounds.push(i);
+      /* A cover page usually carries no number and the body behind it starts
+         again at 1. Forget the previous document's count here, or that 1
+         reads as a second boundary one page later and the case is split from
+         its own front page. */
+      if (fromFrontPage) { prev = null; prevTotal = null; ascending = 0; }
+      if (bounds.length >= CL_MAX_SEGMENTS) break;
+    }
+  }
+  return bounds;
+}
+
 /* Where each page sits in the joined text. extractPdfText / extractDocxText
    return [{page,text}] and callers join with "\n\n", so every page after the
    first starts two characters later than its own text length suggests. */
@@ -130,11 +267,28 @@ function clSlicePages(offsets, start, end) {
 }
 
 /* Split extracted pages into one page-array per detected judgment. Always
-   returns at least one segment. */
+   returns at least one segment.
+
+   v5.63: pagination first. When the pages carry their own numbering, a reset
+   is far better evidence than any line of text, so if that yields two or more
+   segments it decides alone. Only when it yields nothing — a DOCX, which
+   arrives as one page, or a PDF whose footers did not extract — does the
+   line scan run. `method` records which one spoke, so a caller can say so. */
 function clSplitPages(pages) {
   var text = (pages || []).map(function (p) { return p.text || ""; }).join("\n\n");
-  var bounds = clDetectCaseBoundaries(text);
   var offsets = clPageOffsets(pages);
+  var method = "pagination";
+  var bounds = null;
+
+  var pageBounds = clDetectPageBoundaries(pages);
+  if (pageBounds.length >= 2) {
+    /* Page index -> character offset. */
+    bounds = pageBounds.map(function (pi) { return offsets[pi] ? offsets[pi].start : 0; });
+  } else {
+    method = "headings";
+    bounds = clDetectCaseBoundaries(text);
+  }
+
   var segs = [];
   for (var i = 0; i < bounds.length; i++) {
     var start = bounds[i];
@@ -145,10 +299,11 @@ function clSplitPages(pages) {
       index: segs.length,
       pages: segPages,
       charCount: end - start,
+      method: method,
       excerpt: text.slice(start, Math.min(end, start + 2500)),
     });
   }
-  return segs.length ? segs : [{ index: 0, pages: pages || [], charCount: text.length, excerpt: text.slice(0, 2500) }];
+  return segs.length ? segs : [{ index: 0, pages: pages || [], charCount: text.length, method: method, excerpt: text.slice(0, 2500) }];
 }
 
 /* Node (the test) takes the functions through module.exports; the browser
@@ -157,6 +312,8 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     clDetectCaseBoundaries, clPageOffsets, clSlicePages, clSplitPages,
     clIsCourtHeaderLine, clIsTitleLine,
+    clPageNumber, clIsFrontPage, clDetectPageBoundaries,
     CL_MIN_SEGMENT_CHARS, CL_MIN_FILE_CHARS, CL_MAX_SEGMENTS,
+    CL_FRONT_PAGE_MAX_CHARS,
   };
 }

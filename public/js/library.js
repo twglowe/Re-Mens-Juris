@@ -1483,6 +1483,13 @@ var libTidyRows=[];
    could not be deleted here. This shows the whole library on request. */
 var libTidyShowAll=false;
 
+function libMatterIdByName(name){
+  if(!name)return '';
+  var list=(typeof matters!=='undefined'&&matters)?matters:[];
+  for(var i=0;i<list.length;i++){ if(list[i].name===name)return list[i].id; }
+  return '';
+}
+
 function libTidySetShowAll(on){
   libTidyShowAll=!!on;
   libTidyOpen(true);
@@ -1500,8 +1507,14 @@ function libTidyOpen(keepScope){
          user has asked to see everything, and its name is left alone by
          default — it may be perfectly good already. */
       if(!matter&&!libTidyShowAll)return null;
+      /* v5.71: matterId is what gets saved, and it is editable. The auto
+         match only seeds it — a precedent named after a case that is not a
+         matter of yours ("Evergrande", where the document is an expert
+         report) matches nothing, and the user still needs to say where it
+         came from. An existing source_matter_id wins over both. */
+      var seeded=p.source_matter_id||libMatterIdByName(matter);
       return {id:p.id,original:p.name,proposed:'',matter:matter,
-              action:matter?'rename':'leave',note:''};
+              matterId:seeded||'',action:matter?'rename':'leave',note:''};
     })
     .filter(Boolean)
     .sort(function(a,b){return libNameSort(a.original,b.original);});
@@ -1533,6 +1546,13 @@ function libTidyRender(){
         +'<div style="font-size:.85rem;color:var(--text-faint);padding:.6rem">No precedent is named after one of your matters. Tick the box above to see the whole library and remove anything that does not belong.</div>';
     return;
   }
+  var mlist=(typeof matters!=='undefined'&&matters)?matters.slice():[];
+  mlist.sort(function(a,b){return libNameSort(a.name,b.name);});
+  function matterOpts(selected){
+    return mlist.map(function(m){
+      return '<option value="'+m.id+'"'+(selected===m.id?' selected':'')+'>'+esc(m.name)+'</option>';
+    }).join('');
+  }
   var scope='<label class="draft-doc-check" style="padding:0;margin-bottom:.45rem">'
     +'<input type="checkbox"'+(libTidyShowAll?' checked':'')+' onchange="libTidySetShowAll(this.checked)"> '
     +'<span style="font-size:.8rem">Show every precedent, not only those named after a matter</span></label>';
@@ -1551,8 +1571,12 @@ function libTidyRender(){
         +'</select>'
       +'</div>'
       +(r.action==='rename'
-        ? '<input class="lib-search-input" style="margin-bottom:0;font-size:.82rem" placeholder="New name — e.g. Skeleton Argument — unfair prejudice" '
-            +'value="'+esc(r.proposed)+'" oninput="libTidyEdit('+i+',this.value)">'
+        ? '<input class="lib-search-input" style="margin-bottom:.25rem;font-size:.82rem" placeholder="New name — e.g. Expert Report — quantum" '
+            +'value="'+esc(r.proposed)+'" oninput="libTidyEdit('+i+',\'proposed\',this.value)">'
+          +'<select class="lib-select" style="font-size:.8rem" onchange="libTidyEdit('+i+',\'matterId\',this.value)">'
+            +'<option value="">— From which matter? —</option>'
+            +matterOpts(r.matterId)
+          +'</select>'
         : '<div style="font-size:.75rem;color:var(--text-faint)">'
             +(deleting?'Will be deleted, with its stored text. This cannot be undone.':'Left as it is.')
           +'</div>')
@@ -1565,7 +1589,7 @@ function libTidySetAction(i,v){
   libTidyRows[i].action=(v==='delete'||v==='leave')?v:'rename';
   libTidyRender();
 }
-function libTidyEdit(i,v){ if(libTidyRows[i]){libTidyRows[i].proposed=v;} }
+function libTidyEdit(i,field,v){ if(libTidyRows[i]){libTidyRows[i][field]=v;} }
 
 function libTidyStatus(text,colour){
   var el=document.getElementById('libTidyStatus');
@@ -1640,14 +1664,11 @@ async function libTidyApply(){
     var r=renames[i];
     libTidyStatus('Renaming '+(i+1)+' of '+renames.length+'…');
     try{
-      var matterId='';
-      var list=(typeof matters!=='undefined'&&matters)?matters:[];
-      for(var j=0;j<list.length;j++){ if(list[j].name===r.matter){matterId=list[j].id;break;} }
       await api('/api/library','POST',{
         action:'update_precedent',
         id:r.id,
         name:r.proposed.trim(),
-        source_matter_id:matterId||null
+        source_matter_id:r.matterId||null
       });
       renamed++;
     }catch(e){ stop(r,e); await loadLibrary(); return; }

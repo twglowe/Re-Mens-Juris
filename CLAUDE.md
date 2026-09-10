@@ -254,6 +254,11 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   after a company that was never a matter never matched, so it never appeared
   and could not be deleted there. An unmatched row defaults to Leave alone,
   not Rename: its name may be perfectly good already.
+- **Per-row matter** (v5.71): every row being renamed carries its own matter
+  select. The auto match only *seeds* it (an existing `source_matter_id` wins
+  over both), because a precedent named after a case that is not one of your
+  matters — "Evergrande", where the document is an expert report — matches
+  nothing, and it still came from somewhere.
 - **Deleting** (v5.68): each tidy row chooses Rename, Delete or Leave alone,
   defaulting to Rename since deleting is the one choice that cannot be undone.
   Deletions are confirmed once, listing the names. `delete_precedent` removes

@@ -76,7 +76,7 @@ export default async function handler(req, res) {
           anchorDocNames, instructions, actingFor, courtHeading,
           citationSource, citationTargets,
           chronologyDateRange, chronologyEntities, chronologyCorrespondenceFilter,
-          caseTypeId, docTypeId, subcatId, libraryContext,
+          caseTypeId, docTypeId, subcatId, libraryContext, caseLawContext,
           excludeDocNames, excludeDocTypes, includeDocNames,
           subElement, focusDocNames } = req.body;
 
@@ -137,6 +137,11 @@ export default async function handler(req, res) {
     docTypeId: docTypeId || null,
     subcatId: subcatId || null,
     libraryContext: libraryContext || null,
+    /* v5.59 Push C: case law and texts for a draft — the ticked
+       matter-linked authorities plus the library search mode. Read by the
+       worker as p.caseLawContext. Null for every other tool, and for a
+       draft where the user left nothing to retrieve. */
+    caseLawContext: caseLawContext || null,
     excludeDocNames: excludeDocNames || [],
     excludeDocTypes: excludeDocTypes || [],
     /* v5.0: folder filter. Frontend resolves folder selection → list of doc

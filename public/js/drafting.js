@@ -927,6 +927,10 @@ async function saveCurrentDraft(){
 }
 
 async function loadDraftMatterDocs(matterId,preserveSelections){
+  /* v5.59 Push C: render the case law box first — it reads libraryData, not
+     the documents fetch below, so it should not be held up by it or lost if
+     that fetch throws. */
+  draftClRender(matterId);
   try{
     var d=await api('/api/documents?matter_id='+matterId);
     var docs=d&&d.documents?d.documents:[];
@@ -2053,6 +2057,11 @@ async function generateDraft(redraftOpts){
       var dtName='';var dt=libraryData.docTypes.find(function(d){return d.id===dtId;});if(dt)dtName=dt.name;
       body.libraryContext={selectedPrecedentIds:draftSelectedPrecedents.map(function(p){return p.id;}),caseTypeName:ctName,subcategoryName:stName,docTypeName:dtName};
     }
+    /* v5.59 Push C: case law and texts — the ticked matter-linked
+       authorities plus the library search mode. Omitted entirely when
+       there is nothing to retrieve. */
+    var clCtx=draftClContext(matterId);
+    if(clCtx)body.caseLawContext=clCtx;
     /* v5.11a: untick = exclude. Worker already supports excludeDocNames. */
     var excluded=getDraftExcludeDocNames();
     if(excluded.length>0)body.excludeDocNames=excluded;
@@ -2459,4 +2468,155 @@ async function draftDialogueSend(){
     var d=await api('/api/analyse','POST',{matterId:matterId,matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:'You are editing a legal draft document. Current draft:\n\n'+currentContent+'\n\nFurther instruction: '+text+'\n\nReturn the complete updated document.'}],jurisdiction:draftJur(),queryType:'Document Drafting',focusAreas:[]});
     if(d&&d.result){editor.innerHTML=renderDraftMd(d.result);showToast('Draft updated');}
   }catch(e){showToast('Error: '+e.message);}
+}
+
+
+/* ══ v5.59 Push C: CASE LAW & TEXTS IN THE DRAFT SOURCES ═══════════════════
+   Two ways case law reaches a draft:
+
+     1. Authorities dual-linked to this matter (case_law_docs.source_matter_id)
+        show as a checklist, ticked by default. Unticking one excludes it.
+     2. A search of the library, either across everything ("General") or
+        confined to one subject and optionally one sub-tag ("By subject").
+
+   Both are sent to the worker as body.caseLawContext; the retrieval itself
+   happens server-side in buildCaseLawContext, where the matter's issues and
+   the draft instructions are already to hand.
+
+   Exclusions are stored rather than inclusions, so an authority linked to
+   the matter after the box was last looked at arrives ticked. */
+var draftClMode='general';
+var draftClExcluded=[];
+
+function draftClMatterId(){
+  var sel=document.getElementById('draftMatterSelect');
+  return (sel&&sel.value)||'';
+}
+
+function draftClForMatter(matterId){
+  var id=matterId||draftClMatterId();
+  if(!id)return [];
+  return (libraryData.caseLaw||[])
+    .filter(function(d){return d.source_matter_id===id;})
+    .sort(function(a,b){return libNameSort(a.name,b.name);});
+}
+
+function draftClSetMode(mode){
+  draftClMode=(mode==='subject')?'subject':'general';
+  draftClRender();
+}
+
+function draftClSubjectChanged(){
+  draftClRenderSubTags();
+  draftClRenderSummary();
+}
+
+function draftClToggleMatterDoc(cb){
+  var id=cb.value;
+  if(cb.checked){
+    draftClExcluded=draftClExcluded.filter(function(x){return x!==id;});
+  }else if(draftClExcluded.indexOf(id)===-1){
+    draftClExcluded.push(id);
+  }
+  draftClRenderSummary();
+}
+
+function draftClRenderSubTags(){
+  var subjSel=document.getElementById('draftClSubject');
+  var tagSel=document.getElementById('draftClSubTag');
+  if(!subjSel||!tagSel)return;
+  var prev=tagSel.value;
+  var subjectId=subjSel.value;
+  var tags={};
+  (libraryData.caseLaw||[]).forEach(function(d){
+    if(subjectId&&d.subject_id!==subjectId)return;
+    (d.sub_tags||[]).forEach(function(t){if(t)tags[t]=true;});
+  });
+  var names=Object.keys(tags).sort(libNameSort);
+  tagSel.innerHTML='<option value="">— Any sub-tag —</option>'
+    +names.map(function(t){return '<option value="'+esc(t)+'">'+esc(t)+'</option>';}).join('');
+  if(prev&&names.indexOf(prev)!==-1)tagSel.value=prev;
+}
+
+function draftClRenderSummary(){
+  var el=document.getElementById('draftClSummary');
+  if(!el)return;
+  var kept=draftClForMatter().filter(function(d){return draftClExcluded.indexOf(d.id)===-1;}).length;
+  var bits=[];
+  bits.push(kept===1?'1 from this matter':kept+' from this matter');
+  if(draftClMode==='subject'){
+    var subjSel=document.getElementById('draftClSubject');
+    var tagSel=document.getElementById('draftClSubTag');
+    var subjName=(subjSel&&subjSel.value&&subjSel.options[subjSel.selectedIndex].text)||'';
+    if(!subjName){
+      bits.push('choose a subject to search');
+    }else{
+      bits.push('searching '+subjName+((tagSel&&tagSel.value)?' — '+tagSel.value:''));
+    }
+  }else{
+    bits.push('searching the whole library');
+  }
+  el.textContent=bits.join(' · ');
+}
+
+function draftClRender(matterId){
+  var list=document.getElementById('draftClMatterList');
+  if(!list)return;
+
+  /* Mode buttons: the active one is filled, matching .lib-box-btn:hover. */
+  ['general','subject'].forEach(function(m){
+    var btn=document.getElementById('draftClMode'+(m==='general'?'General':'Subject'));
+    if(!btn)return;
+    var on=draftClMode===m;
+    btn.style.background=on?'var(--blue-light)':'var(--white)';
+    btn.style.color=on?'#fff':'var(--blue-light)';
+  });
+  var wrap=document.getElementById('draftClSubjectWrap');
+  if(wrap)wrap.style.display=draftClMode==='subject'?'':'none';
+
+  var subjSel=document.getElementById('draftClSubject');
+  if(subjSel){
+    var prev=subjSel.value;
+    subjSel.innerHTML='<option value="">— Subject —</option>'
+      +(libraryData.caseLawSubjects||[]).map(function(s){
+        return '<option value="'+s.id+'">'+esc(s.name)+'</option>';
+      }).join('');
+    if(prev)subjSel.value=prev;
+  }
+  draftClRenderSubTags();
+
+  var docs=draftClForMatter(matterId);
+  if(!docs.length){
+    list.innerHTML='<div style="font-size:.78rem;color:var(--text-faint);font-style:italic;padding:.3rem">No case law filed against this matter. Tick the dual-link box when uploading in the Library tab.</div>';
+  }else{
+    list.innerHTML=docs.map(function(d){
+      var checked=draftClExcluded.indexOf(d.id)===-1;
+      var label=d.name+(d.citation?' '+d.citation:'');
+      return '<label class="draft-doc-check" title="'+esc(label)+'">'
+        +'<input type="checkbox" value="'+d.id+'"'+(checked?' checked':'')+' onchange="draftClToggleMatterDoc(this)"> '
+        +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+'</span></label>';
+    }).join('');
+  }
+  draftClRenderSummary();
+}
+
+/* The shape the worker reads. Returns null when there is nothing to send —
+   no linked authorities kept, and subject mode with no subject chosen — so
+   a draft that wants no case law does not carry an empty block. */
+function draftClContext(matterId){
+  var kept=draftClForMatter(matterId)
+    .filter(function(d){return draftClExcluded.indexOf(d.id)===-1;})
+    .map(function(d){return d.id;});
+  var subjSel=document.getElementById('draftClSubject');
+  var tagSel=document.getElementById('draftClSubTag');
+  var subjectId=(draftClMode==='subject'&&subjSel)?subjSel.value:'';
+  var ctx={
+    mode:draftClMode,
+    matterCaseLawIds:kept,
+    subjectId:subjectId||null,
+    subjectName:(subjectId&&subjSel.options[subjSel.selectedIndex].text)||'',
+    subTag:(draftClMode==='subject'&&tagSel&&tagSel.value)?tagSel.value:null
+  };
+  if(kept.length===0&&draftClMode==='subject'&&!subjectId)return null;
+  return ctx;
 }

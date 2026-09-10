@@ -276,6 +276,9 @@ function libSelectPrecedent(id){
   libPopulateClassification(p);
   /* Context */
   document.getElementById('libContextExplanation').value=p.context_relationship||'';
+  /* v5.65: show the matter this precedent came from, so it can be set or
+     corrected on an entry uploaded before the field existed. */
+  libPopulateMatterSelect('libSourceMatter',p.source_matter_id||'');
   /* Commentary */
   document.getElementById('libCommentary').value=p.commentary||'';
   document.getElementById('libIsOwnDoc').checked=!!p.is_own_style;
@@ -326,7 +329,9 @@ async function libSavePrecedentChanges(){
       commentary:document.getElementById('libCommentary').value,
       is_own_style:document.getElementById('libIsOwnDoc').checked,
       ai_instructions:document.getElementById('libAiInstructions').value,
-      context_relationship:document.getElementById('libContextExplanation').value
+      context_relationship:document.getElementById('libContextExplanation').value,
+      /* v5.65: '' means "no matter"; the server stores null. */
+      source_matter_id:(document.getElementById('libSourceMatter')||{}).value||null
     };
     if(ctSel){
       payload.case_type_id=ctSel.value;
@@ -352,6 +357,9 @@ function libNewPrecedent(){
   precUpCaseTypeChanged();
   document.getElementById('precUpName').value='';
   document.getElementById('precUpFile').value='';
+  /* v5.65: default to the matter in hand — that is nearly always where a
+     precedent being filed has just come from. */
+  libPopulateMatterSelect('precUpSourceMatter',(typeof currentMatter!=='undefined'&&currentMatter)?currentMatter.id:'');
   document.getElementById('precUpProgress').style.display='none';
   document.getElementById('precUpSaveBtn').disabled=false;
   document.getElementById('precUpSaveBtn').style.display='';
@@ -396,6 +404,8 @@ async function precUploadSave(){
     fd.append('doc_type_id',document.getElementById('precUpDocType').value||'');
     fd.append('jurisdiction',document.getElementById('precUpJur').value||'');
     fd.append('description','');
+    var srcSel=document.getElementById('precUpSourceMatter');
+    fd.append('source_matter_id',(srcSel&&srcSel.value)||'');
     fd.append('file',file);
     var tok=token||localStorage.getItem('elj_token');
     var r=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd});
@@ -435,6 +445,18 @@ function closePrecUpModal(){
   precUpLastId=null;
   closeModal('precUploadModal');
 }
+/* v5.65: fill a matter select. Used by the upload modal and by the precedent
+   panel, so an entry uploaded before the field existed can be linked now. */
+function libPopulateMatterSelect(id,selectedId){
+  var sel=document.getElementById(id);
+  if(!sel)return;
+  var list=(typeof matters!=='undefined'&&matters)?matters.slice():[];
+  list.sort(function(a,b){return libNameSort(a.name,b.name);});
+  sel.innerHTML='<option value="">— None —</option>'
+    +list.map(function(m){return '<option value="'+m.id+'">'+esc(m.name)+'</option>';}).join('');
+  if(selectedId)sel.value=selectedId;
+}
+
 /* ── v5.65: keep matter names out of the Precedent Library ─────────────────
    The library holds reusable templates. A precedent named after the matter
    it came from is findable only by someone who remembers that matter, and it

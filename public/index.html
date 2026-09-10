@@ -1001,6 +1001,15 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
                 <div class="draft-field-label">Context Explanation</div>
                 <textarea class="lib-textarea" id="libContextExplanation" rows="2" placeholder="Explain the relationship between this document and its context…"></textarea>
               </div>
+              <!-- v5.65: the matter this precedent came from. Set it here on an
+                   entry uploaded before the field existed. -->
+              <div style="margin-top:.35rem">
+                <div class="draft-field-label">From which matter?</div>
+                <select class="lib-select" id="libSourceMatter" style="font-size:.82rem">
+                  <option value="">— None —</option>
+                </select>
+                <div style="font-size:.72rem;color:var(--text-faint);margin-top:.15rem">The AI reads that matter's nature and issues to judge how far this precedent's context matches the draft in hand.</div>
+              </div>
             </div>
             <!-- Box 2: Commentary -->
             <div class="lib-box">
@@ -1364,6 +1373,12 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
     <label class="f-label" style="margin-top:.85rem">Jurisdiction</label>
     <select id="precUpJur" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)">
       <option value="">Any</option><option>Bermuda</option><option>Cayman Islands</option><option>British Virgin Islands</option>
+    </select>
+    <!-- v5.65: where this precedent came from. Not part of its name — the
+         name describes the document, this records the context the AI reads. -->
+    <label class="f-label" style="margin-top:.85rem">From which matter? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-faint)">(optional — lets the AI see the context this precedent was written for)</span></label>
+    <select id="precUpSourceMatter" style="width:100%;padding:.7rem .9rem;border:2px solid var(--border);border-radius:7px;font-family:'Source Sans 3',sans-serif;font-size:.98rem;background:var(--off-white)">
+      <option value="">— None —</option>
     </select>
     <label class="f-label" style="margin-top:.85rem">PDF Document *</label>
     <input type="file" id="precUpFile" accept=".pdf,.docx" style="width:100%;padding:.5rem;border:2px solid var(--border);border-radius:7px;font-size:.92rem;background:var(--off-white)" onchange="precUpFileChanged(this)">

@@ -176,3 +176,145 @@ describe("clSplitPages", () => {
     expect(clSplitPages([])).toHaveLength(1);
   });
 });
+
+/* ── v5.63: pagination as the primary signal ─────────────────────────────── */
+
+const { clPageNumber, clIsFrontPage, clDetectPageBoundaries } = split;
+
+/* A body page: dense argument with a footer. */
+function bodyPage(n, total) {
+  return body(12) + "\n\nPage " + n + (total ? " of " + total : "");
+}
+/* A cover: court, parties, citation, and very little else. */
+function frontPage(court, title, citation) {
+  return [court, "", title, "", citation, "", "B E T W E E N", "", "Mr A Smith for the Applicant"].join("\n");
+}
+
+describe("clPageNumber", () => {
+  it("reads Page N of M from a footer", () => {
+    expect(clPageNumber("argument\n\nPage 7 of 34")).toEqual({ num: 7, total: 34 });
+  });
+
+  it("reads a bare Page N", () => {
+    expect(clPageNumber("argument\n\nPage 7")).toEqual({ num: 7, total: null });
+  });
+
+  it("reads a number alone on a line, dashed or bracketed", () => {
+    expect(clPageNumber("argument\n\n- 12 -")).toEqual({ num: 12, total: null });
+    expect(clPageNumber("argument\n\n[3]")).toEqual({ num: 3, total: null });
+    expect(clPageNumber("9\n\nargument")).toEqual({ num: 9, total: null });
+  });
+
+  it("does not mistake a year at the page edge for a page number", () => {
+    expect(clPageNumber("argument\n\n2003")).toBeNull();
+  });
+
+  it("returns nothing for a page with no numbering", () => {
+    expect(clPageNumber(body(5))).toBeNull();
+    expect(clPageNumber("")).toBeNull();
+  });
+
+  it("ignores a number buried in the middle of a long page", () => {
+    const middle = body(30) + "\nPage 4 of 9\n" + body(30);
+    expect(clPageNumber(middle)).toBeNull();
+  });
+});
+
+describe("clIsFrontPage", () => {
+  it("accepts a short cover carrying a court header", () => {
+    expect(clIsFrontPage(frontPage("IN THE GRAND COURT OF THE CAYMAN ISLANDS", "Re Sphinx", "[2016] (2) CILR 1"))).toBe(true);
+  });
+
+  it("accepts a cover with no court line but a citation and BETWEEN", () => {
+    expect(clIsFrontPage(["Re Sphinx Group of Funds", "", "[2016] (2) CILR 1", "", "B E T W E E N"].join("\n"))).toBe(true);
+  });
+
+  it("rejects a dense body page even when it quotes a court", () => {
+    expect(clIsFrontPage(body(30) + "\nIN THE GRAND COURT OF THE CAYMAN ISLANDS\n" + body(30))).toBe(false);
+  });
+
+  it("rejects an empty page", () => {
+    expect(clIsFrontPage("")).toBe(false);
+  });
+});
+
+describe("clDetectPageBoundaries", () => {
+  it("splits where the numbering restarts at 1", () => {
+    const pages = [
+      { page: 1, text: bodyPage(1) }, { page: 2, text: bodyPage(2) }, { page: 3, text: bodyPage(3) },
+      { page: 4, text: bodyPage(1) }, { page: 5, text: bodyPage(2) },
+    ];
+    expect(clDetectPageBoundaries(pages)).toEqual([0, 3]);
+  });
+
+  it("splits where the 'of N' total changes, even mid-count", () => {
+    const pages = [
+      { page: 1, text: bodyPage(1, 3) }, { page: 2, text: bodyPage(2, 3) }, { page: 3, text: bodyPage(3, 3) },
+      { page: 4, text: bodyPage(1, 12) }, { page: 5, text: bodyPage(2, 12) },
+    ];
+    expect(clDetectPageBoundaries(pages)).toEqual([0, 3]);
+  });
+
+  it("splits at the front page of the next case, numbered or not", () => {
+    const pages = [
+      { page: 1, text: bodyPage(1) }, { page: 2, text: bodyPage(2) },
+      { page: 3, text: frontPage("IN THE COURT OF APPEAL OF BERMUDA", "AHAB v Saad", "[2021] UKPC 47") },
+      { page: 4, text: bodyPage(1) },
+    ];
+    expect(clDetectPageBoundaries(pages)).toEqual([0, 2]);
+  });
+
+  it("leaves a single continuously paginated judgment alone", () => {
+    const pages = Array.from({ length: 8 }, (_, i) => ({ page: i + 1, text: bodyPage(i + 1, 8) }));
+    expect(clDetectPageBoundaries(pages)).toEqual([0]);
+  });
+
+  it("says nothing when the pages carry no numbering", () => {
+    const pages = Array.from({ length: 5 }, (_, i) => ({ page: i + 1, text: body(12) }));
+    expect(clDetectPageBoundaries(pages)).toEqual([0]);
+  });
+
+  it("does not split on a single page", () => {
+    expect(clDetectPageBoundaries([{ page: 1, text: bodyPage(1) }])).toEqual([0]);
+  });
+});
+
+describe("clSplitPages — which signal decided", () => {
+  it("uses pagination when the numbering resets, and says so", () => {
+    const pages = [
+      { page: 1, text: bodyPage(1, 3) }, { page: 2, text: bodyPage(2, 3) },
+      { page: 3, text: bodyPage(1, 5) }, { page: 4, text: bodyPage(2, 5) },
+    ];
+    const segs = clSplitPages(pages);
+    expect(segs).toHaveLength(2);
+    expect(segs[0].method).toBe("pagination");
+    expect(segs[0].pages.map((p) => p.page)).toEqual([1, 2]);
+    expect(segs[1].pages.map((p) => p.page)).toEqual([3, 4]);
+  });
+
+  it("falls back to the heading scan when there is no pagination to read", () => {
+    const pages = [
+      { page: 1, text: judgment("IN THE GRAND COURT OF THE CAYMAN ISLANDS", "Re Sphinx") },
+      { page: 2, text: judgment("IN THE COURT OF APPEAL OF BERMUDA", "AHAB v Saad") },
+    ];
+    const segs = clSplitPages(pages);
+    expect(segs).toHaveLength(2);
+    expect(segs[0].method).toBe("headings");
+  });
+
+  it("keeps a single paginated judgment as one segment", () => {
+    const pages = Array.from({ length: 6 }, (_, i) => ({ page: i + 1, text: bodyPage(i + 1, 6) }));
+    expect(clSplitPages(pages)).toHaveLength(1);
+  });
+
+  it("loses no text when pagination decides the split", () => {
+    const pages = [
+      { page: 1, text: bodyPage(1, 2) }, { page: 2, text: bodyPage(2, 2) },
+      { page: 3, text: bodyPage(1, 2) }, { page: 4, text: bodyPage(2, 2) },
+    ];
+    const whole = pages.map((p) => p.text).join("\n\n").replace(/\s+/g, "");
+    const rejoined = clSplitPages(pages)
+      .map((s) => s.pages.map((p) => p.text).join("")).join("").replace(/\s+/g, "");
+    expect(rejoined).toBe(whole);
+  });
+});

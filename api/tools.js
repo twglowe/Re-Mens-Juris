@@ -77,6 +77,7 @@ export default async function handler(req, res) {
           citationSource, citationTargets,
           chronologyDateRange, chronologyEntities, chronologyCorrespondenceFilter,
           caseTypeId, docTypeId, subcatId, libraryContext, caseLawContext,
+          matterToolHistory, learnFromComparable,
           excludeDocNames, excludeDocTypes, includeDocNames,
           subElement, focusDocNames } = req.body;
 
@@ -142,6 +143,18 @@ export default async function handler(req, res) {
        worker as p.caseLawContext. Null for every other tool, and for a
        draft where the user left nothing to retrieve. */
     caseLawContext: caseLawContext || null,
+    /* v5.63: both of these were read by the worker but never stored here, so
+       p.matterToolHistory always arrived empty and p.learnFromComparable
+       always fell back to its default. The draft prompt's "WHAT WE ALREADY
+       KNOW ABOUT THIS MATTER" block — the most recent Briefing, Issues and
+       Chronology outputs, which the frontend has been collecting and sending
+       since v5.11a — has never reached the model until now.
+
+       learnFromComparable is stored as sent, including false: the worker
+       reads it as (p.learnFromComparable !== false), so `|| true` here would
+       throw away the only value that means anything. */
+    matterToolHistory: Array.isArray(matterToolHistory) ? matterToolHistory : [],
+    learnFromComparable: learnFromComparable !== false,
     excludeDocNames: excludeDocNames || [],
     excludeDocTypes: excludeDocTypes || [],
     /* v5.0: folder filter. Frontend resolves folder selection → list of doc

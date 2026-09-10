@@ -102,6 +102,36 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
     boundary, so a few chunk joins in a batched upload are clean cuts.
     `/api/upload` has the same property.
 
+## Case law in the Draft tool (Push C, v5.59)
+- Draft tab → Sources → **Case Law & Texts** box. Client code is the
+  `draftCl*` block at the foot of `public/js/drafting.js`; it reads
+  `libraryData.caseLaw` / `libraryData.caseLawSubjects`, so `loadLibrary()`
+  calls `draftClRender()` too.
+- Two sources: authorities dual-linked to the matter (a checklist, ticked by
+  default — exclusions are stored, so a newly linked authority arrives
+  ticked), and a library search in `general` or `subject` mode.
+- The client sends `body.caseLawContext`; retrieval happens server-side in
+  `buildCaseLawContext` (`api/worker.js`), where the matter's issues and the
+  draft instructions are already to hand.
+- **`api/tools.js` builds job parameters from an explicit whitelist.** A
+  field the client sends but `tools.js` does not name is dropped silently and
+  the worker sees nothing. Add any new draft field in *both* the destructure
+  and the `parameters` object. `api/__tests__/case_law_context.test.js`
+  guards `caseLawContext` against this. Note `matterToolHistory` and
+  `learnFromComparable` are *not* whitelisted, so the worker reads them empty
+  — pre-existing, not yet fixed.
+- Relevance uses the `case_law_search` SQL function
+  (`migrations/migration_case_law_search.sql`, ranked with `ts_rank_cd`).
+  If that migration has not been run the RPC fails and the code falls back to
+  an unranked PostgREST `websearch` text search, so the draft still works —
+  it just picks matching chunks rather than the best-matching ones.
+- Sizes: `CASE_LAW_SEARCH_CHUNKS` = 80 for the library search,
+  `CASE_LAW_DOC_CHUNKS` = 80 per matter-linked authority, at most
+  `CASE_LAW_MAX_MATTER_DOCS` = 5 of those — the same 80 the precedent search
+  allows per precedent document.
+- Subject mode never widens: if nothing is filed under the chosen subject,
+  the library search is skipped rather than falling back to everything.
+
 ## Related earlier work
 - Push A, the legislation library (`legislation`, `legislation_chunks`), is
   the pattern Push B follows — see the `leg*` functions in `library.js` and

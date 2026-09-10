@@ -214,6 +214,8 @@ async function loadLibrary(){
     libraryData.caseLaw=results[7].data||[];
     legRender();
     clRender();
+    /* v5.59 Push C: the Draft tab's case law box reads libraryData too. */
+    if(typeof draftClRender==='function')draftClRender();
     libPopulateSearchFilters();
     libFilterSearch();
     libPopulateDraftSelects();

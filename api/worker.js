@@ -488,6 +488,215 @@ function docsToText(byDoc) {
   }).join("\n\n");
 }
 
+/* ── v5.59 Push C: CASE LAW CONTEXT FOR THE DRAFT ────────────────────────────
+   Two sources, either of which may come back empty:
+
+     1. Authorities dual-linked to this matter — case_law_docs rows carrying
+        source_matter_id. The client sends the ids still ticked in the Draft
+        tab's checklist; unticking one drops it here.
+
+     2. A search of the case law library, in one of two modes:
+          general — the whole library
+          subject — confined to one case_law_subjects row, and optionally to
+                    one sub-tag within it
+
+   Relevance: case_law_search() ranks with ts_rank_cd, so a chunk that turns
+   on the issue repeatedly beats one mentioning a word in passing. That
+   function ships in migrations/migration_case_law_search.sql. Until it is
+   run the RPC 404s and we fall back to an unranked PostgREST text search,
+   which still filters to matching chunks — the draft works either way, it
+   just picks matching chunks rather than the best-matching ones.
+
+   The query text is the matter's issues and nature plus the draft
+   instructions — "the draft's issues".
+
+   Size: the library search is capped at CASE_LAW_SEARCH_CHUNKS, and each
+   matter-linked authority at CASE_LAW_DOC_CHUNKS — the same 80 chunks the
+   precedent search allows per precedent document. A textbook runs to
+   thousands of chunks, so an uncapped fetch would swamp the prompt. */
+const CASE_LAW_SEARCH_CHUNKS = 80;
+const CASE_LAW_DOC_CHUNKS = 80;
+const CASE_LAW_MAX_MATTER_DOCS = 5;
+const CASE_LAW_SUBJECT_DOC_CAP = 500;
+
+/* Everyday words plus the ones every legal document is full of: keeping them
+   would match every chunk in the library and rank nothing. */
+const CASE_LAW_STOPWORDS = (
+  "about above after again against because been before being below between both " +
+  "cannot could does doing down during each from further have having here hers " +
+  "herself himself into itself more most other ought over same shall should some " +
+  "such than that their theirs them themselves then there these they this those " +
+  "through under until very were what when where which while whom whose will with " +
+  "would your yours yourself " +
+  "case cases court courts claim claimant defendant plaintiff respondent applicant " +
+  "matter action proceedings judgment judgement order orders party parties " +
+  "document documents draft submission submissions paragraph paragraphs learned " +
+  "counsel affidavit exhibit hearing application"
+).split(/\s+/).reduce(function (acc, w) { acc[w] = true; return acc; }, {});
+
+function caseLawKeywords(text) {
+  var words = String(text || "").toLowerCase().match(/[a-z][a-z'-]{3,}/g) || [];
+  var seen = {};
+  var out = [];
+  for (var i = 0; i < words.length && out.length < 12; i++) {
+    var w = words[i];
+    if (CASE_LAW_STOPWORDS[w] || seen[w]) continue;
+    seen[w] = true;
+    out.push(w);
+  }
+  return out;
+}
+
+function caseLawHeading(doc) {
+  var title = [doc.name, doc.citation].filter(Boolean).join(" ");
+  var aside = [];
+  if (doc.jurisdiction) aside.push(doc.jurisdiction);
+  if (doc.doc_type === "textbook") aside.push("textbook");
+  return "=== AUTHORITY: " + title + (aside.length ? " (" + aside.join("; ") + ")" : "") + " ===";
+}
+
+/* Chunks arrive as separate extracts, not continuous text. Mark the gaps so
+   the model does not read across a jump as though it were one passage. */
+function caseLawJoinChunks(chunks) {
+  var parts = [];
+  for (var i = 0; i < chunks.length; i++) {
+    if (i > 0 && chunks[i].chunk_index !== chunks[i - 1].chunk_index + 1) parts.push("[…]");
+    parts.push(chunks[i].content);
+  }
+  return parts.join("\n\n");
+}
+
+async function caseLawSearchChunks(supabase, userId, query, docIds) {
+  /* Ranked path — needs migration_case_law_search.sql. */
+  try {
+    var rpc = await supabase.rpc("case_law_search", {
+      p_user_id: userId, p_query: query,
+      p_doc_ids: docIds && docIds.length ? docIds : null,
+      p_limit: CASE_LAW_SEARCH_CHUNKS,
+    });
+    if (!rpc.error && rpc.data) {
+      console.log("[draft] case law search: ranked, " + rpc.data.length + " chunks");
+      return rpc.data;
+    }
+    console.log("[draft] case law ranked search unavailable (" + ((rpc.error && rpc.error.message) || "no data") + "), falling back");
+  } catch (e) {
+    console.log("[draft] case law ranked search threw (" + e.message + "), falling back");
+  }
+  /* Unranked fallback. websearch_to_tsquery understands OR, so terms are
+     joined with it — plainto_tsquery would AND them and match almost
+     nothing across a dozen keywords. */
+  var terms = caseLawKeywords(query);
+  if (terms.length === 0) return [];
+  var q = supabase.from("case_law_chunks")
+    .select("case_law_id, chunk_index, content")
+    .eq("user_id", userId)
+    .textSearch("content", terms.join(" OR "), { type: "websearch", config: "english" })
+    .limit(CASE_LAW_SEARCH_CHUNKS);
+  if (docIds && docIds.length) q = q.in("case_law_id", docIds);
+  var resp = await q;
+  if (resp.error) {
+    console.log("[draft] case law fallback search failed: " + resp.error.message);
+    return [];
+  }
+  console.log("[draft] case law search: unranked fallback, " + (resp.data || []).length + " chunks");
+  return resp.data || [];
+}
+
+async function buildCaseLawContext(supabase, userId, matterId, ctx, queryText) {
+  if (!ctx) return "";
+  var blocks = [];
+
+  /* ── 1. Authorities dual-linked to this matter ─────────────────────────── */
+  var tickedIds = Array.isArray(ctx.matterCaseLawIds) ? ctx.matterCaseLawIds.filter(Boolean) : [];
+  if (tickedIds.length > 0) {
+    /* eq source_matter_id as well as the id list: the client sends what it
+       showed, and this is the server's own check that each one really is
+       linked to the matter being drafted. */
+    var mResp = await supabase.from("case_law_docs")
+      .select("id, name, citation, jurisdiction, doc_type, commentary")
+      .eq("user_id", userId).eq("source_matter_id", matterId)
+      .in("id", tickedIds).order("name").limit(CASE_LAW_MAX_MATTER_DOCS);
+    var mDocs = (mResp.data) || [];
+    var linked = [];
+    for (var i = 0; i < mDocs.length; i++) {
+      var d = mDocs[i];
+      var cResp = await supabase.from("case_law_chunks")
+        .select("content, chunk_index").eq("case_law_id", d.id).eq("user_id", userId)
+        .order("chunk_index").limit(CASE_LAW_DOC_CHUNKS);
+      var chunks = cResp.data || [];
+      if (chunks.length === 0) continue;
+      var entry = caseLawHeading(d) + "\n";
+      if (d.commentary) entry += "[Commentary — read carefully and apply: " + d.commentary + "]\n\n";
+      linked.push(entry + caseLawJoinChunks(chunks));
+    }
+    if (linked.length > 0) {
+      blocks.push("## AUTHORITIES LINKED TO THIS MATTER\n\nThese were filed against this matter and are the authorities you are expected to work from.\n\n" + linked.join("\n\n"));
+    }
+  }
+
+  /* ── 2. The library search ─────────────────────────────────────────────── */
+  var mode = ctx.mode === "subject" ? "subject" : "general";
+  var docIds = null;
+  var scopeLabel = "whole library";
+  var skipSearch = false;
+
+  if (mode === "subject") {
+    if (!ctx.subjectId) {
+      skipSearch = true;
+      console.log("[draft] case law: subject mode with no subject chosen, library search skipped");
+    } else {
+      var dq = supabase.from("case_law_docs").select("id")
+        .eq("user_id", userId).eq("subject_id", ctx.subjectId);
+      if (ctx.subTag) dq = dq.contains("sub_tags", [ctx.subTag]);
+      var dResp = await dq.limit(CASE_LAW_SUBJECT_DOC_CAP);
+      docIds = (dResp.data || []).map(function (r) { return r.id; });
+      scopeLabel = (ctx.subjectName || "chosen subject") + (ctx.subTag ? " — " + ctx.subTag : "");
+      /* Nothing filed under that subject. Never widen to the whole library:
+         the user confined the search on purpose. */
+      if (docIds.length === 0) {
+        skipSearch = true;
+        console.log("[draft] case law: nothing filed under " + scopeLabel + ", library search skipped");
+      }
+    }
+  }
+
+  if (!skipSearch) {
+    var rows = await caseLawSearchChunks(supabase, userId, queryText, docIds);
+    if (rows.length > 0) {
+      var byDoc = {};
+      rows.forEach(function (r) { (byDoc[r.case_law_id] = byDoc[r.case_law_id] || []).push(r); });
+      var ids = Object.keys(byDoc);
+      var metaResp = await supabase.from("case_law_docs")
+        .select("id, name, citation, jurisdiction, doc_type")
+        .eq("user_id", userId).in("id", ids);
+      var meta = {};
+      (metaResp.data || []).forEach(function (d) { meta[d.id] = d; });
+      var found = ids
+        .filter(function (id) { return meta[id]; })
+        .sort(function (a, b) { return String(meta[a].name).localeCompare(String(meta[b].name)); })
+        .map(function (id) {
+          var sorted = byDoc[id].sort(function (a, b) { return a.chunk_index - b.chunk_index; });
+          return caseLawHeading(meta[id]) + "\n" + caseLawJoinChunks(sorted);
+        });
+      if (found.length > 0) {
+        blocks.push("## AUTHORITIES FROM THE LIBRARY (" + scopeLabel + ")\n\nThe passages below are the parts of your case law library that bear most closely on the issues in this draft. They are extracts, not whole judgments — where a passage is cut, that is marked …\n\n" + found.join("\n\n"));
+      }
+    }
+  }
+
+  if (blocks.length === 0) return "";
+
+  /* Same discipline the draft applies to document references: name the
+     source, do not reproduce it. */
+  return "\n\n# CASE LAW AND TEXTS\n\n"
+    + "HOW TO USE THESE:\n"
+    + "1. Any authority you rely on MUST be cited by name and citation exactly as given in its heading above — for example \"Schmidt v Rosewood Trust Ltd [2003] 2 AC 709\".\n"
+    + "2. Do NOT reproduce these passages at length. State the proposition the authority supports in your own words and cite it. Quote only where the precise words matter, and then only a sentence or two.\n"
+    + "3. Cite only what appears below. Do not cite an authority you have not been given here, and do not invent a citation for one that is missing.\n"
+    + "4. Where the material below does not support a proposition you need, say so rather than stretching it.\n\n"
+    + blocks.join("\n\n---\n\n");
+}
+
 function buildPageIndex(byDoc) {
   /* v5.22: parts of a split document are merged under the base document
      name, so the index shape is identical to v5.21 — one line per document.
@@ -1527,6 +1736,18 @@ export default async function handler(req, res) {
         libraryText += "\n\n## STANDARD SECTIONS TO INCORPORATE\n\nIncorporate these sections with only minor contextual adaptation:\n\n" + secText;
       }
 
+      /* v5.59 Push C: case law and texts. Wrapped so any failure — a missing
+         search function, a slow query, a malformed context — leaves the
+         draft behaving exactly as it did in v5.58. */
+      var caseLawText = "";
+      try {
+        if (p.caseLawContext) {
+          var clQuery = [p.matterIssues, p.matterNature, instructions].filter(Boolean).join(" ");
+          caseLawText = await buildCaseLawContext(supabase, userId, matterId, p.caseLawContext, clQuery);
+          console.log("[draft] case law context: " + caseLawText.length + " chars");
+        }
+      } catch (e) { console.log("[draft] case law context skipped:", e.message); }
+
       var learningText = "";
       try {
         var pastResp = await supabase.from("conversation_history").select("question, answer, created_at").eq("matter_id", matterId).eq("user_id", userId).eq("tool_name", "draft").order("created_at", { ascending: false }).limit(3);
@@ -1665,7 +1886,7 @@ export default async function handler(req, res) {
         ? "\n\nIMPORTANT: Begin the document with this exact court heading (do not alter the heading itself):\n\n" + headingText + "\n\nThen continue with the body of the document."
         : "";
 
-      var systemBase = "You are a senior litigation counsel in " + jur + " drafting a legal document for \"" + matterName + "\". Apply " + jur + " law, procedure, and drafting conventions." + (actingFor ? " You are acting for the " + actingFor + "." : "") + "\n\nCRITICAL INSTRUCTIONS:\n1. If precedent documents are provided below, you MUST study them first. Learn their structure, standard sections, argument methods, heading hierarchy, and language style. Replicate this approach in your draft.\n2. If commentary or AI instructions are attached to a precedent, follow them precisely \u2014 they contain the author\u2019s specific guidance on how to use that document.\n3. If previous drafts for this matter exist, maintain consistency with their style, terminology, and argument structure.\n4. Apply " + jur + " court rules and conventions throughout.\n\n" + matterContext + toolHistoryText + libraryText + comparableText + learningText + headingInstruction;
+      var systemBase = "You are a senior litigation counsel in " + jur + " drafting a legal document for \"" + matterName + "\". Apply " + jur + " law, procedure, and drafting conventions." + (actingFor ? " You are acting for the " + actingFor + "." : "") + "\n\nCRITICAL INSTRUCTIONS:\n1. If precedent documents are provided below, you MUST study them first. Learn their structure, standard sections, argument methods, heading hierarchy, and language style. Replicate this approach in your draft.\n2. If commentary or AI instructions are attached to a precedent, follow them precisely \u2014 they contain the author\u2019s specific guidance on how to use that document.\n3. If previous drafts for this matter exist, maintain consistency with their style, terminology, and argument structure.\n4. If case law or textbook extracts are provided below, cite any authority you rely on by name and citation, and do not reproduce the extracts at length.\n5. Apply " + jur + " court rules and conventions throughout.\n\n" + matterContext + toolHistoryText + libraryText + caseLawText + comparableText + learningText + headingInstruction;
 
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract all facts, legal points, and arguments from batch " + batchNum + " of " + total + " relevant to: " + (instructions || "Draft a skeleton argument") + "\n\nDOCUMENTS:\n\n" + batchText; },
@@ -1826,3 +2047,8 @@ var toolLabels = {
   briefing: "Briefing Note",
   draft: "Draft",
 };
+
+/* v5.59 Push C: named exports for the case law retrieval helpers so
+   api/__tests__/case_law_context.test.js can exercise them against a stub
+   client. The default export — the Vercel handler — is unchanged. */
+export { buildCaseLawContext, caseLawKeywords, caseLawJoinChunks, caseLawHeading };

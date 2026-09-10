@@ -123,20 +123,29 @@ describe("clPageOffsets and clSlicePages", () => {
   it("returns whole pages inside the range and keeps their numbers", () => {
     const offs = clPageOffsets(pages);
     expect(clSlicePages(offs, 6, 16)).toEqual([
-      { page: 2, text: "bbbb" }, { page: 3, text: "cccc" },
+      { page: 2, refPage: null, text: "bbbb" }, { page: 3, refPage: null, text: "cccc" },
     ]);
   });
 
   it("cuts a page where a boundary falls inside it", () => {
     const offs = clPageOffsets(pages);
     expect(clSlicePages(offs, 2, 8)).toEqual([
-      { page: 1, text: "aa" }, { page: 2, text: "bb" },
+      { page: 1, refPage: null, text: "aa" }, { page: 2, refPage: null, text: "bb" },
     ]);
   });
 
   it("drops pages that contribute only whitespace", () => {
     const offs = clPageOffsets([{ page: 1, text: "aa" }, { page: 2, text: "   " }]);
-    expect(clSlicePages(offs, 0, 99)).toEqual([{ page: 1, text: "aa" }]);
+    expect(clSlicePages(offs, 0, 99)).toEqual([{ page: 1, refPage: null, text: "aa" }]);
+  });
+
+  it("carries the judgment's own page number, read before any cut", () => {
+    /* The footer is at the end of the page; a boundary cutting the page in
+       half must not lose the number for the first half. */
+    const paged = [{ page: 40, text: "argument here\n\nPage 1 of 12" }];
+    const offs = clPageOffsets(paged);
+    expect(offs[0].refPage).toBe(1);
+    expect(clSlicePages(offs, 0, 5)).toEqual([{ page: 40, refPage: 1, text: "argum" }]);
   });
 });
 
@@ -145,7 +154,7 @@ describe("clSplitPages", () => {
     const pages = [{ page: 1, text: "IN THE GRAND COURT OF THE CAYMAN ISLANDS\n" + body(40) }];
     const segs = clSplitPages(pages);
     expect(segs).toHaveLength(1);
-    expect(segs[0].pages).toEqual(pages);
+    expect(segs[0].pages).toEqual(pages.map((p) => ({ ...p, refPage: null })));
   });
 
   it("splits a bundle into one segment per judgment, preserving page numbers", () => {

@@ -172,6 +172,22 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   them, so the set path feeds it one judgment at a time; `meta.partOfSet`
   stops it clearing the form between cases.
 
+## Pinpoint citation (v5.64)
+- `case_law_chunks.page_number` records the page a chunk came from — the
+  authority's **own** internal number where the extractor could read one
+  (`clPageOffsets` reads it from each whole page, before any boundary can cut
+  a footer off a slice), falling back to the page's position in the file. In
+  a bundle those differ, and it is the internal one a court wants.
+- The client sends `pageTexts` on `create_case_law`; `chunkPages` chunks page
+  by page so no chunk spans two pages and every chunk can name one honestly.
+- The worker marks each page change as `[p.N]` and the prompt's rule 2 tells
+  the model to pinpoint what is marked and never to guess one that is not.
+- **Graceful without the migration**: `migrations/migration_case_law_pages.sql`
+  adds the column and re-creates `case_law_search` to return it (the return
+  type changes, so it is dropped and recreated). Until it is run, the insert
+  retries without the column and both reads fall back to a select that omits
+  it — uploads still work, drafts simply carry no pinpoints.
+
 ## Prompt caching (v5.62)
 - `runTool` puts a `cache_control: {type:"ephemeral"}` breakpoint on the
   system prompt. It is byte-identical across every extraction batch and the

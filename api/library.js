@@ -17,6 +17,27 @@ async function getUser(req) {
   return null;
 }
 
+/* v5.64: chunk page by page so every chunk knows where it came from — a
+   citation without a pinpoint is half a citation. Pages carry `refPage`, the
+   judgment's own internal number, which is what a court wants; in a bundle
+   that differs from the page's position in the file. Falls back to the
+   position when no internal number could be read.
+
+   Chunks do not span a page boundary, which makes a few short chunks at page
+   ends; the alternative is a chunk that cannot honestly name one page. */
+function chunkPages(pages, size = 1500, overlap = 150) {
+  const rows = [];
+  for (const pg of pages) {
+    const text = String((pg && pg.text) || "");
+    if (!text.trim()) continue;
+    const page = (pg.refPage !== null && pg.refPage !== undefined) ? pg.refPage : (pg.page || null);
+    for (const c of chunkText(text, size, overlap)) {
+      rows.push({ content: c, page_number: (typeof page === "number" ? page : null) });
+    }
+  }
+  return rows;
+}
+
 function chunkText(text, size = 1500, overlap = 150) {
   const chunks = [];
   let i = 0;
@@ -39,6 +60,30 @@ async function extractPdfText(filePath) {
     ] }]
   });
   return response.content?.find(b => b.type === "text")?.text || "";
+}
+
+/* v5.64: page_number is added by migration_case_law_pages.sql. Until that has
+   been run the column does not exist and PostgREST rejects the insert, so a
+   first failure that names the column drops it and retries. The upload then
+   still works; the draft simply carries no [p.N] markers. */
+async function insertCaseLawChunks(sb, rows) {
+  let withPage = true;
+  for (let s = 0; s < rows.length; s += 500) {
+    const slice = rows.slice(s, s + 500);
+    const payload = withPage ? slice : slice.map(({ page_number, ...rest }) => rest);
+    const { error } = await sb.from("case_law_chunks").insert(payload);
+    if (!error) continue;
+    const msg = error.message || "";
+    if (withPage && /page_number/i.test(msg)) {
+      console.log("case_law_chunks has no page_number column yet — storing without it. Run migrations/migration_case_law_pages.sql.");
+      withPage = false;
+      const { error: retryErr } = await sb.from("case_law_chunks")
+        .insert(slice.map(({ page_number, ...rest }) => rest));
+      if (retryErr) throw new Error(retryErr.message);
+      continue;
+    }
+    throw new Error(msg);
+  }
 }
 
 const SERVER_VERSION = "v5.24";
@@ -393,10 +438,15 @@ export default async function handler(req, res) {
        rather than duplicating content. */
     if (action === "create_case_law") {
       const { name, citation, jurisdiction, subject_id, sub_tags, commentary,
-              source_matter_id, source_document_id, text,
+              source_matter_id, source_document_id, text, pageTexts,
               batch_index, batch_total, case_law_id, total_char_count } = body;
 
-      if (!text || !text.trim()) return res.status(400).json({ error: "text required" });
+      /* v5.64: the client sends pageTexts so each chunk can record the page it
+         came from. A caller sending only `text` still works — those chunks
+         simply have no page. */
+      const pages = Array.isArray(pageTexts) && pageTexts.length > 0 ? pageTexts : null;
+      const bodyText = pages ? pages.map(p => String((p && p.text) || "")).join("\n\n") : text;
+      if (!bodyText || !bodyText.trim()) return res.status(400).json({ error: "text required" });
 
       const isBatched = typeof batch_total === "number" && batch_total > 1;
       const bIdx = typeof batch_index === "number" ? batch_index : 0;
@@ -420,14 +470,13 @@ export default async function handler(req, res) {
         if (mErr) return res.status(500).json({ error: mErr.message });
         const baseIndex = (maxRows && maxRows.length > 0) ? (maxRows[0].chunk_index || 0) + 1 : 0;
 
-        const rows = chunkText(text).map((c, i) => ({
-          case_law_id: case_law_id, user_id: user.id, chunk_index: baseIndex + i, content: c,
+        const source = pages ? chunkPages(pages) : chunkText(bodyText).map(c => ({ content: c, page_number: null }));
+        const rows = source.map((c, i) => ({
+          case_law_id: case_law_id, user_id: user.id, chunk_index: baseIndex + i,
+          content: c.content, page_number: c.page_number,
         }));
         try {
-          for (let s = 0; s < rows.length; s += 500) {
-            const { error: chErr } = await sb.from("case_law_chunks").insert(rows.slice(s, s + 500));
-            if (chErr) throw new Error(chErr.message);
-          }
+          await insertCaseLawChunks(sb, rows);
         } catch (e) {
           /* Undo this batch's partial insert so a retry starts clean. */
           await sb.from("case_law_chunks").delete()
@@ -486,19 +535,18 @@ export default async function handler(req, res) {
         source_matter_id: matterId,
         source_document_id: matterId ? (source_document_id || null) : null,
         char_count: (typeof total_char_count === "number" && total_char_count > 0)
-          ? total_char_count : text.length,
+          ? total_char_count : bodyText.length,
       }).select("id").single();
       if (docErr) return res.status(500).json({ error: docErr.message });
 
       try {
-        const rows = chunkText(text).map((c, i) => ({
-          case_law_id: doc.id, user_id: user.id, chunk_index: i, content: c,
+        const source = pages ? chunkPages(pages) : chunkText(bodyText).map(c => ({ content: c, page_number: null }));
+        const rows = source.map((c, i) => ({
+          case_law_id: doc.id, user_id: user.id, chunk_index: i,
+          content: c.content, page_number: c.page_number,
         }));
         /* insert in slices of 500 rows - a textbook can run to thousands */
-        for (let s = 0; s < rows.length; s += 500) {
-          const { error: chErr } = await sb.from("case_law_chunks").insert(rows.slice(s, s + 500));
-          if (chErr) throw new Error(chErr.message);
-        }
+        await insertCaseLawChunks(sb, rows);
       } catch (e) {
         /* Nothing else references the row yet, so drop it whole - chunks
            cascade - and let the client start over. */

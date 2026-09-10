@@ -205,6 +205,28 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   runTool returns includes cached tokens, so `usage_log` still records every
   input token a call processed.
 
+## Precedent Library naming (v5.65)
+- The Precedent Library holds **reusable templates**. A precedent named after
+  the matter it came from is findable only by someone who remembers that
+  matter, and reads as case law sitting among the templates.
+- **How matter-named entries got there**: `precUpFileChanged` asked Claude for
+  "the case name (e.g. Smith v Jones) or the first party name" when the name
+  field was empty, so the suggestion offered *was* the matter name and
+  accepting it filed the precedent under it. That is the only route — the
+  Draft tab's "Upload precedent from device" posts to `/api/upload` as a
+  matter document, `libNewPrecedent` opens the modal empty, and
+  `libCreatePrecedent` has no callers.
+- The prompt now asks for the kind of document and its subject
+  ("Skeleton Argument — unfair prejudice petition") and forbids party, case,
+  company and matter names. `libMatchingMatterName` then discards a
+  suggestion that collides with one of the user's matters, and challenges a
+  hand-typed one at save with a confirm rather than a block.
+- Cleanup SQL lives in `migrations/`: `review_precedent_library.sql` is read
+  only, `delete_precedent_entries.sql` takes an explicit id list and deletes
+  `precedent_chunks` first — the foreign key's ON DELETE behaviour is not
+  recorded in this repo, and an orphaned chunk still feeds the drafting
+  prompt.
+
 ## Related earlier work
 - Push A, the legislation library (`legislation`, `legislation_chunks`), is
   the pattern Push B follows — see the `leg*` functions in `library.js` and

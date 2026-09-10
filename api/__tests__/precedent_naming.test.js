@@ -191,10 +191,10 @@ describe("source matter", () => {
 /* v5.67 — the bulk tidy. A one-off clear-up for the entries filed under a
    matter's name before the prompt was fixed. */
 describe("bulk tidy", () => {
-  it("offers only matter-named precedents, never a well-named one", () => {
+  it("offers only matter-named precedents until asked for the rest", () => {
     const open = src.slice(src.indexOf("function libTidyOpen"), src.indexOf("function libTidyRender"));
     expect(open).toMatch(/libMatchingMatterName\(p\.name\)/);
-    expect(open).toMatch(/return matter\?/);
+    expect(open).toMatch(/if\(!matter&&!libTidyShowAll\)return null/);
   });
 
   it("flags entries sharing a name, since this library has duplicate uploads", () => {
@@ -267,7 +267,8 @@ describe("deleting a precedent", () => {
 
   it("offers rename, delete and leave alone, defaulting to rename", () => {
     const open = src.slice(src.indexOf("function libTidyOpen"), src.indexOf("function libTidyRender"));
-    expect(open).toMatch(/action:'rename'/);
+    /* a matched row defaults to rename; an unmatched one to leave alone */
+    expect(open).toMatch(/action:matter\?'rename':'leave'/);
     const set = src.slice(src.indexOf("function libTidySetAction"), src.indexOf("function libTidyEdit"));
     expect(set).toMatch(/v==='delete'\|\|v==='leave'/);
   });
@@ -351,5 +352,39 @@ describe("multi-file precedent upload", () => {
   it("no longer offers a case name as the example to follow", () => {
     const html = fs.readFileSync(new URL("../../public/index.html", import.meta.url), "utf8");
     expect(html).not.toContain("Skeleton — ABC v DEF (2024)");
+  });
+});
+
+/* v5.70 — Tidy can reach the whole library. Scoping it to matter-named
+   entries meant a stray upload named after a company that was never a matter
+   never appeared, so it could not be deleted here. */
+describe("tidy scope", () => {
+  it("hides unmatched precedents by default, and lists them on request", () => {
+    const open = src.slice(src.indexOf("function libTidyOpen"), src.indexOf("function libTidyRender"));
+    expect(open).toMatch(/if\(!matter&&!libTidyShowAll\)return null/);
+  });
+
+  it("leaves an unmatched precedent alone by default rather than renaming it", () => {
+    const open = src.slice(src.indexOf("function libTidyOpen"), src.indexOf("function libTidyRender"));
+    expect(open).toMatch(/action:matter\?'rename':'leave'/);
+  });
+
+  it("offers the toggle even when the matched list is empty", () => {
+    const render = src.slice(src.indexOf("function libTidyRender"), src.indexOf("function libTidySetAction"));
+    const empty = render.slice(render.indexOf("if(!libTidyRows.length)"), render.indexOf("var scope="));
+    expect(empty).toContain("libTidySetShowAll");
+  });
+
+  it("says so when a row has no matter, rather than showing a blank", () => {
+    const render = src.slice(src.indexOf("function libTidyRender"), src.indexOf("function libTidySetAction"));
+    expect(render).toContain("no matter matched");
+  });
+
+  it("keeps the chosen scope when reopened after an apply", () => {
+    const apply = src.slice(src.indexOf("async function libTidyApply"));
+    expect(apply).toMatch(/libTidyOpen\(true\)/);
+    /* opening it fresh from the button starts narrow again */
+    const open = src.slice(src.indexOf("function libTidyOpen"), src.indexOf("function libTidyRender"));
+    expect(open).toMatch(/if\(!keepScope\)libTidyShowAll=false/);
   });
 });

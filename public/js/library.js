@@ -1477,15 +1477,31 @@ async function clRetrySet(){
    Nothing is renamed without being seen: suggestions land in editable boxes,
    rows can be unticked, and Apply is a separate press. */
 var libTidyRows=[];
+/* v5.70: matter-named entries are what prompted this tool, but they are not
+   the only precedents worth removing — a stray upload named after a company
+   that was never a matter of yours never matched, so it never appeared and
+   could not be deleted here. This shows the whole library on request. */
+var libTidyShowAll=false;
 
-function libTidyOpen(){
+function libTidySetShowAll(on){
+  libTidyShowAll=!!on;
+  libTidyOpen(true);
+}
+
+function libTidyOpen(keepScope){
+  if(!keepScope)libTidyShowAll=false;
   libTidyRows=(libraryData.precedents||[])
     .map(function(p){
       var matter=libMatchingMatterName(p.name);
       /* v5.68: action is what happens on Apply — rename it, delete it, or
          leave it alone. Rename is the default: deleting is the one choice
-         here that cannot be undone. */
-      return matter?{id:p.id,original:p.name,proposed:'',matter:matter,action:'rename',note:''}:null;
+         here that cannot be undone.
+         v5.70: a precedent with no matching matter is only listed when the
+         user has asked to see everything, and its name is left alone by
+         default — it may be perfectly good already. */
+      if(!matter&&!libTidyShowAll)return null;
+      return {id:p.id,original:p.name,proposed:'',matter:matter,
+              action:matter?'rename':'leave',note:''};
     })
     .filter(Boolean)
     .sort(function(a,b){return libNameSort(a.original,b.original);});
@@ -1509,15 +1525,24 @@ function libTidyRender(){
   var wrap=document.getElementById('libTidyList');
   if(!wrap)return;
   if(!libTidyRows.length){
-    wrap.innerHTML='<div style="font-size:.85rem;color:var(--text-faint);padding:.6rem">No precedent is named after one of your matters. Nothing to tidy.</div>';
+    wrap.innerHTML=libTidyShowAll
+      ? '<div style="font-size:.85rem;color:var(--text-faint);padding:.6rem">The Precedent Library is empty.</div>'
+      : '<label class="draft-doc-check" style="padding:0;margin-bottom:.45rem">'
+          +'<input type="checkbox" onchange="libTidySetShowAll(this.checked)"> '
+          +'<span style="font-size:.8rem">Show every precedent, not only those named after a matter</span></label>'
+        +'<div style="font-size:.85rem;color:var(--text-faint);padding:.6rem">No precedent is named after one of your matters. Tick the box above to see the whole library and remove anything that does not belong.</div>';
     return;
   }
-  wrap.innerHTML=libTidyRows.map(function(r,i){
+  var scope='<label class="draft-doc-check" style="padding:0;margin-bottom:.45rem">'
+    +'<input type="checkbox"'+(libTidyShowAll?' checked':'')+' onchange="libTidySetShowAll(this.checked)"> '
+    +'<span style="font-size:.8rem">Show every precedent, not only those named after a matter</span></label>';
+  wrap.innerHTML=scope+libTidyRows.map(function(r,i){
     var deleting=r.action==='delete';
     return '<div style="border:1px solid '+(deleting?'var(--error)':'var(--border)')+';border-radius:6px;padding:.45rem;margin-bottom:.4rem">'
       +'<div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">'
         +'<span style="flex:1;font-weight:600'+(deleting?';text-decoration:line-through;color:var(--text-faint)':'')+'">'+esc(r.original)+'</span>'
-        +'<span style="font-size:.72rem;color:var(--text-faint);flex-shrink:0">from '+esc(r.matter)+'</span>'
+        +'<span style="font-size:.72rem;color:var(--text-faint);flex-shrink:0">'
+          +(r.matter?'from '+esc(r.matter):'no matter matched')+'</span>'
         +(r.note?'<span style="font-size:.72rem;color:var(--error);flex-shrink:0">'+esc(r.note)+'</span>':'')
         +'<select class="lib-select" style="flex-shrink:0;width:auto;font-size:.78rem;padding:.2rem .35rem" onchange="libTidySetAction('+i+',this.value)">'
           +'<option value="rename"'+(r.action==='rename'?' selected':'')+'>Rename</option>'
@@ -1645,7 +1670,7 @@ async function libTidyApply(){
   if(removed)said.push('deleted '+removed);
   libTidyStatus(said.join(', ')+'.','var(--success)');
   await loadLibrary();
-  libTidyOpen();
+  libTidyOpen(true);
 }
 
 

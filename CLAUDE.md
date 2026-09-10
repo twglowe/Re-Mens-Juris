@@ -249,6 +249,13 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   together. Suggestions run in sequence and land in editable boxes; Apply is a
   separate press. Meant as a one-off clear-up, not a standing workflow — the
   prompt that caused the mess is fixed.
+- **Deleting** (v5.68): each tidy row chooses Rename, Delete or Leave alone,
+  defaulting to Rename since deleting is the one choice that cannot be undone.
+  Deletions are confirmed once, listing the names. `delete_precedent` removes
+  `precedent_chunks` **before** the row — until v5.68 it deleted the row only,
+  and nothing in the client called it at all, so a precedent could not be
+  deleted in the app and the API path would have orphaned its chunks. An
+  orphaned chunk still feeds the drafting prompt.
 - Cleanup SQL lives in `migrations/`: `review_precedent_library.sql` is read
   only, `delete_precedent_entries.sql` takes an explicit id list and deletes
   `precedent_chunks` first — the foreign key's ON DELETE behaviour is not

@@ -1459,7 +1459,10 @@ function libTidyOpen(){
   libTidyRows=(libraryData.precedents||[])
     .map(function(p){
       var matter=libMatchingMatterName(p.name);
-      return matter?{id:p.id,original:p.name,proposed:'',matter:matter,keep:true,note:''}:null;
+      /* v5.68: action is what happens on Apply — rename it, delete it, or
+         leave it alone. Rename is the default: deleting is the one choice
+         here that cannot be undone. */
+      return matter?{id:p.id,original:p.name,proposed:'',matter:matter,action:'rename',note:''}:null;
     })
     .filter(Boolean)
     .sort(function(a,b){return libNameSort(a.original,b.original);});
@@ -1487,20 +1490,33 @@ function libTidyRender(){
     return;
   }
   wrap.innerHTML=libTidyRows.map(function(r,i){
-    return '<div style="border:1px solid var(--border);border-radius:6px;padding:.45rem;margin-bottom:.4rem">'
-      +'<label class="draft-doc-check" style="padding:0;margin-bottom:.3rem">'
-        +'<input type="checkbox"'+(r.keep?' checked':'')+' onchange="libTidyToggle('+i+',this.checked)"> '
-        +'<span style="font-weight:600">'+esc(r.original)+'</span>'
-        +'<span style="font-size:.72rem;color:var(--text-faint)"> · from '+esc(r.matter)+'</span>'
-        +(r.note?'<span style="font-size:.72rem;color:var(--error)"> · '+esc(r.note)+'</span>':'')
-      +'</label>'
-      +'<input class="lib-search-input" style="margin-bottom:0;font-size:.82rem" placeholder="New name — e.g. Skeleton Argument — unfair prejudice" '
-        +'value="'+esc(r.proposed)+'" oninput="libTidyEdit('+i+',this.value)">'
+    var deleting=r.action==='delete';
+    return '<div style="border:1px solid '+(deleting?'var(--error)':'var(--border)')+';border-radius:6px;padding:.45rem;margin-bottom:.4rem">'
+      +'<div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">'
+        +'<span style="flex:1;font-weight:600'+(deleting?';text-decoration:line-through;color:var(--text-faint)':'')+'">'+esc(r.original)+'</span>'
+        +'<span style="font-size:.72rem;color:var(--text-faint);flex-shrink:0">from '+esc(r.matter)+'</span>'
+        +(r.note?'<span style="font-size:.72rem;color:var(--error);flex-shrink:0">'+esc(r.note)+'</span>':'')
+        +'<select class="lib-select" style="flex-shrink:0;width:auto;font-size:.78rem;padding:.2rem .35rem" onchange="libTidySetAction('+i+',this.value)">'
+          +'<option value="rename"'+(r.action==='rename'?' selected':'')+'>Rename</option>'
+          +'<option value="delete"'+(deleting?' selected':'')+'>Delete</option>'
+          +'<option value="leave"'+(r.action==='leave'?' selected':'')+'>Leave alone</option>'
+        +'</select>'
+      +'</div>'
+      +(r.action==='rename'
+        ? '<input class="lib-search-input" style="margin-bottom:0;font-size:.82rem" placeholder="New name — e.g. Skeleton Argument — unfair prejudice" '
+            +'value="'+esc(r.proposed)+'" oninput="libTidyEdit('+i+',this.value)">'
+        : '<div style="font-size:.75rem;color:var(--text-faint)">'
+            +(deleting?'Will be deleted, with its stored text. This cannot be undone.':'Left as it is.')
+          +'</div>')
       +'</div>';
   }).join('');
 }
 
-function libTidyToggle(i,on){ if(libTidyRows[i]){libTidyRows[i].keep=!!on;} }
+function libTidySetAction(i,v){
+  if(!libTidyRows[i])return;
+  libTidyRows[i].action=(v==='delete'||v==='leave')?v:'rename';
+  libTidyRender();
+}
 function libTidyEdit(i,v){ if(libTidyRows[i]){libTidyRows[i].proposed=v;} }
 
 function libTidyStatus(text,colour){
@@ -1515,8 +1531,8 @@ function libTidyStatus(text,colour){
    sequence rather than at once: this is a handful of documents, and a burst
    of parallel calls to the analyse endpoint buys nothing. */
 async function libTidySuggestAll(){
-  var todo=libTidyRows.filter(function(r){return r.keep&&!r.proposed.trim();});
-  if(!todo.length){libTidyStatus('Nothing to suggest — every ticked row already has a name.','var(--text-faint)');return;}
+  var todo=libTidyRows.filter(function(r){return r.action==='rename'&&!r.proposed.trim();});
+  if(!todo.length){libTidyStatus('Nothing to suggest — every row being renamed already has a name.','var(--text-faint)');return;}
   var btn=document.getElementById('libTidySuggestBtn');
   if(btn)btn.disabled=true;
   var done=0,failed=0;
@@ -1544,19 +1560,37 @@ async function libTidySuggestAll(){
     failed?'var(--error)':'var(--success)');
 }
 
-/* Save the ticked rows: the new name and the matter it came from, together. */
+/* Apply what each row was set to: rename it with its source matter, delete it
+   outright, or leave it. Deleting is confirmed once, by name, because it takes
+   the stored text with it and cannot be undone. */
 async function libTidyApply(){
-  var rows=libTidyRows.filter(function(r){return r.keep&&r.proposed.trim();});
-  if(!rows.length){libTidyStatus('Nothing to apply — tick a row and give it a name.','var(--error)');return;}
-  var stillNamed=rows.filter(function(r){return libMatchingMatterName(r.proposed);});
+  var renames=libTidyRows.filter(function(r){return r.action==='rename'&&r.proposed.trim();});
+  var deletes=libTidyRows.filter(function(r){return r.action==='delete';});
+  if(!renames.length&&!deletes.length){
+    libTidyStatus('Nothing to apply — set a row to Rename and give it a name, or to Delete.','var(--error)');
+    return;
+  }
+  var stillNamed=renames.filter(function(r){return libMatchingMatterName(r.proposed);});
   if(stillNamed.length&&!confirm(stillNamed.length+' of these still carry a matter name. Save them anyway?'))return;
+  if(deletes.length){
+    var names=deletes.map(function(r){return '  • '+r.original;}).join('\n');
+    if(!confirm('Delete '+deletes.length+' precedent'+(deletes.length===1?'':'s')+' and the text stored with '
+      +(deletes.length===1?'it':'them')+'?\n\n'+names+'\n\nThis cannot be undone. The documents themselves are untouched — you can upload them again.'))return;
+  }
 
   var btn=document.getElementById('libTidyApplyBtn');
   if(btn)btn.disabled=true;
-  var saved=0;
-  for(var i=0;i<rows.length;i++){
-    var r=rows[i];
-    libTidyStatus('Saving '+(i+1)+' of '+rows.length+'…');
+  var renamed=0,removed=0;
+
+  function stop(r,e){
+    libTidyStatus('Stopped at "'+r.original+'": '+e.message
+      +'. '+renamed+' renamed, '+removed+' deleted.','var(--error)');
+    if(btn)btn.disabled=false;
+  }
+
+  for(var i=0;i<renames.length;i++){
+    var r=renames[i];
+    libTidyStatus('Renaming '+(i+1)+' of '+renames.length+'…');
     try{
       var matterId='';
       var list=(typeof matters!=='undefined'&&matters)?matters:[];
@@ -1567,16 +1601,26 @@ async function libTidyApply(){
         name:r.proposed.trim(),
         source_matter_id:matterId||null
       });
-      saved++;
-    }catch(e){
-      libTidyStatus('Stopped at "'+r.original+'": '+e.message+'. '+saved+' saved.','var(--error)');
-      if(btn)btn.disabled=false;
-      await loadLibrary();
-      return;
-    }
+      renamed++;
+    }catch(e){ stop(r,e); await loadLibrary(); return; }
   }
+
+  for(var k=0;k<deletes.length;k++){
+    var d=deletes[k];
+    libTidyStatus('Deleting '+(k+1)+' of '+deletes.length+'…');
+    try{
+      /* The server deletes precedent_chunks before the row, so nothing is
+         left behind to go on feeding the drafting prompt. */
+      await api('/api/library','DELETE',{action:'delete_precedent',id:d.id});
+      removed++;
+    }catch(e){ stop(d,e); await loadLibrary(); return; }
+  }
+
   if(btn)btn.disabled=false;
-  libTidyStatus('Renamed '+saved+' precedent'+(saved===1?'':'s')+'.','var(--success)');
+  var said=[];
+  if(renamed)said.push('Renamed '+renamed);
+  if(removed)said.push('deleted '+removed);
+  libTidyStatus(said.join(', ')+'.','var(--success)');
   await loadLibrary();
   libTidyOpen();
 }

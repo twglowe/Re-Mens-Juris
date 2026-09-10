@@ -373,6 +373,9 @@ function libNewPrecedent(){
   /* v5.65: default to the matter in hand — that is nearly always where a
      precedent being filed has just come from. */
   libPopulateMatterSelect('precUpSourceMatter',(typeof currentMatter!=='undefined'&&currentMatter)?currentMatter.id:'');
+  /* v5.69: clear any set left by the last time the modal was open. */
+  precUpMulti=[];
+  precUpShowSingleRows(true);
   document.getElementById('precUpProgress').style.display='none';
   document.getElementById('precUpSaveBtn').disabled=false;
   document.getElementById('precUpSaveBtn').style.display='';
@@ -394,6 +397,7 @@ function precUpCaseTypeChanged(){
 if(document.getElementById('precUpCaseType')){document.getElementById('precUpCaseType').addEventListener('change',precUpCaseTypeChanged);}
 var precUpLastId=null;
 async function precUploadSave(){
+  if(precUpIsMulti())return precUploadSaveMulti();
   var name=document.getElementById('precUpName').value.trim();
   var ctId=document.getElementById('precUpCaseType').value;
   var file=document.getElementById('precUpFile').files[0];
@@ -548,6 +552,25 @@ function libMatchingMatterName(name){
 /* v4.5: Rewritten — unwraps page array (fixes v3.2 bug), adds .docx routing */
 async function precUpFileChanged(input){
   if(!input.files||!input.files[0])return;
+  /* v5.69: several files means a row each — own name, own source matter. */
+  if(input.files.length>1){
+    precUpMulti=Array.prototype.slice.call(input.files).map(function(f){
+      return {file:f,name:'',
+        matterId:(typeof currentMatter!=='undefined'&&currentMatter)?currentMatter.id:'',
+        state:''};
+    });
+    precUpShowSingleRows(false);
+    precUpRenderMulti();
+    var multiHint=document.getElementById('precUpAiHint');
+    multiHint.style.display='';multiHint.style.color='var(--blue)';
+    multiHint.textContent='Reading '+precUpMulti.length+' documents to suggest names…';
+    await precUpSuggestEach();
+    multiHint.textContent='Check each name and set the matter it came from, then Save.';
+    multiHint.style.color='var(--text-faint)';
+    return;
+  }
+  precUpMulti=[];
+  precUpShowSingleRows(true);
   var file=input.files[0];
   var nameField=document.getElementById('precUpName');
   /* Only suggest if the name field is empty */
@@ -1623,4 +1646,132 @@ async function libTidyApply(){
   libTidyStatus(said.join(', ')+'.','var(--success)');
   await loadLibrary();
   libTidyOpen();
+}
+
+
+/* ══ v5.69: SEVERAL PRECEDENTS AT ONCE, EACH FROM ITS OWN MATTER ══════════
+   One skeleton argument teaches the AI what a skeleton looks like. Four of
+   them, from four different matters, teach it how the form varies with the
+   case — which is the point of a precedent library. So the upload modal now
+   takes several files, and each keeps its own name and its own source
+   matter while sharing the classification set above.
+
+   One file behaves exactly as it did: the single Name and matter fields, the
+   AI suggestion filling the name. Two or more swap those for a row per file.
+
+   Uploads run in sequence. Each is a multipart POST that extracts and chunks
+   server-side, so firing them together would put four of those in flight at
+   once for no gain. */
+var precUpMulti=[];   /* [{file,name,matterId,state}] */
+
+function precUpIsMulti(){ return precUpMulti.length>1; }
+
+function precUpShowSingleRows(show){
+  ['precUpSingleNameRow','precUpSingleMatterRow'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el)el.style.display=show?'':'none';
+  });
+  var list=document.getElementById('precUpMultiList');
+  if(list)list.style.display=show?'none':'';
+}
+
+function precUpRenderMulti(){
+  var wrap=document.getElementById('precUpMultiList');
+  if(!wrap)return;
+  var list=(typeof matters!=='undefined'&&matters)?matters.slice():[];
+  list.sort(function(a,b){return libNameSort(a.name,b.name);});
+  wrap.innerHTML=precUpMulti.map(function(r,i){
+    return '<div style="border:1px solid var(--border);border-radius:6px;padding:.45rem;margin-bottom:.4rem">'
+      +'<div style="font-size:.75rem;color:var(--text-faint);margin-bottom:.25rem">'+esc(r.file.name)
+        +(r.state?' · <span style="color:var(--blue)">'+esc(r.state)+'</span>':'')+'</div>'
+      +'<input class="lib-search-input" style="margin-bottom:.25rem;font-size:.82rem" placeholder="Document name — e.g. Skeleton Argument — unfair prejudice" '
+        +'value="'+esc(r.name)+'" oninput="precUpMultiEdit('+i+',\'name\',this.value)">'
+      +'<select class="lib-select" style="font-size:.8rem" onchange="precUpMultiEdit('+i+',\'matterId\',this.value)">'
+        +'<option value="">— From which matter? —</option>'
+        +list.map(function(m){
+          return '<option value="'+m.id+'"'+(r.matterId===m.id?' selected':'')+'>'+esc(m.name)+'</option>';
+        }).join('')
+      +'</select>'
+      +'</div>';
+  }).join('');
+}
+
+function precUpMultiEdit(i,field,value){
+  if(precUpMulti[i])precUpMulti[i][field]=value;
+}
+
+/* Suggest a name for each file in turn, from its opening pages. Same prompt
+   as everywhere else, so the whole library is named on one convention. */
+async function precUpSuggestEach(){
+  for(var i=0;i<precUpMulti.length;i++){
+    var r=precUpMulti[i];
+    if(r.name.trim())continue;
+    r.state='reading…';precUpRenderMulti();
+    try{
+      var lower=r.file.name.toLowerCase();
+      var isDocx=lower.endsWith('.docx');
+      var pages=isDocx?await extractDocxText(r.file):await extractPdfText(r.file);
+      var text=pages.map(function(p){return p.text;}).join('\n\n');
+      if(!text||text.trim().length<30){r.state='no readable text — type a name';precUpRenderMulti();continue;}
+      var d=await api('/api/analyse','POST',{matterId:'',matterName:'',matterNature:'',matterIssues:'',messages:[{role:'user',content:PREC_NAME_PROMPT+text.slice(0,2000)}],jurisdiction:jurisdiction,queryType:'Factual Analysis',focusAreas:[]});
+      var suggested=(d&&d.result)?d.result.trim().replace(/^["']|["']$/g,'').slice(0,120):'';
+      if(libMatchingMatterName(suggested)){r.state='suggestion named a matter — type a name';}
+      else if(suggested&&suggested.length>2){r.name=suggested;r.state='';}
+      else{r.state='no suggestion — type a name';}
+    }catch(e){
+      r.state='could not read — type a name';
+    }
+    precUpRenderMulti();
+  }
+}
+
+/* Upload each file in turn. A failure stops and says how many are in, so the
+   user can remove those and retry the rest rather than risking duplicates. */
+async function precUploadSaveMulti(){
+  var ctId=document.getElementById('precUpCaseType').value;
+  if(!ctId){showToast('Please select a case type');return;}
+  var unnamed=precUpMulti.filter(function(r){return !r.name.trim();});
+  if(unnamed.length){showToast('Give every document a name ('+unnamed.length+' still blank)');return;}
+  var clashes=precUpMulti.filter(function(r){return libMatchingMatterName(r.name);});
+  if(clashes.length&&!confirm(clashes.length+' of these are named after a matter. The Precedent Library holds templates, and which matter each came from is recorded separately. Upload them under these names anyway?'))return;
+
+  var btn=document.getElementById('precUpSaveBtn');
+  btn.disabled=true;
+  var prog=document.getElementById('precUpProgress');
+  prog.style.display='';
+  var done=0;
+  for(var i=0;i<precUpMulti.length;i++){
+    var r=precUpMulti[i];
+    prog.textContent='Uploading '+(i+1)+' of '+precUpMulti.length+': '+r.name+'…';
+    r.state='uploading…';precUpRenderMulti();
+    try{
+      var fd=new FormData();
+      fd.append('action','create_precedent');
+      fd.append('name',r.name.trim());
+      fd.append('case_type_id',ctId);
+      fd.append('subcategory_id',document.getElementById('precUpStage').value||'');
+      fd.append('doc_type_id',document.getElementById('precUpDocType').value||'');
+      fd.append('jurisdiction',document.getElementById('precUpJur').value||'');
+      fd.append('description','');
+      fd.append('source_matter_id',r.matterId||'');
+      fd.append('file',r.file);
+      var tok=token||localStorage.getItem('elj_token');
+      var resp=await fetch('/api/library',{method:'POST',headers:{'Authorization':'Bearer '+tok},body:fd});
+      if(!resp.ok){var errData=await resp.json();throw new Error(errData.error||'Upload failed');}
+      r.state='stored';done++;
+    }catch(e){
+      r.state='failed: '+e.message;
+      precUpRenderMulti();
+      prog.textContent=done+' of '+precUpMulti.length+' uploaded. Stopped at "'+r.name+'": '+e.message;
+      btn.disabled=false;
+      await loadLibrary();
+      return;
+    }
+    precUpRenderMulti();
+  }
+  prog.style.display='none';
+  btn.disabled=false;
+  showToast('Uploaded '+done+' precedents');
+  await loadLibrary();
+  closeModal('precUploadModal');
 }

@@ -97,8 +97,10 @@ describe("renaming", () => {
 
   it("suggests from the stored chunks, sharing one prompt with the upload path", () => {
     expect(src).toMatch(/var PREC_NAME_PROMPT=/);
-    /* defined once; used by the upload path, the single rename, and the tidy */
-    expect((src.match(/PREC_NAME_PROMPT/g) || []).length).toBe(4);
+    /* One definition and no second copy of the text — that is the property
+       worth holding. Counting callers only breaks when one is added. */
+    expect((src.match(/var PREC_NAME_PROMPT=/g) || []).length).toBe(1);
+    expect((src.match(/REUSABLE PRECEDENT/g) || []).length).toBe(1);
     const sug = src.slice(src.indexOf("async function libSuggestPrecedentName"), src.indexOf("v5.65: keep matter names out"));
     expect(sug).toMatch(/type=prec_chunks/);
     expect(sug).toMatch(/libMatchingMatterName\(suggested\)/);
@@ -209,8 +211,10 @@ describe("bulk tidy", () => {
     expect(sug).not.toMatch(/Promise\.all/);
   });
 
-  it("shares one prompt with the upload and single-rename paths", () => {
-    expect((src.match(/PREC_NAME_PROMPT/g) || []).length).toBe(4);
+  it("uses the shared prompt rather than a copy of its own", () => {
+    const sug = src.slice(src.indexOf("async function libTidySuggestAll"), src.indexOf("async function libTidyApply"));
+    expect(sug).toContain("PREC_NAME_PROMPT");
+    expect(sug).not.toContain("REUSABLE PRECEDENT");
   });
 
   it("saves the new name and the source matter together", () => {
@@ -284,5 +288,68 @@ describe("deleting a precedent", () => {
   it("only suggests names for rows being renamed", () => {
     const sug = src.slice(src.indexOf("async function libTidySuggestAll"), src.indexOf("async function libTidyApply"));
     expect(sug).toMatch(/r\.action==='rename'/);
+  });
+});
+
+/* v5.69 — several precedents at once, each from its own matter. */
+describe("multi-file precedent upload", () => {
+  it("branches on how many files were chosen, leaving one file as it was", () => {
+    const chg = src.slice(src.indexOf("async function precUpFileChanged"), src.indexOf("async function libCreatePrecedent"));
+    expect(chg).toMatch(/if\(input\.files\.length>1\)/);
+    /* the single-file path still runs to the end, unchanged */
+    expect(chg).toMatch(/precUpMulti=\[\];\s*precUpShowSingleRows\(true\);/);
+  });
+
+  it("gives every file its own name and matter, defaulting to the open one", () => {
+    const chg = src.slice(src.indexOf("async function precUpFileChanged"), src.indexOf("async function libCreatePrecedent"));
+    expect(chg).toMatch(/currentMatter\.id/);
+    const render = src.slice(src.indexOf("function precUpRenderMulti"), src.indexOf("function precUpMultiEdit"));
+    expect(render).toMatch(/From which matter/);
+    expect(render).toMatch(/precUpMultiEdit\('\+i\+',\\'matterId\\'/);
+  });
+
+  it("hides the single Name and matter rows when there are several", () => {
+    const show = src.slice(src.indexOf("function precUpShowSingleRows"), src.indexOf("function precUpRenderMulti"));
+    expect(show).toContain("precUpSingleNameRow");
+    expect(show).toContain("precUpSingleMatterRow");
+  });
+
+  it("suggests each name with the one shared prompt", () => {
+    const sug = src.slice(src.indexOf("async function precUpSuggestEach"), src.indexOf("async function precUploadSaveMulti"));
+    expect(sug).toContain("PREC_NAME_PROMPT");
+    expect(sug).toMatch(/libMatchingMatterName\(suggested\)/);
+    /* skip a file the user has already named */
+    expect(sug).toMatch(/if\(r\.name\.trim\(\)\)continue/);
+  });
+
+  it("uploads in sequence and sends each file's own matter", () => {
+    const save = src.slice(src.indexOf("async function precUploadSaveMulti"));
+    expect(save).toMatch(/for\s*\(var i=0;i<precUpMulti\.length/);
+    expect(save).toMatch(/fd\.append\('source_matter_id',r\.matterId\|\|''\)/);
+    expect(save).not.toMatch(/Promise\.all/);
+  });
+
+  it("refuses to upload anything unnamed, and says how many", () => {
+    const save = src.slice(src.indexOf("async function precUploadSaveMulti"));
+    expect(save).toMatch(/unnamed\.length/);
+    expect(save).toMatch(/still blank/);
+  });
+
+  it("stops at a failure and reports how many are already in", () => {
+    const save = src.slice(src.indexOf("async function precUploadSaveMulti"));
+    expect(save).toMatch(/done\+' of '\+precUpMulti\.length\+' uploaded/);
+    expect(save).toMatch(/Stopped at/);
+  });
+
+  it("routes Save to whichever mode is in play", () => {
+    const at = src.indexOf("async function precUploadSave(){");
+    expect(at).toBeGreaterThan(-1);
+    /* the routing is the first thing the function does */
+    expect(src.slice(at, at + 200)).toMatch(/if\(precUpIsMulti\(\)\)return precUploadSaveMulti\(\)/);
+  });
+
+  it("no longer offers a case name as the example to follow", () => {
+    const html = fs.readFileSync(new URL("../../public/index.html", import.meta.url), "utf8");
+    expect(html).not.toContain("Skeleton — ABC v DEF (2024)");
   });
 });

@@ -255,6 +255,23 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
   the pattern Push B follows — see the `leg*` functions in `library.js` and
   `create_legislation` in `api/library.js`.
 
+## Merging (standing instruction, 10 Sep 2026)
+Tom's rule: **open the PR, wait for CI, and merge it yourself once the tests
+pass.** No need to ask each time.
+
+- CI is `.github/workflows/tests.yml` — `npm test` on a clean machine, on
+  every PR into `main`. Green is the gate.
+- Merge with **rebase**. `main` has never carried a merge commit; keep it
+  linear.
+- Still stop and ask when:
+  - tests fail, or a check is red for a reason that is not obviously mine
+  - there is a merge conflict whose resolution loses someone's work
+  - the change deletes data, drops a column, or is otherwise hard to undo
+  - the work turned up a decision that is Tom's to make, not mine
+- Say what was merged and what still needs him — a migration to run, a thing
+  to test against live data. A green tick means the logic behaves as written,
+  never that it works against the real Supabase.
+
 ## House style
 - British English throughout, in code comments and UI text alike.
 - Comments explain *why*, and carry version markers (`v5.56 Push B: …`).

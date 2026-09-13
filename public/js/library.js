@@ -969,40 +969,92 @@ var clResume=null;
    confirm() message is affected; the stored name keeps its punctuation. */
 function clAttr(s){return esc(String(s||'')).replace(/'/g,'');}
 
+/* v5.73: why a read failed, so the Upload button can say something true
+   rather than "Choose a file first" while the picker shows a file. */
+var clReadFailure='';
+/* The name last filled in from a filename. Anything else in the box was
+   typed by the user and is never overwritten. */
+var clNameFromFile='';
+
+function clReadFailed(input,message){
+  clPendingText=null;clPendingPages=null;clPendingFile=null;
+  clReadFailure=message;
+  var st=document.getElementById('clUpStatus');
+  if(st){st.style.display='';st.style.color='var(--error)';st.textContent=message;}
+  /* Clear the picker. Leaving the filename showing while the app holds no
+     text is what made this maddening: the screen said a file was chosen and
+     the button said to choose one. */
+  if(input)input.value='';
+}
+
 async function clFileChanged(input){
   clPendingText=null;clPendingPages=null;clPendingFile=null;clResume=null;
-  clSegments=null;clSetResume=null;clRenderSegments();
+  clSegments=null;clSetResume=null;clReadFailure='';clNameFromFile='';clRenderSegments();
   var st=document.getElementById('clUpStatus');
+  if(st)st.style.color='var(--blue)';
   if(!input.files||!input.files[0])return;
   var file=input.files[0];
   var lower=file.name.toLowerCase();
   var isPdf=lower.endsWith('.pdf'),isDocx=lower.endsWith('.docx');
-  if(!isPdf&&!isDocx){st.style.display='';st.textContent='PDF or DOCX only.';return;}
+  if(!isPdf&&!isDocx){clReadFailed(input,'PDF or DOCX only — that file was not loaded.');return;}
+
+  /* Offer a name straight away, from the filename. This used to happen only
+     after a successful read, so a file that would not read left the name box
+     empty too — and the first thing the user met was a demand for a name,
+     not the actual problem.
+
+     A filename is often a perfectly good name, so it stands unless the
+     heading gives a better one. clNameFromFile records that this was a guess
+     rather than something typed: a heading may replace a guess, never a
+     name the user wrote. */
+  var nameField=document.getElementById('clUpName');
+  if(nameField&&!nameField.value.trim()){
+    nameField.value=file.name.replace(/\.(pdf|docx)$/i,'').replace(/[_-]+/g,' ').trim();
+    clNameFromFile=nameField.value;
+  }
+
   st.style.display='';st.textContent='Reading document…';
+  var pages,text;
   try{
-    var pages=isDocx?await extractDocxText(file):await extractPdfText(file);
-    var text=pages.map(function(p){return p.text;}).join('\n\n');
-    if(!text||text.trim().length<200){st.textContent='No readable text — if this is a scanned PDF, OCR it first.';return;}
-    clPendingText=text;
-    clPendingPages=pages;
-    clPendingFile={name:file.name,size:file.size};
-    /* Say up front how many POSTs this will take — a textbook runs to
-       dozens, and a silent five-minute upload looks like a hang. */
-    var batchCount=packPagesIntoBatches(pages,CL_BATCH_TARGET_BYTES).length;
-    st.textContent='Read '+text.length.toLocaleString()+' characters'
-      +(batchCount>1?' — will upload in '+batchCount+' batches.':'.');
-    var nameField=document.getElementById('clUpName');
-    if(nameField&&!nameField.value.trim()){
-      nameField.value=file.name.replace(/\.(pdf|docx)$/i,'').replace(/[_-]+/g,' ').trim();
-    }
-    /* v5.62 Push D: does this file hold more than one judgment? */
+    pages=isDocx?await extractDocxText(file):await extractPdfText(file);
+    text=pages.map(function(p){return p.text;}).join('\n\n');
+  }catch(e){
+    clReadFailed(input,'Could not read '+file.name+': '+e.message
+      +(isPdf?' — if it is a scan, OCR it first (ilovepdf.com), then choose it again.':''));
+    return;
+  }
+  var got=(text||'').trim().length;
+  if(got<200){
+    clReadFailed(input,got===0
+      ? 'No text came out of '+file.name+'. It is almost certainly a scan — OCR it first (ilovepdf.com), then choose it again.'
+      : 'Only '+got+' characters came out of '+file.name+' — too little to store as an authority. If it is a scan, OCR it first, then choose it again.');
+    return;
+  }
+
+  clPendingText=text;
+  clPendingPages=pages;
+  clPendingFile={name:file.name,size:file.size};
+  st.style.color='var(--blue)';
+  /* Say up front how many POSTs this will take — a textbook runs to
+     dozens, and a silent five-minute upload looks like a hang. */
+  var batchCount=packPagesIntoBatches(pages,CL_BATCH_TARGET_BYTES).length;
+  st.textContent='Read '+text.length.toLocaleString()+' characters'
+    +(batchCount>1?' — will upload in '+batchCount+' batches.':'.');
+
+  /* v5.62 Push D: does this file hold more than one judgment? Detection and
+     naming are conveniences — a failure in either must not cost the user the
+     text that was read successfully. */
+  try{
+    st.textContent='Read '+text.length.toLocaleString()+' characters — reading the heading…';
     clSegments=await clDetectSegments(pages);
     clRenderSegments();
-    if(clSegments){
-      st.textContent='Read '+text.length.toLocaleString()+' characters — '
-        +clSegments.length+' authorities found.';
-    }
-  }catch(e){st.textContent='Read error: '+e.message;}
+    st.textContent='Read '+text.length.toLocaleString()+' characters'
+      +(clSegments?' — '+clSegments.length+' authorities found.':'. Check the name and citation, then Upload.');
+  }catch(e){
+    clSegments=null;clRenderSegments();
+    st.textContent='Read '+text.length.toLocaleString()+' characters. '
+      +'Could not check for several judgments ('+e.message+') — it will be stored as one.';
+  }
 }
 
 async function clSubjectAdd(){
@@ -1176,8 +1228,17 @@ async function clRunUpload(meta,resume){
 async function clUpload(){
   var nameField=document.getElementById('clUpName');
   var name=nameField.value.trim();
+  /* v5.73: the file comes first. Asking for a name before saying the file
+     could not be read sent the user round in a circle — type a name, then be
+     told to choose a file, then be told the file cannot be read. Whatever is
+     actually wrong should be the first thing said. */
+  if(!clPendingText||!clPendingPages){
+    showToast(clReadFailure||'Choose a file first');
+    var stg=document.getElementById('clUpStatus');
+    if(clReadFailure&&stg){stg.style.display='';stg.style.color='var(--error)';stg.textContent=clReadFailure;}
+    return;
+  }
   if(!name){showToast('Enter the case or textbook name');return;}
-  if(!clPendingText||!clPendingPages){showToast('Choose a file first');return;}
   var linkBox=document.getElementById('clUpMatterLink');
   var wantsLink=!!(linkBox&&linkBox.checked);
   if(wantsLink&&!currentMatter){showToast('No matter open — open one first, or untick the dual-link box');return;}
@@ -1314,9 +1375,40 @@ var clSetResume=null;     /* {caseIndex, meta} — which case to restart at */
 
 function clSegmentsPanel(){return document.getElementById('clSegments');}
 
+/* v5.73: read the heading of a single authority too. Naming only ever ran
+   when a file split into two or more judgments, so one case arrived named
+   after its filename with no citation at all — the user typed both every
+   time. Fills the Name and Citation boxes, and only where they are empty, so
+   anything already typed is never overwritten. */
+async function clNameSingle(segs){
+  if(!segs||!segs.length)return;
+  var nameField=document.getElementById('clUpName');
+  var citeField=document.getElementById('clUpCitation');
+  /* Empty, or still holding the guess made from the filename. */
+  var current=nameField?nameField.value.trim():'';
+  var wantName=nameField&&(!current||current===clNameFromFile);
+  var wantCite=citeField&&!citeField.value.trim();
+  if(!wantName&&!wantCite)return;
+  try{
+    var d=await api('/api/library','POST',{
+      action:'name_case_law_segments',
+      segments:[{index:0,excerpt:segs[0].excerpt}]
+    });
+    var got=(d&&d.segments&&d.segments[0])||{};
+    if(wantName&&got.name){nameField.value=got.name;clNameFromFile='';}
+    if(wantCite&&got.citation)citeField.value=got.citation;
+  }catch(e){
+    /* A convenience, never a gate — the boxes stay as they were. */
+    console.log('clNameSingle failed:',e.message);
+  }
+}
+
 async function clDetectSegments(pages){
   var segs=(typeof clSplitPages==='function')?clSplitPages(pages):[];
-  if(!segs||segs.length<2)return null;
+  if(!segs||segs.length<2){
+    await clNameSingle(segs);
+    return null;
+  }
   var st=document.getElementById('clUpStatus');
   st.style.display='';
   st.textContent='Looks like '+segs.length+' judgments — reading their headings…';
@@ -1395,10 +1487,12 @@ function clUploadAsOne(){
    fields — doc type, subject, sub-tags, jurisdiction, dual-link — come from
    the form and apply to all of them; name and citation are per case. */
 async function clUploadSet(resume){
+  /* v5.73: same ordering rule as clUpload — say what is actually wrong. */
+  if(!clPendingPages){showToast(clReadFailure||'Choose a file first');return;}
   var chosen=(clSegments||[]).filter(function(s){return s.keep;});
   if(!chosen.length){showToast('Nothing ticked');return;}
   var missing=chosen.filter(function(s){return !s.name.trim();});
-  if(missing.length){showToast('Give every ticked authority a name');return;}
+  if(missing.length){showToast('Give every ticked authority a name — '+missing.length+' still blank');return;}
 
   var linkBox=document.getElementById('clUpMatterLink');
   var wantsLink=!!(linkBox&&linkBox.checked);

@@ -102,6 +102,32 @@ subjects via `subject_id`. There is no `file_name` column on `case_law_docs`.
     boundary, so a few chunk joins in a batched upload are clean cuts.
     `/api/upload` has the same property.
 
+## The case law upload must never loop (v5.73)
+Reported failure, roughly one file in six: the picker showed a filename,
+Upload said "Enter the case or textbook name", typing one got "Choose a file
+first", and re-picking said it could not read the file. Round in a circle.
+
+- **Cause**: a failed read left `clPendingText` null while the picker still
+  displayed the file, and the name was demanded *before* the real problem was
+  stated. The name auto-fill also sat after the early return, so a file that
+  would not read left the name box empty too.
+- `clReadFailed` now handles every failure: it clears `input.value` so the
+  picker cannot show a file the app does not hold, records `clReadFailure`,
+  and says what happened — naming the file, and distinguishing no text at all
+  (a scan → OCR) from too little.
+- `clUpload` and `clUploadSet` **check the file before the name**, and repeat
+  `clReadFailure` rather than "Choose a file first".
+- Naming precedence: the filename fills the box immediately (so a failed read
+  still leaves something usable) and is recorded in `clNameFromFile`. A
+  heading read by `clNameSingle` may replace that **guess**, never a name the
+  user typed. A filename is often perfectly good, so it stands when the
+  heading gives nothing.
+- `clNameSingle` runs for a *single* authority. Before this, naming only ran
+  when a file split into two or more judgments, so one case arrived named
+  after its filename with no citation — the user typed both every time.
+- Detection and naming are wrapped: a failure there keeps the text that was
+  read and stores the file as one authority.
+
 ## Case law in the Draft tool (Push C, v5.59)
 - Draft tab → Sources → **Case Law & Texts** box. Client code is the
   `draftCl*` block at the foot of `public/js/drafting.js`; it reads

@@ -128,6 +128,29 @@ first", and re-picking said it could not read the file. Round in a circle.
 - Detection and naming are wrapped: a failure there keeps the text that was
   read and stores the file as one authority.
 
+## When a readable PDF yields no text (v5.74)
+Reported with "14. Morris v Stratford-on-Avon [1973] 3 All ER 263.pdf" — a
+downloaded law report, plainly readable, told it was "almost certainly a
+scan". It was not.
+
+- `extractPdfText` now records `items` per page, the number of text fragments
+  pdf.js found. That is what separates **no text layer at all** (a scan or a
+  print-to-image: zero fragments) from **glyphs with no usable character map**
+  (fragments present, characters empty) — common in older law-report PDFs,
+  which read perfectly on screen and are unreadable to software. The two look
+  identical to the user and need different advice.
+- `clReadDiagnosis` names the file and gives pages, fragments and characters,
+  and distinguishes a damaged file (0 pages) from both of the above.
+- **Paste escape**: "or paste the text instead" under the file input opens a
+  textarea. Pasted text becomes a single page and takes exactly the same road
+  as a file — naming, splitting, batching, chunking — so nothing downstream
+  knows the difference. It opens itself the moment a read fails, which is the
+  moment the user is stuck.
+- `clNameFromFile` is **not** cleared when a read fails. The box still holds
+  the guess made from that filename; forgetting it would make the stale guess
+  look like something the user typed, and the next file's heading could never
+  replace it. The fill condition is "empty, or still the guess".
+
 ## Case law in the Draft tool (Push C, v5.59)
 - Draft tab → Sources → **Case Law & Texts** box. Client code is the
   `draftCl*` block at the foot of `public/js/drafting.js`; it reads

@@ -976,7 +976,37 @@ var clReadFailure='';
    typed by the user and is never overwritten. */
 var clNameFromFile='';
 
+/* v5.74: say what was actually found. "It is almost certainly a scan" was
+   wrong often enough to be worth replacing: a PDF that reads perfectly in a
+   viewer can still yield nothing here, when its glyphs carry no usable
+   character mapping. Pages and fragment counts tell the two apart, and the
+   advice differs. */
+function clReadDiagnosis(file,pages,got){
+  var list=pages||[];
+  var pageCount=list.length;
+  var fragments=0;
+  list.forEach(function(p){ fragments+=(typeof p.items==='number')?p.items:0; });
+  var where=' — '+pageCount+' page'+(pageCount===1?'':'s')+', '+fragments.toLocaleString()+' text fragment'+(fragments===1?'':'s')+', '+got.toLocaleString()+' characters.';
+
+  if(pageCount===0){
+    return 'Nothing could be read from '+file.name+where+' The file may be damaged. Try opening it and re-saving it as a PDF.';
+  }
+  if(got===0&&fragments===0){
+    return 'No text layer in '+file.name+where+' Every page is an image, so there is nothing to store. OCR it first (ilovepdf.com), then choose it again.';
+  }
+  if(got===0){
+    return file.name+' has text but none of it could be decoded'+where
+      +' The glyphs carry no usable character map — common in older law-report PDFs, and it reads fine on screen while being unreadable to software. OCR it (ilovepdf.com), or paste the text below.';
+  }
+  return 'Only '+got+' characters came out of '+file.name+where
+    +' Too little to store as an authority. OCR it, or paste the text below.';
+}
+
 function clReadFailed(input,message){
+  /* Open the paste box on the way past: the user is stuck at exactly this
+     moment, and the way through is two lines below the message. */
+  var wrap=document.getElementById('clPasteWrap');
+  if(wrap)wrap.style.display='';
   clPendingText=null;clPendingPages=null;clPendingFile=null;
   clReadFailure=message;
   var st=document.getElementById('clUpStatus');
@@ -987,9 +1017,56 @@ function clReadFailed(input,message){
   if(input)input.value='';
 }
 
+/* v5.74: take the text from the clipboard when the PDF will not give it up.
+   Everything downstream — naming, splitting, batching, chunking — works from
+   pages, so pasted text becomes a single page and takes exactly the same
+   road. The name is not guessed from a filename here because there is no
+   file; the heading supplies it, or the user types it. */
+function clPasteToggle(){
+  var wrap=document.getElementById('clPasteWrap');
+  if(!wrap)return;
+  var showing=wrap.style.display!=='none';
+  wrap.style.display=showing?'none':'';
+  if(!showing){var box=document.getElementById('clPasteText');if(box)box.focus();}
+}
+
+async function clPasteUse(){
+  var box=document.getElementById('clPasteText');
+  var st=document.getElementById('clUpStatus');
+  var text=box?box.value:'';
+  if(!text||text.trim().length<200){
+    if(st){st.style.display='';st.style.color='var(--error)';
+      st.textContent='Paste the text of the authority first — at least a couple of hundred characters.';}
+    return;
+  }
+  /* A fresh start: pasted text replaces whatever file was chosen before. */
+  var fileInput=document.getElementById('clUpFile');
+  if(fileInput)fileInput.value='';
+  clResume=null;clSegments=null;clSetResume=null;clReadFailure='';clRenderSegments();
+
+  var pages=[{page:1,text:text}];
+  clPendingText=text;
+  clPendingPages=pages;
+  clPendingFile={name:'pasted text',size:text.length};
+  if(st){st.style.display='';st.style.color='var(--blue)';st.textContent='Using '+text.length.toLocaleString()+' pasted characters — reading the heading…';}
+  try{
+    clSegments=await clDetectSegments(pages);
+    clRenderSegments();
+    if(st){st.textContent='Using '+text.length.toLocaleString()+' pasted characters'
+      +(clSegments?' — '+clSegments.length+' authorities found.':'. Check the name and citation, then Upload.');}
+  }catch(e){
+    clSegments=null;clRenderSegments();
+    if(st)st.textContent='Using '+text.length.toLocaleString()+' pasted characters. Check the name and citation, then Upload.';
+  }
+}
+
 async function clFileChanged(input){
   clPendingText=null;clPendingPages=null;clPendingFile=null;clResume=null;
-  clSegments=null;clSetResume=null;clReadFailure='';clNameFromFile='';clRenderSegments();
+  /* clNameFromFile is deliberately NOT cleared here. After a read that
+     failed, the box still holds the guess made from that filename; clearing
+     the record would make that stale guess look like something the user
+     typed, and the next file's heading could never replace it. */
+  clSegments=null;clSetResume=null;clReadFailure='';clRenderSegments();
   var st=document.getElementById('clUpStatus');
   if(st)st.style.color='var(--blue)';
   if(!input.files||!input.files[0])return;
@@ -1008,7 +1085,8 @@ async function clFileChanged(input){
      rather than something typed: a heading may replace a guess, never a
      name the user wrote. */
   var nameField=document.getElementById('clUpName');
-  if(nameField&&!nameField.value.trim()){
+  var held=nameField?nameField.value.trim():'';
+  if(nameField&&(!held||held===clNameFromFile)){
     nameField.value=file.name.replace(/\.(pdf|docx)$/i,'').replace(/[_-]+/g,' ').trim();
     clNameFromFile=nameField.value;
   }
@@ -1025,15 +1103,17 @@ async function clFileChanged(input){
   }
   var got=(text||'').trim().length;
   if(got<200){
-    clReadFailed(input,got===0
-      ? 'No text came out of '+file.name+'. It is almost certainly a scan — OCR it first (ilovepdf.com), then choose it again.'
-      : 'Only '+got+' characters came out of '+file.name+' — too little to store as an authority. If it is a scan, OCR it first, then choose it again.');
+    clReadFailed(input,clReadDiagnosis(file,pages,got));
     return;
   }
 
   clPendingText=text;
   clPendingPages=pages;
   clPendingFile={name:file.name,size:file.size};
+  /* The file read fine, so the paste escape is not needed — put it away
+     rather than leaving two sources of text on screen at once. */
+  var pasteWrap=document.getElementById('clPasteWrap');
+  if(pasteWrap)pasteWrap.style.display='none';
   st.style.color='var(--blue)';
   /* Say up front how many POSTs this will take — a textbook runs to
      dozens, and a silent five-minute upload looks like a hang. */
@@ -1207,6 +1287,10 @@ async function clRunUpload(meta,resume){
   clPendingText=null;clPendingPages=null;clPendingFile=null;clResume=null;
   var fileInput=document.getElementById('clUpFile');
   if(fileInput)fileInput.value='';
+  var pasteBox=document.getElementById('clPasteText');
+  if(pasteBox)pasteBox.value='';
+  var pasteWrap=document.getElementById('clPasteWrap');
+  if(pasteWrap)pasteWrap.style.display='none';
   document.getElementById('clUpName').value='';
   document.getElementById('clUpCitation').value='';
   document.getElementById('clUpTags').value='';

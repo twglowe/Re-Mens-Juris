@@ -51,8 +51,10 @@ describe("a failed read leaves honest state", () => {
   });
 
   it("distinguishes nothing at all from too little", () => {
-    expect(changed).toMatch(/No text came out of/);
-    expect(changed).toMatch(/Only '\+got\+' characters came out of/);
+    /* v5.74 moved the wording into clReadDiagnosis */
+    const diag = src.slice(src.indexOf("function clReadDiagnosis"), src.indexOf("function clReadFailed"));
+    expect(diag).toMatch(/No text layer in/);
+    expect(diag).toMatch(/Only '\+got\+' characters came out of/);
   });
 
   it("names the file in the message", () => {
@@ -69,7 +71,8 @@ describe("the name is offered whatever happens to the read", () => {
   });
 
   it("never overwrites a name already typed", () => {
-    expect(changed).toMatch(/if\(nameField&&!nameField\.value\.trim\(\)\)/);
+    /* empty, or still the guess this code made — never anything else */
+    expect(changed).toMatch(/if\(nameField&&\(!held\|\|held===clNameFromFile\)\)/);
   });
 });
 
@@ -102,5 +105,69 @@ describe("detection failing does not cost the text", () => {
     expect(tail).toMatch(/Could not check for several judgments/);
     /* the text stays; it is simply stored as one authority */
     expect(tail).not.toMatch(/clPendingText=null/);
+  });
+});
+
+/* v5.74 — a PDF that reads perfectly on screen can still yield nothing.
+   Reported with "14. Morris v Stratford-on-Avon [1973] 3 All ER 263.pdf",
+   told it was "almost certainly a scan" when it was not one. */
+describe("saying what was actually found", () => {
+  const diag = src.slice(src.indexOf("function clReadDiagnosis"), src.indexOf("function clReadFailed"));
+
+  it("counts pages and text fragments, not just characters", () => {
+    expect(diag).toMatch(/fragments\+=\(typeof p\.items==='number'\)/);
+    expect(diag).toMatch(/pageCount/);
+  });
+
+  it("tells a damaged file, a scan and an undecodable one apart", () => {
+    expect(diag).toMatch(/pageCount===0/);
+    expect(diag).toMatch(/got===0&&fragments===0/);
+    expect(diag).toContain("no usable character map");
+  });
+
+  it("no longer tells the user a readable PDF is almost certainly a scan", () => {
+    /* scoped to what the function returns — the phrase survives above it in
+       a comment recording what the wording used to be */
+    expect(diag).not.toContain("almost certainly a scan");
+  });
+
+  it("extractPdfText reports the fragment count it saw", () => {
+    const core = fs.readFileSync(new URL("../../public/js/core.js", import.meta.url), "utf8");
+    expect(core).toMatch(/items:tc\.items\.length/);
+  });
+});
+
+describe("pasting the text when the PDF will not give it up", () => {
+  const paste = src.slice(src.indexOf("async function clPasteUse"), src.indexOf("async function clFileChanged"));
+
+  it("takes the same road as a file, as one page", () => {
+    expect(paste).toMatch(/pages=\[\{page:1,text:text\}\]/);
+    expect(paste).toMatch(/clDetectSegments\(pages\)/);
+  });
+
+  it("refuses a scrap", () => {
+    expect(paste).toMatch(/text\.trim\(\)\.length<200/);
+  });
+
+  it("clears any file chosen before, so there is one source of text", () => {
+    expect(paste).toMatch(/if\(fileInput\)fileInput\.value=''/);
+  });
+
+  it("opens itself the moment a read fails", () => {
+    const failed = src.slice(src.indexOf("function clReadFailed"), src.indexOf("async function clFileChanged"));
+    expect(failed).toMatch(/clPasteWrap/);
+  });
+
+  it("is put away when a file reads successfully, and after an upload", () => {
+    expect((src.match(/pasteWrap\.style\.display='none'/g) || []).length).toBe(2);
+  });
+});
+
+describe("a stale filename guess", () => {
+  it("stays replaceable after a read that failed", () => {
+    /* the guess from a failed pick must not masquerade as a typed name, or
+       the next file's heading can never replace it */
+    expect(changed).toMatch(/held===clNameFromFile/);
+    expect(changed).not.toMatch(/clReadFailure='';clNameFromFile=''/);
   });
 });

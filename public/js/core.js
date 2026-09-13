@@ -2285,7 +2285,13 @@ async function extractPdfText(file){
   var buf=await file.arrayBuffer();
   var pdf=await pdfjsLib.getDocument({data:buf}).promise;
   var pages=[];
-  for(var i=1;i<=pdf.numPages;i++){var page=await pdf.getPage(i);var tc=await page.getTextContent();var pageText=tc.items.map(function(item){return item.str;}).join(' ');pages.push({page:i,text:pageText});}
+  /* v5.74: `items` records how many text fragments pdf.js found on the page,
+     which is what tells a PDF with no text layer at all (a scan, or a
+     print-to-image: zero fragments) apart from one whose glyphs carry no
+     usable mapping (fragments present, characters empty). The two look
+     identical to the user and need different advice. Additive — every
+     caller reads .text and is unaffected. */
+  for(var i=1;i<=pdf.numPages;i++){var page=await pdf.getPage(i);var tc=await page.getTextContent();var pageText=tc.items.map(function(item){return item.str;}).join(' ');pages.push({page:i,text:pageText,items:tc.items.length});}
   return pages;
 }
 

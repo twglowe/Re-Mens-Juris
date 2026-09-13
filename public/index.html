@@ -728,6 +728,17 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
             </div>
             <input class="lib-search-input" id="clUpTags" placeholder="Sub-tags, comma separated" style="margin-bottom:.25rem">
             <input type="file" id="clUpFile" accept=".pdf,.docx" style="width:100%;font-size:.78rem;margin-bottom:.25rem" onchange="clFileChanged(this)">
+            <!-- v5.74: a PDF whose glyphs carry no character map reads fine on
+                 screen and yields nothing here. Rather than send the user away
+                 to OCR it, let them select the text in their reader and paste
+                 it straight in. -->
+            <div style="margin-bottom:.25rem">
+              <a href="#" onclick="event.preventDefault();clPasteToggle()" style="font-size:.75rem;color:var(--blue)">or paste the text instead</a>
+            </div>
+            <div id="clPasteWrap" style="display:none;margin-bottom:.25rem">
+              <textarea id="clPasteText" rows="5" placeholder="Open the PDF, select all the text, copy it, and paste it here." style="width:100%;padding:.4rem .55rem;border:1.5px solid var(--border);border-radius:5px;font-family:'Source Sans 3',sans-serif;font-size:.8rem;background:var(--white);resize:vertical"></textarea>
+              <button class="lib-box-btn" onclick="clPasteUse()" style="width:100%;margin-top:.2rem;font-size:.78rem">Use this text</button>
+            </div>
             <label style="display:flex;gap:.35rem;align-items:flex-start;font-size:.75rem;margin-bottom:.3rem;cursor:pointer">
               <input type="checkbox" id="clUpMatterLink" style="margin-top:.15rem;flex-shrink:0">
               <span id="clUpMatterLabel" style="color:var(--text-faint)">Also add to the current matter — none open</span>
@@ -1541,9 +1552,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
   </div>
 </div>
 <script src="/js/case_law_split.js?v=5.72"></script>
-<script src="/js/core.js?v=5.56"></script>
+<script src="/js/core.js?v=5.74"></script>
 <script src="/js/tools.js?v=5.54"></script>
-<script src="/js/library.js?v=5.73"></script>
+<script src="/js/library.js?v=5.74"></script>
 <script src="/js/drafting.js?v=5.60"></script>
 <script src="/js/diagram.js?v=5.16c"></script>
 <!-- v5.13b: Previous Drafts modal -->

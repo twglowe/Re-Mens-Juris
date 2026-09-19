@@ -366,7 +366,11 @@ Later, separately: Sift Analysis tool; sift metadata passed to Draft; learned ru
 
 **Open questions before push 1:**
 
-- [ ] First target matter: Tianrui (decided 19 Sep 2026). To confirm: are its anchor documents and chronology already in ELJ?
+- [ ] First target matter: Tianrui (decided 19 Sep 2026). Its anchor documents and
+      chronology are **not yet loaded into ELJ** (confirmed 19 Sep 2026). They must be
+      before Push 2 can be tested against a real frame, since the frame is built from
+      them. Push 1 does not need them, and the `sift.js` shell of Push 2 can be built
+      meanwhile. Left unticked: the question is answered, the loading is not done.
 - [x] Chrome available on the sift machine — confirmed 19 Sep 2026
 - [ ] Confirm `owner_id` as the ownership column for both new tables, consistent with `matters`.
 - [ ] Tier 1 threshold: start at 25 and tune, or set from the sample run only?

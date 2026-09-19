@@ -1,0 +1,11 @@
+# Node dependencies, restored by `npm ci` from package-lock.json.
+node_modules/
+
+# Python bytecode. tools/ocr_batch.py is the first Python in the repo;
+# running it, or a `python3 -m py_compile` syntax check, leaves these behind.
+__pycache__/
+*.pyc
+
+# Local output from tools/ocr_batch.py, in case anyone points it at the repo.
+# The discovery set itself must never be committed.
+ocr_log.csv

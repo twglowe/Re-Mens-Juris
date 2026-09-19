@@ -162,13 +162,15 @@ The index is a sortable table in the Sift panel, backed by `sift_documents`, wit
 
 **Upload shortlisted documents.** Tick rows and choose Upload to Matter. The browser reads each ticked file from the folder handle and uploads it through the existing document pipeline. The `sift_documents` row is stamped with the resulting `documents.id`. Nothing unticked ever leaves your machine.
 
-**Into the chronology and issues.** `new_event` and `adds_detail` rows are not pushed from the index; they are decided in Review mode (below), where each proposed chronology line and issue effect is shown in place and you choose Keep, Discard or Defer. The index remains the master list and shows each document's decision.
+**Into the chronology and issues.** `new_event` and `adds_detail` rows are not pushed from the index; they are decided in the chronology and issue views (below), where each proposed line and issue effect is shown in place and you tick or cross it, approval being the default. The index remains the master list and shows each document's decision.
 
 ## Downstream use in ELJ
 
 Yes: once shortlisted documents are uploaded, every existing tool sees them as ordinary matter documents, and the sift results add a layer the tools can use.
 
-**Existing tools, unchanged.** Chronology, Issues, Draft and the other tools read from the matter's documents table. Uploaded shortlist documents enter that table through the normal pipeline and are picked up on the next run. No tool changes are needed for this.
+**Most existing tools, unchanged.** Issues, Draft and the others read from the matter's documents table. Uploaded shortlist documents enter that table through the normal pipeline and are picked up on the next run. No tool changes are needed for those.
+
+**The Chronology tool is the exception** (19 September 2026). It changes from producing text to maintaining entries, so that the sift can amend the chronology and hand it back. See "The chronology: one table, two windows" below, and Push 6a.
 
 **Existing tools, enriched (optional, later push).** Each uploaded document carries its sift metadata: date, type, parties, issue references, chronology references and note. Two uses follow:
 
@@ -179,37 +181,86 @@ Yes: once shortlisted documents are uploaded, every existing tool sees them as o
 
 **What it cannot do.** Draft and Issues will not cite a document that has not been uploaded, and should not, because a citation must be to text the model has read in full. The sift is the sieve; the tools work on what passes through it.
 
-## Review mode: deciding while reading
+**Why the tab exists.** Not to let the tools reach documents that were never uploaded, but to avoid uploading tens of thousands of them. The sift decides which few hundred earn a place in the matter; those are uploaded, and are then ordinary documents to every tool. The saving is in what never gets uploaded, not in a shortcut past uploading.
 
-You decide keep or discard for each new document where its significance is visible: inside the chronology it would change, or under the issue it bears on. This is a core feature, not an extra.
+## The chronology: one table, two windows
 
-**Chronology review.** Open the chronology for the matter (or a designated chronology). Each sifted document with a verdict of `new_event` or `adds_detail` appears inline at its date, visually marked as new and not yet part of the chronology. Each entry shows:
+Decided 19 September 2026. This replaces the original "Review mode" design,
+which assumed the chronology was already a set of addressable entries. It is
+not: today the chronology is text produced by the Chronology tool and stored in
+`tool_jobs`. Everything below follows from making it entries.
 
-- a proposed chronology line drafted in the existing format, citing the document by name;
-- for `adds_detail`, the existing entry it would amend, with the addition shown as a change;
-- for `new_event`, the neighbouring existing entries, so you see what it sits between;
-- the document note, parties and issue references;
-- **Keep** / **Discard** / **Defer**, and a link to open the local file.
+The chronology is **one set of entries**. The Chronology tool and the Document
+Sift are two windows onto it, not two chronologies to be reconciled. Drafts and
+the other tools read it wherever they read the chronology today.
 
-Keep uploads the document into the matter, writes the chronology line (as amendment or new entry) and marks it as accepted. Discard records the decision in `sift_documents` and hides the entry. Defer leaves it marked new for a later pass. Nothing is written to the chronology without a Keep.
+**The round trip:**
 
-**Issue review.** Each frame issue gets a page listing the sifted documents tied to it, grouped by `issue_effect`:
+1. The **Chronology tool** produces the first chronology from the matter's own
+   documents, as it does today.
+2. **Document Sift opens on that chronology** and amends it from the discovery
+   set: new entries where a document shows an event the chronology lacks, added
+   detail where it shows more about an event already there.
+3. The sift also writes **pinpoints onto entries that already exist** — entries
+   whose documents the matter already held, but with no page or bundle
+   reference. The production carries references the matter's own copy never
+   had; this is that insight applied to the chronology rather than to a
+   document.
+4. **You review and finalise in the sift.**
+5. The finalised chronology **is** the chronology. It appears in the Tools
+   section, where you amend it by hand, and that is what Drafts and the other
+   tools use.
+6. **You can return to the sift and revise.** There is no one-way gate.
 
-| Effect | Meaning |
-| --- | --- |
-| `adds` | Supports or supplements what the anchor documents already say on the issue |
-| `changes` | Contradicts, qualifies or reframes the position on the issue |
-| `neutral` | Mentions the issue without moving it |
+**Propose against, never regenerate** (decided 19 September 2026). Once entries
+exist, pressing Chronology in Tools does not lay fresh text over the top of
+them. It reads the existing entries, proposes additions and changes for the
+documents it has not yet accounted for, and you approve them — the same review
+pattern the sift uses, so the two behave alike. This is the rule that makes the
+round trip safe: nothing the model generates can silently discard an entry you
+finalised.
 
-`changes` sits at the top. Each row shows the note, the relevant passage the model relied on, and the same Keep / Discard / Defer controls. A document kept from the issue page is also placed in the chronology at its date and marked new there, so the two views stay consistent.
+It is also a real change to what that button does. The Chronology tool stops
+producing a document and starts maintaining a list. That work is Push 6a.
 
-**Consistency rules.** One decision per document, whichever view it is made in. A thread is decided as a whole by default, with the option to keep only particular messages. Discarded documents stay in the index and can be reinstated; they are not deleted.
+### Reviewing in the sift
 
-**Learned rules.** Keep and discard decisions feed the frame's Rules section on the next sift, as described under the uncertain bucket.
+**Default is approval.** An entry is in unless you cross it out. You scroll and
+tick or cross, deciding many at once rather than one at a time, and an
+untouched entry is approved.
 
-**Schema additions** (to `sift_documents`): `issue_effect`, `decision` (`keep` / `discard` / `defer` / null), `decided_at`, `chronology_line` (proposed text), `chronology_entry_id` once written.
+That default is only safe because an excluded entry is **recorded, not
+destroyed**: it stays in the table marked excluded for insufficient relevance,
+and can be reinstated. Contrast the Precedent Library tidy, which defaults to
+Rename precisely because deleting there cannot be undone. Here the cheap
+default is the reversible one, so it can also be the fast one.
 
-**Chronology marking.** Entries written from the sift carry a `source_sift_document_id` and a `flag_new` that shows in the chronology view until you clear it, so the additions from a production remain distinguishable from the chronology as it stood.
+**What each row shows:** the proposed line in the existing chronology format,
+its date, the document it rests on with its pinpoint, and — for an amendment —
+the entry it would change, with the addition marked. New entries are visibly
+marked as new and stay marked until you clear the flag, so what a production
+added remains distinguishable from the chronology as it stood.
+
+**Issue review** works the same way, grouped by `issue_effect` (`adds` /
+`changes` / `neutral`, with `changes` first) and sharing one decision per
+document: a document decided in one view is decided in the other.
+
+### What this needs
+
+A `chronology_entries` table: `id`, `matter_id`, `owner_id`, `entry_date`,
+`description`, `source_document_id`, `pinpoint`, `status`
+(`active` / `excluded`), `exclusion_reason`, `flag_new`,
+`source_sift_document_id`, `created_at`. It is **not** in Push 1, which is
+already merged; it belongs with Push 6a.
+
+Seeding it means parsing the tool's existing prose into dated rows, which is
+lossy — some entries will not split cleanly. The frame build shows you what it
+extracted before anything relies on it, which fits, since you approve the frame
+anyway.
+
+**Schema additions** (to `sift_documents`): `issue_effect`, `decision`
+(`keep` / `discard` / `defer` / null), `decided_at`, `chronology_line`
+(proposed text), `chronology_entry_id` once written.
 
 ## Accepting documents into the matter
 
@@ -234,6 +285,31 @@ After Accept, every existing tool sees the document exactly as if you had upload
 **Undo.** Accepted documents can be withdrawn from the Accept panel for 24 hours: the document row, chronology line and issue references are removed and the sift row reverts to Keep. After that, removal is through the ordinary document delete.
 
 **Cost.** Accept is where storage cost is incurred, and only there. The panel shows the count and total size of the pending queue before you commit.
+
+**Documents the matter already holds, repaginated** (open, 19 September 2026).
+It was decided that a `covered` document is never uploaded and only its bundle
+reference is written onto the existing record. That holds where the two copies
+paginate alike. It does not where the production has repaginated a document the
+chronology already cites: a single `bundle_ref` range names the document but
+cannot pinpoint a page inside it, and the matter's stored chunks still carry the
+old pagination, so the model would cite pages that do not exist in the edition
+being read. Three ways out, in rising cost:
+
+- **A page map** on the existing document — matter page N to bundle page M.
+  Cheapest, and right wherever the two differ only by an offset, which is
+  common for a stamped copy. Wrong wherever pages were inserted or dropped.
+- **Re-chunk from the production text** without storing the file. The text is
+  read in the browser anyway, so the existing document's chunks can be rebuilt
+  carrying bundle page numbers. No new storage, but the matter's copy is then
+  described by text it does not itself hold.
+- **Upload the production copy** and mark the matter's existing copy
+  superseded, keeping both rows so old citations still resolve. Exact, and the
+  only option that survives the two copies being substantively different, but
+  it is the storage cost the design exists to avoid.
+
+Recommended: the third, confined to the documents the chronology actually
+relies on — a small set, and the ones where a wrong pinpoint does real damage —
+with a page map for the rest. Not yet decided.
 
 **Schema additions** (to `sift_documents`): `accepted_at`, `document_id`, `accept_batch_id`.
 
@@ -354,7 +430,8 @@ Twelve pushes, each one logical change, each preceded by the review gate: comple
 | 4 | `/api/sift-triage` + Tier 1 loop over representatives, progress | 3 | Score distribution reviewed; threshold set |
 | 5 | `/api/sift-assess` + Tier 2 loop, `issue_effect`, full Index with filters, uncertain clusters | 4 | Full run on sample; verdicts spot-checked against 10 known documents |
 | 6 | Bundle refs panel: matching to existing documents, confirm, write `bundle_ref` | 5 | Confirm 10 matches; `documents.bundle_ref` populated |
-| 7 | Chronology view: inline new entries, proposed lines, Keep / Discard / Defer | 5 | Decide 10 documents; decisions stored |
+| 6a | Chronology as entries: the `chronology_entries` table, seeded from the Chronology tool's existing output; the tool switches from regenerating to proposing against those entries | 1 | Existing chronology appears as rows; a re-run proposes additions rather than replacing what is there |
+| 7 | Chronology view in the sift: inline new entries, proposed lines, pinpoints written onto existing entries, multi-select by ticking and crossing with approval as the default | 5, 6a | Decide 10 entries by ticking and crossing; exclusions recorded as insufficient relevance and reinstatable |
 | 8 | Issues view grouped by `issue_effect`, shared decision state | 7 | Decide from issue page; chronology view reflects it |
 | 9 | Accept panel: individual and batch accept, queue, undo, `flag_new` written | 7 | Accept 5 documents; confirm they appear in matter, chronology and next Chronology run |
 | 10 | Bundle reference passed to model when labelling documents (feature flag) | 6 | Draft output on a test matter cites real references |
@@ -362,7 +439,7 @@ Twelve pushes, each one logical change, each preceded by the review gate: comple
 
 Later, separately: Sift Analysis tool; sift metadata passed to Draft; learned rules folded into the frame; privilege rules.
 
-**Sequencing note.** The Tianrui files arrive later, so Push 0 waits for them; Pushes 1–2 and the shell of 3 can be built and tested on a closed matter meanwhile. OCR remains the long pole once the files are in hand. Pushes 1–9 and 11 carry no risk to existing tools: new tables, nullable columns and a self-contained tab. Push 10 is the only change to existing tool behaviour and is behind a feature flag. Nothing in this sequence touches `worker.js` or `cron-resume.js`, so the open Step 3 cron hardening remains an independent item and is not blocked by, nor a blocker for, this work.
+**Sequencing note.** The Tianrui files arrive later, so Push 0 waits for them; Pushes 1–2 and the shell of 3 can be built and tested on a closed matter meanwhile. OCR remains the long pole once the files are in hand. Pushes 1–5, 8, 9 and 11 carry no risk to existing tools: new tables, nullable columns and a self-contained tab. **Two pushes change existing tool behaviour, not one as this spec first said.** Push 10 is one, behind a feature flag. Push 6a is the other, and the larger: it converts the Chronology tool from producing text to maintaining entries. It is not optional — Push 7 has nothing to review until those entries exist. That also retires the claim that nothing here touches `worker.js`, since chronology generation lives there. `cron-resume.js` is still untouched, so the open Step 3 cron hardening remains independent of this work, neither blocked by it nor a blocker for it.
 
 **Open questions before push 1:**
 
@@ -372,7 +449,23 @@ Later, separately: Sift Analysis tool; sift metadata passed to Draft; learned ru
       them. Push 1 does not need them, and the `sift.js` shell of Push 2 can be built
       meanwhile. Left unticked: the question is answered, the loading is not done.
 - [x] Chrome available on the sift machine — confirmed 19 Sep 2026
-- [ ] Confirm `owner_id` as the ownership column for both new tables, consistent with `matters`.
+- [x] `owner_id` confirmed against the live schema, 19 Sep 2026, and used in the
+      Push 1 migration. `matters` and `drafts` both carry it. Note `documents`
+      and `chunks` carry no ownership column at all and scope through
+      `matter_id` — so `drafts`, not `documents`, is the precedent the sift
+      tables follow.
+- [x] Chronology, decided 19 Sep 2026: one `chronology_entries` table, with the
+      Chronology tool and the Sift as two windows onto it. A re-run proposes
+      against the existing entries and never regenerates over them. Sift review
+      defaults to approve; an exclusion is recorded as insufficient relevance,
+      never deleted. See "The chronology: one table, two windows".
 - [ ] Tier 1 threshold: start at 25 and tune, or set from the sample run only?
 - [x] Bundle references: a hyperlinked index will be supplied with the files (confirmed 19 Sep 2026); format to be established when it arrives
-- [x] Decided 19 Sep 2026: `covered` documents are never uploaded; only the bundle reference is written onto the existing record
+- [x] Decided 19 Sep 2026: `covered` documents are never uploaded; only the
+      bundle reference is written onto the existing record. **Reopened in part**
+      by the next item.
+- [ ] Repaginated documents the matter already holds: page map, re-chunk from
+      the production text, or upload the production copy? A bundle reference
+      alone names a document but cannot pinpoint a page inside it, and the
+      matter's chunks carry the old pagination. See "Accepting documents into
+      the matter" for the three options and the recommendation.

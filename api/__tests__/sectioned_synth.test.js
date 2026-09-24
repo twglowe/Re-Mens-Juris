@@ -38,7 +38,7 @@ describe("parsePlan", () => {
     const input = '[{"title":"Intro","description":"Overview","target_words":400}]';
     const out = parsePlan(input);
     expect(out).toEqual([
-      { index: 1, title: "Intro", description: "Overview", target_words: 400 },
+      { index: 1, title: "Intro", description: "Overview", point: "", basis: "", target_words: 400 },
     ]);
   });
 
@@ -171,7 +171,7 @@ describe("planSections", () => {
     /* callArgs = [system, prompt, maxTokens] */
     expect(callArgs[0]).toContain("drafting document");
     expect(callArgs[1]).toContain("drafting document");
-    expect(callArgs[2]).toBe(2048);
+    expect(callArgs[2]).toBe(3000); /* v5.76: room for point and basis */
   });
 });
 
@@ -356,5 +356,138 @@ describe("synthesiseSections", () => {
     const budget2 = runTool.mock.calls[1][2];
     expect(budget2).toBeGreaterThan(budget1);
     expect(budget1).toBeGreaterThanOrEqual(1024); /* min budget */
+  });
+});
+
+/* ── v5.76: focus and restraint ─────────────────────────────────────── */
+import { lastParagraphNumber, splitPoints, POINTS_MARKER, PRIOR_TEXT_CAP } from "../lib/sectioned_synth.js";
+
+describe("v5.76 parsePlan point and basis", () => {
+  it("carries point and basis through, and tolerates their absence", () => {
+    const out = parsePlan(JSON.stringify([
+      { title: "A", point: "The claim is time-barred.", basis: "Writ [B/1]", target_words: 400 },
+      { title: "B", target_words: 300 },
+    ]));
+    expect(out[0].point).toBe("The claim is time-barred.");
+    expect(out[0].basis).toBe("Writ [B/1]");
+    expect(out[1].point).toBe("");
+    expect(out[1].basis).toBe("");
+  });
+});
+
+describe("v5.76 lastParagraphNumber", () => {
+  it("finds the highest top-level number, ignoring sub-paragraphs and headings", () => {
+    const t = "## 2. The Issues\n\n7. First point.\n\n7.1 Sub point.\n\n**8.** Second point.\n\n(a) item";
+    expect(lastParagraphNumber(t)).toBe(8);
+  });
+  it("returns 0 for unnumbered text", () => {
+    expect(lastParagraphNumber("## Heading\n\nProse.")).toBe(0);
+    expect(lastParagraphNumber(null)).toBe(0);
+  });
+});
+
+describe("v5.76 splitPoints", () => {
+  it("splits at the marker and strips bullets and 'none'", () => {
+    const r = splitPoints("## S\n\n1. Body.\n\n" + POINTS_MARKER + "\n- para 1: [REF NEEDED]\n* para 2: check date\nNone\n");
+    expect(r.body).toBe("## S\n\n1. Body.");
+    expect(r.points).toEqual(["para 1: [REF NEEDED]", "para 2: check date"]);
+  });
+  it("leaves text without a marker alone", () => {
+    expect(splitPoints("Body.")).toEqual({ body: "Body.", points: [] });
+  });
+});
+
+describe("v5.76 planSections", () => {
+  it("asks for point and basis, a ceiling, and passes a required structure", async () => {
+    const runTool = vi.fn().mockResolvedValue({ text: JSON.stringify([{ title: "X", target_words: 300 }]), inputTokens: 1, outputTokens: 1, cost: 0 });
+    await planSections(runTool, "sys", "briefing", "", "input", "", "M1", { structure: "## 1. Summary of the Proceedings" });
+    const prompt = runTool.mock.calls[0][1];
+    expect(prompt).toContain("point:");
+    expect(prompt).toContain("basis:");
+    expect(prompt).toContain("ceiling, not a target");
+    expect(prompt).toContain("REQUIRED STRUCTURE");
+    expect(prompt).toContain("## 1. Summary of the Proceedings");
+  });
+  it("omits the structure block when none is given", async () => {
+    const runTool = vi.fn().mockResolvedValue({ text: JSON.stringify([{ title: "X" }]), inputTokens: 1, outputTokens: 1, cost: 0 });
+    await planSections(runTool, "sys", "draft", "", "input", "", "M1");
+    expect(runTool.mock.calls[0][1]).not.toContain("REQUIRED STRUCTURE");
+  });
+});
+
+describe("v5.76 synthesiseSections", () => {
+  const sections = [
+    { index: 1, title: "One", point: "P1", basis: "B1", target_words: 300 },
+    { index: 2, title: "Two", point: "P2", basis: "", target_words: 300 },
+    { index: 3, title: "Three", point: "P3", basis: "", target_words: 300 },
+  ];
+  const ok = (text) => ({ text, inputTokens: 1, outputTokens: 1, cost: 0 });
+
+  it("gives later sections the full earlier text, the point, the ceiling and the next paragraph number", async () => {
+    const runTool = vi.fn()
+      .mockResolvedValueOnce(ok("## One\n\n1. A.\n\n2. B."))
+      .mockResolvedValueOnce(ok("## Two\n\n3. C."))
+      .mockResolvedValueOnce(ok("## Three\n\n4. D."));
+    await synthesiseSections(runTool, null, "j", {}, "sys", "draft", "", "input", sections, "", "M1", "", { numbered: true, collectPoints: true });
+    const p2 = runTool.mock.calls[1][1];
+    const p3 = runTool.mock.calls[2][1];
+    expect(p2).toContain("This section exists to establish: P2");
+    expect(p2).toContain("at most 300 words");
+    expect(p2).toContain("## One\n\n1. A.\n\n2. B.");
+    expect(p2).toContain("The first numbered paragraph in this section is 3.");
+    expect(p3).toContain("The first numbered paragraph in this section is 4.");
+    expect(p3).toContain("This is the final section.");
+    expect(p2).not.toContain("This is the final section.");
+  });
+
+  it("collects points from every section into one list at the end", async () => {
+    const runTool = vi.fn()
+      .mockResolvedValueOnce(ok("## One\n\n1. A.\n" + POINTS_MARKER + "\n- para 1: [REF NEEDED]"))
+      .mockResolvedValueOnce(ok("## Two\n\n2. B."))
+      .mockResolvedValueOnce(ok("## Three\n\n3. C.\n" + POINTS_MARKER + "\npara 3: case not in supplied material"));
+    const out = await synthesiseSections(runTool, null, "j", {}, "sys", "draft", "", "input", sections, "", "M1", "", { numbered: true, collectPoints: true });
+    expect(out.text).not.toContain(POINTS_MARKER);
+    expect(out.text.match(/## Points to check/g).length).toBe(1);
+    expect(out.text.endsWith("- para 1: [REF NEEDED]\n- para 3: case not in supplied material")).toBe(true);
+    expect(out.points.length).toBe(2);
+  });
+
+  it("with no opts, adds no numbering, marker or points list", async () => {
+    const runTool = vi.fn().mockResolvedValue(ok("## X\n\n1. Body."));
+    const out = await synthesiseSections(runTool, null, "j", {}, "sys", "draft", "", "input", sections, "", "M1", "");
+    for (const c of runTool.mock.calls) {
+      expect(c[1]).not.toContain(POINTS_MARKER);
+      expect(c[1]).not.toContain("first numbered paragraph");
+    }
+    expect(out.text).not.toContain("Points to check");
+  });
+
+  it("falls back to openings once earlier text passes the cap", async () => {
+    const big = "## One\n\n" + "x".repeat(PRIOR_TEXT_CAP);
+    const runTool = vi.fn()
+      .mockResolvedValueOnce(ok(big))
+      .mockResolvedValueOnce(ok("## Two\n\nshort"))
+      .mockResolvedValueOnce(ok("## Three\n\nend"));
+    await synthesiseSections(runTool, null, "j", {}, "sys", "draft", "", "input", sections, "", "M1", "");
+    const p3 = runTool.mock.calls[2][1];
+    expect(p3).toContain("### Section 2 (Two) [full text]");
+    expect(p3).toContain("### Section 1 (One) [opening only]");
+  });
+
+  it("resumes a pre-v5.76 plan with no point or basis", async () => {
+    const old = [{ index: 1, title: "Old", description: "legacy", target_words: 300 }];
+    const runTool = vi.fn().mockResolvedValue(ok("## Old\n\nBody."));
+    const out = await synthesiseSections(runTool, null, "j", {}, "sys", "briefing", "", "input", old, "", "M1", "", { numbered: true, collectPoints: true });
+    expect(runTool.mock.calls[0][1]).toContain("(legacy)");
+    expect(out.sectionsCompleted).toBe(1);
+  });
+});
+
+describe("v5.76 worker.js wiring", () => {
+  it("passes section options on both paths and the briefing structure", async () => {
+    const { readFileSync } = await import("fs");
+    const src = readFileSync(new URL("../worker.js", import.meta.url), "utf8");
+    expect(src.match(/sectionedOptions\(/g).length).toBe(4); /* definition + 3 uses */
+    expect(src).toContain("headerText: briefingHeader, structure: sectionHeaders }");
   });
 });

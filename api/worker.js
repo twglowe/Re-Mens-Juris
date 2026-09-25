@@ -260,8 +260,6 @@ import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { planSections as planSectionsLib, synthesiseSections as synthesiseSectionsLib } from "./lib/sectioned_synth.js";
 import { classifyDocumentForType } from "./document-classifier.js";
-import { styleGuideFor, styleGuideEnabled, FULL_GUIDE_TOOLS } from "./lib/style_guide.js";
-import { tightenDraft, tightenEnabled, appendPoint, TIGHTEN_TIME_BUDGET_MS } from "./lib/tighten.js";
 
 export const config = { maxDuration: 800 };
 
@@ -1032,17 +1030,6 @@ async function bumpAndGuardSynthAttempts(jobId, job, extractsLength) {
    Returns null if paused/synthesising (caller should return response and stop).
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* v5.76: options for the sectioned pipeline, built the same way on both the
-   condensed and the direct synthesis paths. */
-function sectionedOptions(toolName, options) {
-  var guideOn = styleGuideEnabled(process.env);
-  return {
-    structure: (options && options.structure) || "",
-    numbered: guideOn && FULL_GUIDE_TOOLS.indexOf(toolName) !== -1,
-    collectPoints: guideOn,
-  };
-}
-
 async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthPromptFn, byDoc, hostUrl, options) {
   var batches = batchDocs(byDoc);
   var startTime = Date.now();
@@ -1192,11 +1179,6 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
       var actingFor = (options && options.actingFor) || "";
       var matterName = (options && options.matterName) || "";
       var sectionHeaderText = (options && options.headerText) || "";
-      /* v5.76: structure fixes the planner's section list (briefing); numbered
-         carries paragraph numbers across sections; collectPoints gathers every
-         section's Points to check into one list. The last two follow the
-         ELJ_STYLE_GUIDE flag. See api/lib/sectioned_synth.js. */
-      var sectOpts = sectionedOptions(toolName, options);
 
       var existingPlan = Array.isArray(job.section_plan) ? job.section_plan : null;
       var plan;
@@ -1213,7 +1195,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         console.log("v5.9b sectioned: calling planSections for " + toolName);
         var planResult;
         try {
-          planResult = await planSectionsLib(runTool, systemBase, toolName, userInstructions, synthInput, actingFor, matterName, sectOpts);
+          planResult = await planSectionsLib(runTool, systemBase, toolName, userInstructions, synthInput, actingFor, matterName);
         } catch (planErr) {
           console.error("v5.9b sectioned: plan phase failed, falling back to single-call synthesis: " + planErr.message);
           var fallbackResult = await runTool(systemBase, synthPromptFn(synthInput, batches.length), 16384);
@@ -1230,7 +1212,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
         await updateJob(jobId, { section_plan: plan });
       }
 
-      var secResult = await synthesiseSectionsLib(runTool, updateJob, jobId, job, systemBase, toolName, userInstructions, synthInput, plan, actingFor, matterName, sectionHeaderText, sectOpts);
+      var secResult = await synthesiseSectionsLib(runTool, updateJob, jobId, job, systemBase, toolName, userInstructions, synthInput, plan, actingFor, matterName, sectionHeaderText);
       totalInput += secResult.inputTokens;
       totalOutput += secResult.outputTokens;
       totalCost += secResult.cost;
@@ -1358,7 +1340,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
     } else {
       var planResultDirect;
       try {
-        planResultDirect = await planSectionsLib(runTool, systemBase, toolNameDirect, userInstructionsDirect, combinedExtracts, actingForDirect, matterNameDirect, sectionedOptions(toolNameDirect, options));
+        planResultDirect = await planSectionsLib(runTool, systemBase, toolNameDirect, userInstructionsDirect, combinedExtracts, actingForDirect, matterNameDirect);
       } catch (planErrDirect) {
         console.error("v5.8a sectioned (direct): plan phase failed, falling back to single-call synthesis: " + planErrDirect.message);
         var fallbackDirect = await runTool(systemBase, synthPromptFn(combinedExtracts, batches.length), 16384);
@@ -1374,7 +1356,7 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
       await updateJob(jobId, { section_plan: planDirect });
     }
 
-    var secResultDirect = await synthesiseSectionsLib(runTool, updateJob, jobId, job, systemBase, toolNameDirect, userInstructionsDirect, combinedExtracts, planDirect, actingForDirect, matterNameDirect, headerTextDirect, sectionedOptions(toolNameDirect, options));
+    var secResultDirect = await synthesiseSectionsLib(runTool, updateJob, jobId, job, systemBase, toolNameDirect, userInstructionsDirect, combinedExtracts, planDirect, actingForDirect, matterNameDirect, headerTextDirect);
     totalInput += secResultDirect.inputTokens;
     totalOutput += secResultDirect.outputTokens;
     totalCost += secResultDirect.cost;
@@ -1401,8 +1383,6 @@ async function runBatchedChained(jobId, job, systemBase, extractPromptFn, synthP
 
 const SERVER_VERSION = "v5.23";
 export default async function handler(req, res) {
-  /* v5.77: start of this invocation, for the tighten pass's time check. */
-  var handlerStart = Date.now();
   console.log(SERVER_VERSION + " worker handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -1489,12 +1469,6 @@ export default async function handler(req, res) {
       actingFor ? "Acting for: " + actingFor : "",
     ].filter(Boolean).join("\n");
 
-    /* v5.75: ELJ Drafting Style Guide. The full guide for draft, briefing and
-       issue briefing; accuracy and restraint rules (sections 4 and 7) for
-       every other tool. Appended to each tool's systemBase below. Fixed text,
-       so the prompt cache still holds. ELJ_STYLE_GUIDE=off returns "". */
-    var guideBlock = styleGuideFor(tool, process.env);
-
     /* Get court heading.
        v5.23: for every tool except draft, the tramline title (docTitle) is
        replaced with "<TOOL NAME> ON <PROCEDURAL STAGE>" in capitals; the
@@ -1548,7 +1522,7 @@ export default async function handler(req, res) {
       var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
-      var systemBase = "You are a senior litigation counsel in " + jur + " conducting an evidence assessment for the matter \"" + matterName + "\".\n" + matterContext + guideBlock;
+      var systemBase = "You are a senior litigation counsel in " + jur + " conducting an evidence assessment for the matter \"" + matterName + "\".\n" + matterContext;
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "PROPOSITION: \"" + instructions + "\"\n\nBatch " + batchNum + " of " + total + ". Extract ALL relevant passages \u2014 supporting, contradicting, or neutral.\n\nFor each:\n### [Document] \u2014 [Brief description]\nGRADE: [1-5]\n[Relevant passage]\n**Analysis:** [Relevance to proposition]\n**Reference:** [page and paragraph if available]\n\nGrading: 5=strong direct, 4=good supportive, 3=moderate indirect, 2=weak tangential, 1=contrary" + pageIndex + "\n\nDOCUMENTS:\n\n" + batchText; },
         function(combined, numBatches) { return numBatches ? "PROPOSITION: \"" + instructions + "\"\n\nSynthesise findings from " + numBatches + " batches into a single evidence assessment.\n\nRetain format:\n### [Document] \u2014 [Description]\nGRADE: [1-5]\n[Passage]\n**Analysis:** [Relevance]\n**Reference:** [page and paragraph]\n\nThen:\n## Overall Assessment\nStrength of evidence for/against and view on balance of probabilities.\n\nFINDINGS:\n\n" + combined : "PROPOSITION: \"" + instructions + "\"\n\nFind ALL evidence \u2014 supporting, contradicting, or neutral.\n\n### [Document] \u2014 [Description]\nGRADE: [1-5] (5=strong direct, 4=good supportive, 3=moderate indirect, 2=weak tangential, 1=contrary)\n[Relevant passage]\n**Analysis:** [Relevance]\n**Reference:** [page and paragraph if available]\n\n## Overall Assessment\nSummary and preliminary view." + pageIndex + "\n\nDOCUMENTS:\n\n" + combined; },
@@ -1576,7 +1550,7 @@ export default async function handler(req, res) {
         anchorDocs = Object.fromEntries(entries.slice(0, mid));
         otherDocs = Object.fromEntries(entries.slice(mid));
       }
-      var systemBase = "You are a senior litigation counsel conducting forensic inconsistency analysis for \"" + matterName + "\" in " + jur + ".\n" + matterContext + guideBlock;
+      var systemBase = "You are a senior litigation counsel conducting forensic inconsistency analysis for \"" + matterName + "\" in " + jur + ".\n" + matterContext;
       var anchorText = docsToText(anchorDocs);
       if (anchorText.length > 40000) anchorText = anchorText.slice(0, 40000) + "\n[...anchor truncated...]";
       var otherBatches = batchDocs(otherDocs);
@@ -1649,7 +1623,7 @@ export default async function handler(req, res) {
       var focusBlock = chronoInstructions.trim() ? "Focus/Filters: " + chronoInstructions.trim() + "\n\n" : "";
       var entityTitle = (p.chronologyEntities && p.chronologyEntities.trim()) ? "Documents Relevant to " + p.chronologyEntities.trim() : "Chronology \u2014 " + matterName;
 
-      var systemBase = "You are a senior litigation counsel constructing a comprehensive chronology for \"" + matterName + "\" in " + jur + ".\n" + matterContext + guideBlock;
+      var systemBase = "You are a senior litigation counsel constructing a comprehensive chronology for \"" + matterName + "\" in " + jur + ".\n" + matterContext;
       /* v5.20 (Chronology shaping, engine half). Anchor + consolidation are
          applied at SYNTHESIS only; extraction stays exhaustive. Both are inert
          when their parameters are absent, so a run with no anchor and consolidate
@@ -1680,7 +1654,7 @@ export default async function handler(req, res) {
       var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
-      var systemBase = "You are a senior litigation counsel compiling a dramatis personae for \"" + matterName + "\" in " + jur + ".\n" + matterContext + guideBlock;
+      var systemBase = "You are a senior litigation counsel compiling a dramatis personae for \"" + matterName + "\" in " + jur + ".\n" + matterContext;
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract EVERY person and entity from batch " + batchNum + " of " + total + ".\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Name]\n**Description:** [A concise description of who this person/entity is and their relevance to the proceedings]\n**References in pleadings/petitions:** [List each reference with document name, page and paragraph]\n**References in affidavits:** [List each reference with document name, page and paragraph]\n**References in other documents:** [List each reference with document name, page and paragraph]\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + batchText + pageIndex; },
         function(combined, numBatches) { return numBatches ? "Synthesise persons from " + numBatches + " batches. Merge entries for the same person/entity. Sort alphabetically.\n\n## Dramatis Personae \u2014 " + matterName + "\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Full Name]\n**Description:** [Concise description of who they are and their relevance]\n**References in pleadings/petitions:** [document, page, paragraph \u2014 listed first]\n**References in affidavits:** [document, page, paragraph \u2014 listed second]\n**References in other documents:** [document, page, paragraph \u2014 listed third]\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "EXTRACTS:\n\n" + combined : "Compile a complete dramatis personae. Include EVERY person and entity.\n\n## Dramatis Personae \u2014 " + matterName + "\n\nEXCLUDE: Do NOT include attorneys, counsel, solicitors, barristers or legal representatives acting in the proceedings. Do NOT include the Judge, Master, Registrar, or Justices of Appeal.\n\nFor each person or entity:\n### [Full Name]\n**Description:** [Concise description of who they are and their relevance to the proceedings]\n**References in pleadings/petitions:** [document, page, paragraph \u2014 listed first]\n**References in affidavits:** [document, page, paragraph \u2014 listed second]\n**References in other documents:** [document, page, paragraph \u2014 listed third]\n\nSort alphabetically.\n\n" + (instructions ? "Focus: " + instructions + "\n\n" : "") + "DOCUMENTS:\n\n" + combined + pageIndex; },
@@ -1695,7 +1669,7 @@ export default async function handler(req, res) {
       var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
-      var systemBase = "You are a senior litigation counsel in " + jur + " mapping issues for \"" + matterName + "\".\n" + matterContext + guideBlock;
+      var systemBase = "You are a senior litigation counsel in " + jur + " mapping issues for \"" + matterName + "\".\n" + matterContext;
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Identify every legal and factual issue from batch " + batchNum + " of " + total + ".\n\n### Issue: [description]\n**Type:** Legal / Factual / Mixed\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n\n" + focusBlock + "DOCUMENTS:\n\n" + batchText + pageIndex; },
         function(combined, numBatches) { return numBatches ? "Synthesise issues from " + numBatches + " batches. Merge duplicates.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + focusBlock + "FINDINGS:\n\n" + combined : "Produce a complete issue tracker.\n\n## Issue Tracker \u2014 " + matterName + "\n\n### Issue [N]: [description]\n**Type:** Legal / Factual / Mixed\n**Raised by:** [party]\n**Evidence for Claimant:** [documents, passages, page and paragraph references]\n**Evidence for Defendant:** [documents, passages, page and paragraph references]\n**Assessment:** [preliminary view]\n\n## Overall Assessment\n\n" + focusBlock + "DOCUMENTS:\n\n" + combined + pageIndex; },
@@ -1725,7 +1699,7 @@ export default async function handler(req, res) {
       await updateJob(jobId, { batches_total: 1, batches_done: 0, status: "running", started_at: job.started_at || new Date().toISOString() });
 
       var r = await runTool(
-        "You are a senior litigation counsel in " + jur + " checking citations for \"" + matterName + "\".\n" + matterContext + guideBlock,
+        "You are a senior litigation counsel in " + jur + " checking citations for \"" + matterName + "\".\n" + matterContext,
         "Check every citation in the source document against the target case law.\n\n## Citation Check \u2014 " + matterName + "\n\n### [Case name]\n**Cited for:** [proposition]\n**Found in uploads:** Yes / No / Partial\n**Accuracy:** [does the judgment support the proposition?]\n**Flag:** \u2713 Accurate / \u26A0\uFE0F Overstated / \u2717 Incorrect / ? Not uploaded\n**Notes:** [any concern]\n\nSOURCE DOCUMENT:\n\n" + skeletonText + "\n\nTARGET CASE LAW:\n\n" + caselawText
       );
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
@@ -1740,18 +1714,15 @@ export default async function handler(req, res) {
        (b) Per-section paragraph guidance to keep total output bounded.
        The system message also gains a short reminder. The extraction prompt is
        unchanged. */
-    /* v5.75: paragraph counts are now ceilings ("up to"), and a thin section
-       says so in one sentence. "At least a short paragraph" and "aim for 2-4"
-       invited padding, most visibly in sections 6 and 7. */
     else if (tool === "briefing") {
       var chunks = applyDocFilters(await getAllChunks(matterId), excludeDocNames, includeDocNames);
       var byDoc = chunksToDocMap(chunks);
       var pageIndex = buildPageIndex(byDoc);
-      var systemBase = "You are a senior litigation counsel in " + jur + " producing a briefing note for \"" + matterName + "\".\n" + matterContext + "\n\nIMPORTANT: When producing a briefing note you MUST complete all seven sections in full. Do not stop after section 4 or 5. If you find yourself running short on output budget, abbreviate the later sections rather than omitting them. Where a section has nothing of substance, say so in one sentence rather than filling it." + guideBlock;
+      var systemBase = "You are a senior litigation counsel in " + jur + " producing a briefing note for \"" + matterName + "\".\n" + matterContext + "\n\nIMPORTANT: When producing a briefing note you MUST complete all seven sections in full. Do not stop after section 4 or 5. If you find yourself running short on output budget, abbreviate the later sections rather than omitting them — every section must have at least a short paragraph.";
       var briefingDate = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
       var briefingHeader = "## Briefing Note \u2014 " + matterName + "\n**Jurisdiction:** " + jur + "\n**Date:** " + briefingDate + "\n\n";
-      var completionMandate = "CRITICAL INSTRUCTIONS:\n1. You MUST complete ALL SEVEN sections below. The briefing note is incomplete if any section is missing.\n2. Use at most 4 paragraphs per section, and fewer where the material is thin. Section 4 (Case on Disputed Matters) may be longer because it covers multiple issues, but each issue should be limited to 3-5 short paragraphs (Petitioner's case, GP's case, brief assessment).\n3. If you are running short on output budget as you write, ABBREVIATE the remaining sections rather than omitting them. A one-paragraph section 7 is acceptable; a missing section 7 is not.\n4. Do not repeat the same fact across sections. Cross-reference earlier sections instead.\n5. The reader is a senior lawyer who will read the entire document. Be concise.\n\n";
-      var sectionHeaders = "## 1. Summary of the Proceedings\nBrief overview of the nature and status of the proceedings (up to 3 paragraphs).\n\n## 2. The Issues\nList each issue that arises in the proceedings \u2014 both legal and factual. Reference the pleadings or other documents where each issue is raised. Use a numbered list; do not write extended prose for each issue here \u2014 detailed analysis belongs in section 4.\n\n## 3. Common Ground and Admissions\nList all facts, matters, or legal points that are admitted or agreed between the parties. Distinguish formal admissions from matters that appear to be common ground. A bullet list is appropriate.\n\n## 4. The Case on Disputed Matters\nFor each disputed issue identified in section 2, set out:\n- The case for the " + (actingFor || "client") + ": evidence and arguments supporting the position (up to 3 short paragraphs)\n- The opposing case: evidence and arguments the other side relies on (up to 3 short paragraphs)\n- Assessment: preliminary view on the strength of each side's position (1-2 paragraphs)\n\n## 5. Key Evidence\nSummary of the most important evidence with page and paragraph references where available (up to 4 paragraphs).\n\n## 6. Procedural Position and Next Steps\nCurrent procedural stage, upcoming deadlines, and recommended next steps (up to 3 paragraphs).\n\n## 7. Key Risks\nSignificant risks shown by the material (up to 3 paragraphs or a short bullet list). Do not list hypothetical risks the documents do not raise.\n\nREMEMBER: All seven sections are required. Do not stop early.\n\n";
+      var completionMandate = "CRITICAL INSTRUCTIONS:\n1. You MUST complete ALL SEVEN sections below. The briefing note is incomplete if any section is missing.\n2. Aim for 2-4 paragraphs per section. Section 4 (Case on Disputed Matters) may be longer because it covers multiple issues, but each issue should be limited to 3-5 short paragraphs (Petitioner's case, GP's case, brief assessment).\n3. If you are running short on output budget as you write, ABBREVIATE the remaining sections rather than omitting them. A one-paragraph section 7 is acceptable; a missing section 7 is not.\n4. Do not repeat the same fact across sections. Cross-reference earlier sections instead.\n5. The reader is a senior lawyer who will read the entire document. Be concise.\n\n";
+      var sectionHeaders = "## 1. Summary of the Proceedings\nBrief overview of the nature and status of the proceedings (2-3 paragraphs).\n\n## 2. The Issues\nList each issue that arises in the proceedings \u2014 both legal and factual. Reference the pleadings or other documents where each issue is raised. Use a numbered list; do not write extended prose for each issue here \u2014 detailed analysis belongs in section 4.\n\n## 3. Common Ground and Admissions\nList all facts, matters, or legal points that are admitted or agreed between the parties. Distinguish formal admissions from matters that appear to be common ground. A bullet list is appropriate.\n\n## 4. The Case on Disputed Matters\nFor each disputed issue identified in section 2, set out:\n- The case for the " + (actingFor || "client") + ": evidence and arguments supporting the position (2-3 short paragraphs)\n- The opposing case: evidence and arguments the other side relies on (2-3 short paragraphs)\n- Assessment: preliminary view on the strength of each side's position (1-2 paragraphs)\n\n## 5. Key Evidence\nSummary of the most important evidence with page and paragraph references where available (2-4 paragraphs).\n\n## 6. Procedural Position and Next Steps\nCurrent procedural stage, upcoming deadlines, and recommended next steps (2-3 paragraphs).\n\n## 7. Key Risks\nSignificant risks to be aware of (2-3 paragraphs or a short bullet list).\n\nREMEMBER: All seven sections are required. Do not stop early.\n\n";
       var briefingFocus = instructions ? "Focus: " + instructions + "\n\n" : "";
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract key facts, legal issues, evidence, admissions, common ground, and procedural information from batch " + batchNum + " of " + total + " for a briefing note.\n\nPay particular attention to:\n- What issues are raised in the proceedings\n- What facts or matters are admitted or agreed (common ground)\n- What facts or matters are in dispute and what evidence supports each side\n\nDOCUMENTS:\n\n" + batchText + pageIndex; },
@@ -1762,7 +1733,7 @@ export default async function handler(req, res) {
           return "Produce a structured briefing note.\n\n" + briefingHeader + completionMandate + sectionHeaders + briefingFocus + "DOCUMENTS:\n\n" + combined + pageIndex;
         },
         byDoc, hostUrl,
-        { sectioned: true, toolName: "briefing", instructions: instructions, actingFor: actingFor, matterName: matterName, headerText: briefingHeader, structure: sectionHeaders }
+        { sectioned: true, toolName: "briefing", instructions: instructions, actingFor: actingFor, matterName: matterName, headerText: briefingHeader }
       );
       if (r === null) return res.status(200).json({ ok: true, status: "continuing" });
       result = r.text; inputTokens = r.inputTokens; outputTokens = r.outputTokens; cost = r.cost;
@@ -2022,7 +1993,7 @@ export default async function handler(req, res) {
         ? "\n\nIMPORTANT: Begin the document with this exact court heading (do not alter the heading itself):\n\n" + headingText + "\n\nThen continue with the body of the document."
         : "";
 
-      var systemBase = "You are a senior litigation counsel in " + jur + " drafting a legal document for \"" + matterName + "\". Apply " + jur + " law, procedure, and drafting conventions." + (actingFor ? " You are acting for the " + actingFor + "." : "") + "\n\nCRITICAL INSTRUCTIONS:\n1. If precedent documents are provided below, you MUST study them first. Learn their structure, standard sections, argument methods, heading hierarchy, and language style. Replicate this approach in your draft.\n2. If commentary or AI instructions are attached to a precedent, follow them precisely \u2014 they contain the author\u2019s specific guidance on how to use that document.\n3. If previous drafts for this matter exist, maintain consistency with their style, terminology, and argument structure.\n4. If case law or textbook extracts are provided below, cite any authority you rely on by name and citation, and do not reproduce the extracts at length.\n5. Apply " + jur + " court rules and conventions throughout.\n\n" + matterContext + toolHistoryText + libraryText + caseLawText + comparableText + learningText + headingInstruction + guideBlock;
+      var systemBase = "You are a senior litigation counsel in " + jur + " drafting a legal document for \"" + matterName + "\". Apply " + jur + " law, procedure, and drafting conventions." + (actingFor ? " You are acting for the " + actingFor + "." : "") + "\n\nCRITICAL INSTRUCTIONS:\n1. If precedent documents are provided below, you MUST study them first. Learn their structure, standard sections, argument methods, heading hierarchy, and language style. Replicate this approach in your draft.\n2. If commentary or AI instructions are attached to a precedent, follow them precisely \u2014 they contain the author\u2019s specific guidance on how to use that document.\n3. If previous drafts for this matter exist, maintain consistency with their style, terminology, and argument structure.\n4. If case law or textbook extracts are provided below, cite any authority you rely on by name and citation, and do not reproduce the extracts at length.\n5. Apply " + jur + " court rules and conventions throughout.\n\n" + matterContext + toolHistoryText + libraryText + caseLawText + comparableText + learningText + headingInstruction;
 
       var r = await runBatchedChained(jobId, job, systemBase,
         function(batchText, batchNum, total) { return "Extract all facts, legal points, and arguments from batch " + batchNum + " of " + total + " relevant to: " + (instructions || "Draft a skeleton argument") + "\n\nDOCUMENTS:\n\n" + batchText; },
@@ -2060,7 +2031,7 @@ export default async function handler(req, res) {
         + "5. Set out the STRENGTHS of the opposing party's position, with document references.\n"
         + "6. Set out the WEAKNESSES of the opposing party's position, with document references.\n"
         + "7. Provide a preliminary assessment of the likely outcome on this issue.\n"
-        + "\nIMPORTANT: Every factual claim must be supported by a reference to a specific document, page, and paragraph where available. Use the format [Document Name, p.X \u00b6Y]. Do not make assertions without references." + guideBlock;
+        + "\nIMPORTANT: Every factual claim must be supported by a reference to a specific document, page, and paragraph where available. Use the format [Document Name, p.X \u00b6Y]. Do not make assertions without references.";
 
       if (issuesText) {
         systemBase += "\n\nPREVIOUS ISSUE TRACKER OUTPUT (for context — the user has selected specific issues from this list):\n" + issuesText.slice(0, 15000);
@@ -2096,32 +2067,6 @@ export default async function handler(req, res) {
     else {
       await failJob(jobId, "Unknown tool: " + tool);
       return res.status(200).json({ ok: false, error: "Unknown tool" });
-    }
-
-    /* v5.77: tighten pass on draft, briefing and issue briefing. Cuts only
-       whole paragraphs, checks cited authorities against the supplied
-       material in code, and rebuilds Points to check as one list. Never
-       fatal: if it fails or there is no time left, the untightened result is
-       saved with a line in Points to check saying so. See api/lib/tighten.js.
-       Runs before the heading is prepended so the heading is never offered
-       for cutting. */
-    if (FULL_GUIDE_TOOLS.indexOf(tool) !== -1 && tightenEnabled(process.env) && result) {
-      if (Date.now() - handlerStart > TIGHTEN_TIME_BUDGET_MS) {
-        console.log("v5.77 tighten: skipped for " + jobId + ", " + Math.round((Date.now() - handlerStart) / 1000) + "s elapsed");
-        result = appendPoint(result, "The tighten pass did not run (not enough time left in this run). Review the draft for repetition and unsupported authorities yourself.");
-      } else {
-        try {
-          var suppliedText = (typeof systemBase === "string" ? systemBase : "") + "\n" +
-            (Array.isArray(chunks) ? chunks.map(function(c) { return c.content || ""; }).join("\n") : "");
-          var tight = await tightenDraft(runTool, systemBase, tool, result, suppliedText, { instructions: instructions });
-          result = tight.text;
-          inputTokens += tight.inputTokens; outputTokens += tight.outputTokens; cost += tight.cost;
-          console.log("v5.77 tighten: " + jobId + " cut " + tight.cut + ", " + tight.unverified + " points to check");
-        } catch (tErr) {
-          console.error("v5.77 tighten failed for " + jobId + ": " + (tErr.message || tErr));
-          result = appendPoint(result, "The tighten pass did not run (" + (tErr.message || "error") + "). Review the draft for repetition and unsupported authorities yourself.");
-        }
-      }
     }
 
     /* Prepend court heading to result if heading exists (except draft which handles it in prompt) */

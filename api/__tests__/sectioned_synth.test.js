@@ -358,3 +358,66 @@ describe("synthesiseSections", () => {
     expect(budget1).toBeGreaterThanOrEqual(1024); /* min budget */
   });
 });
+
+/* ── v5.80 Push B: style guide in the plan and section calls ──────────── */
+import { guidedSystem } from "../lib/sectioned_synth.js";
+import { STYLE_GUIDE_FULL, STYLE_GUIDE_ANALYSIS } from "../lib/style_guide.js";
+
+describe("v5.80 guidedSystem", () => {
+  it("adds the full guide for draft and briefing, restraint only for proposition", () => {
+    expect(guidedSystem("sys", "draft", {})).toBe("sys\n\n" + STYLE_GUIDE_FULL);
+    expect(guidedSystem("sys", "briefing", {})).toBe("sys\n\n" + STYLE_GUIDE_FULL);
+    expect(guidedSystem("sys", "proposition", {})).toBe("sys\n\n" + STYLE_GUIDE_ANALYSIS);
+  });
+  it("returns systemBase untouched when the flag is off", () => {
+    expect(guidedSystem("sys", "draft", { ELJ_STYLE_GUIDE: "off" })).toBe("sys");
+  });
+});
+
+describe("v5.80 plan and section calls", () => {
+  const ok = (text) => ({ text, inputTokens: 1, outputTokens: 1, cost: 0 });
+  const sections = [{ index: 1, title: "One", description: "", target_words: 300 }];
+
+  it("sends the guide in the system prompt of the plan call and of each section call", async () => {
+    const runTool = vi.fn().mockResolvedValue(ok('[{"title":"A","target_words":400}]'));
+    await planSections(runTool, "BASE", "briefing", "", "input", "", "M1");
+    expect(runTool.mock.calls[0][0].startsWith("BASE\n\n" + STYLE_GUIDE_FULL)).toBe(true);
+    expect(runTool.mock.calls[0][0]).toContain("You are now planning the STRUCTURE");
+
+    const runTool2 = vi.fn().mockResolvedValue(ok("## One\n\nBody."));
+    await synthesiseSections(runTool2, null, "j", {}, "BASE", "draft", "", "input", sections, "", "M1", "");
+    expect(runTool2.mock.calls[0][0]).toBe("BASE\n\n" + STYLE_GUIDE_FULL);
+  });
+
+  it("keeps the guide out of the per-section user message, so the cached prefix carries it", async () => {
+    const runTool = vi.fn().mockResolvedValue(ok("## One\n\nBody."));
+    await synthesiseSections(runTool, null, "j", {}, "BASE", "draft", "", "input", sections, "", "M1", "");
+    expect(runTool.mock.calls[0][1]).not.toContain("ELJ Drafting Style Guide");
+  });
+
+  it("states word counts as ceilings", async () => {
+    const runTool = vi.fn().mockResolvedValue(ok('[{"title":"A","target_words":400}]'));
+    await planSections(runTool, "BASE", "draft", "", "input", "", "M1");
+    expect(runTool.mock.calls[0][1]).toContain("the MOST words this section may use");
+    expect(runTool.mock.calls[0][1]).toContain("ceiling, not a target");
+    const runTool2 = vi.fn().mockResolvedValue(ok("## One\n\nBody."));
+    await synthesiseSections(runTool2, null, "j", {}, "BASE", "draft", "", "input", sections, "", "M1", "");
+    expect(runTool2.mock.calls[0][1]).toContain("Length: at most 300 words.");
+    expect(runTool2.mock.calls[0][1]).not.toContain("approximately");
+  });
+
+  it("with the flag off, the system prompts are exactly what worker.js passed", async () => {
+    const saved = process.env.ELJ_STYLE_GUIDE;
+    process.env.ELJ_STYLE_GUIDE = "off";
+    try {
+      const runTool = vi.fn().mockResolvedValue(ok('[{"title":"A","target_words":400}]'));
+      await planSections(runTool, "BASE", "briefing", "", "input", "", "M1");
+      expect(runTool.mock.calls[0][0]).toBe("BASE\n\nYou are now planning the STRUCTURE of a briefing note for senior litigation counsel. The reader will read the entire document.");
+      const runTool2 = vi.fn().mockResolvedValue(ok("## One\n\nBody."));
+      await synthesiseSections(runTool2, null, "j", {}, "BASE", "draft", "", "input", sections, "", "M1", "");
+      expect(runTool2.mock.calls[0][0]).toBe("BASE");
+    } finally {
+      if (saved === undefined) delete process.env.ELJ_STYLE_GUIDE; else process.env.ELJ_STYLE_GUIDE = saved;
+    }
+  });
+});

@@ -5,11 +5,22 @@
    Supabase. Production code in worker.js imports these and passes in the
    real runTool and updateJob.
 
+   v5.80 (Push B): the ELJ Drafting Style Guide (api/lib/style_guide.js) is
+   appended to the system prompt of the plan call and every section call, via
+   guidedSystem(). The full guide for draft and briefing; accuracy and
+   restraint only for the evidence assessment. Word counts become ceilings.
+   worker.js is untouched: it still passes the same systemBase, and this
+   file adds the guide on the way to runTool. The guide is fixed text, so
+   the section calls share one cached prefix. ELJ_STYLE_GUIDE=off restores
+   the pre-v5.80 prompts exactly.
+
    Functions exported:
      - parsePlan(text)              pure parser, no side effects
      - planSections(...)            plan phase, needs runTool injected
      - synthesiseSections(...)      section loop, needs runTool + updateJob
      - MAX_SECTIONS, MIN_SECTION_WORDS, MAX_SECTION_WORDS (constants) */
+
+import { styleGuideFor } from "./style_guide.js";
 
 export const MAX_SECTIONS = 12;
 export const MIN_SECTION_WORDS = 150;
@@ -62,6 +73,12 @@ export function parsePlan(text) {
   return normalised;
 }
 
+/* v5.80: the system prompt for a plan or section call: worker.js's
+   systemBase plus the style guide for this tool ("" when the flag is off). */
+export function guidedSystem(systemBase, toolName, env) {
+  return systemBase + styleGuideFor(toolName, env || process.env);
+}
+
 /* Ask the model to propose a section list. `runTool` is injected for
    testability — production passes the real runTool from worker.js, tests
    pass a stub. */
@@ -73,7 +90,7 @@ export async function planSections(runTool, systemBase, toolName, instructions, 
   };
   const what = toolDescriptions[toolName] || ("a " + toolName + " output");
 
-  const planSystem = systemBase + "\n\nYou are now planning the STRUCTURE of " + what;
+  const planSystem = guidedSystem(systemBase, toolName) + "\n\nYou are now planning the STRUCTURE of " + what;
 
   const planPrompt =
     "You are about to produce " + what + "\n\n" +
@@ -81,10 +98,10 @@ export async function planSections(runTool, systemBase, toolName, instructions, 
     "Return ONLY a JSON array. No preamble, no commentary, no code fences. Each array entry must be an object with these fields:\n\n" +
     "  - title:         short section heading (string)\n" +
     "  - description:   one-line description of what this section covers (string)\n" +
-    "  - target_words:  approximate target length in words for this section (integer between " + MIN_SECTION_WORDS + " and " + MAX_SECTION_WORDS + ")\n\n" +
+    "  - target_words:  the MOST words this section may use (integer between " + MIN_SECTION_WORDS + " and " + MAX_SECTION_WORDS + ")\n\n" +
     "Guidance:\n" +
     "  - Aim for " + (toolName === "draft" ? "5 to 10" : "4 to 8") + " sections in most cases. Maximum " + MAX_SECTIONS + ".\n" +
-    "  - target_words should reflect the material weight, not a uniform default. A section covering the key disputed issues will usually be longer than a summary or procedural-stage section.\n" +
+    "  - target_words is a ceiling, not a target. Set it from the weight of the material: a section covering the key disputed issues may need more; a thin section should be short.\n" +
     "  - The section list must cover the full scope of the output without overlap.\n" +
     "  - Section titles should be specific to this matter, not generic. For example 'Disputed Matters: Quantum and Allocation' is better than 'The Issues'.\n\n" +
     (instructions ? "USER INSTRUCTIONS: " + instructions + "\n\n" : "") +
@@ -146,7 +163,7 @@ export async function synthesiseSections(runTool, updateJob, jobId, job, systemB
       "You are writing section " + sec.index + " of " + sections.length + " for " + (toolName === "briefing" ? "a briefing note" : toolName === "draft" ? "a legal drafting document" : "an evidence assessment") + ".\n\n" +
       "SECTION " + sec.index + ": " + sec.title + "\n" +
       (sec.description ? "(" + sec.description + ")\n" : "") +
-      "Target length: approximately " + sec.target_words + " words.\n\n" +
+      "Length: at most " + sec.target_words + " words. Shorter is better if the point is made. Stop when it is made.\n\n" +
       "Output ONLY the body of this section. Start with a Markdown heading '## " + sec.title + "' and then the section's content. Do not write any other section's content. Do not repeat content from earlier sections.\n\n" +
       (precedingContext ? "FOR CONTEXT — summaries of preceding sections:\n\n" + precedingContext + "\n" : "") +
       "FULL OUTLINE OF ALL SECTIONS (for context on what belongs where, so you avoid duplicating later sections):\n" +
@@ -157,7 +174,7 @@ export async function synthesiseSections(runTool, updateJob, jobId, job, systemB
 
     const sectionStart = Date.now();
     try {
-      const r = await runTool(systemBase, sectionPrompt, sectionBudget);
+      const r = await runTool(guidedSystem(systemBase, toolName), sectionPrompt, sectionBudget);
       results[i] = {
         index: sec.index,
         title: sec.title,

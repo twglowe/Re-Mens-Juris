@@ -956,24 +956,6 @@ var CRITICAL_FIELDS = {
   section_results: true,
 };
 
-/* v5.78: JSON with object keys sorted, for comparing what was written with
-   what came back. Postgres jsonb does not keep key order: it stores keys
-   shortest first, then bytewise. A plain JSON.stringify comparison therefore
-   reported a mismatch whenever an object's keys were not already in that
-   order. The v5.76 section plan ({index, title, description, point, basis,
-   target_words}) came back as {basis, index, point, title, ...} and every
-   sectioned job (draft, briefing, proposition) failed at the plan save.
-   section_results had the same false mismatch, silently caught and logged
-   by synthesiseSections, since v5.8a. Array order still counts. */
-function canonicalJson(v) {
-  if (Array.isArray(v)) return "[" + v.map(canonicalJson).join(",") + "]";
-  if (v && typeof v === "object") {
-    return "{" + Object.keys(v).sort().map(function(k) { return JSON.stringify(k) + ":" + canonicalJson(v[k]); }).join(",") + "}";
-  }
-  var s = JSON.stringify(v);
-  return s === undefined ? "null" : s;
-}
-
 async function updateJob(jobId, fields) {
   /* v4.3: heartbeat. Every updateJob() call stamps updated_at so the cron-resume
      endpoint can identify stale in-progress jobs. updated_at is intentionally
@@ -1002,7 +984,7 @@ async function updateJob(jobId, fields) {
     if (fields.hasOwnProperty(k) && CRITICAL_FIELDS[k]) {
       var expected = JSON.stringify(fields[k]);
       var actual = JSON.stringify(returned[k]);
-      if (canonicalJson(fields[k]) !== canonicalJson(returned[k])) {
+      if (expected !== actual) {
         var expectedShort = expected.length > 80 ? expected.slice(0, 80) + "..." : expected;
         var actualShort = actual.length > 80 ? actual.slice(0, 80) + "..." : actual;
         mismatch.push(k + " expected=" + expectedShort + " got=" + actualShort);
@@ -2233,4 +2215,3 @@ var toolLabels = {
    client. The default export — the Vercel handler — is unchanged. */
 export { buildCaseLawContext, caseLawKeywords, caseLawJoinChunks, caseLawHeading };
 export { CACHE_WRITE_MULTIPLIER, CACHE_READ_MULTIPLIER };
-export { canonicalJson };

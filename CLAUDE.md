@@ -356,6 +356,44 @@ scan". It was not.
   holds a usable template, and the backfill helper in
   `migration_precedent_source_matter.sql` pairs it with its matter.
 
+## Footnotes and paragraph numbers on upload (v5.80)
+- `public/js/doc_text.js`, pure helpers, loaded before `core.js`. Matter
+  uploads (`core.js` and the Draft tab's upload) call `extractDocxText` /
+  `extractPdfText` with `{layout:true}`; **library uploads do not** — the
+  case law splitter reads page footers from the plain text.
+- Word: `extractRawText` drops footnotes, markers and automatic paragraph
+  numbers, so the .docx XML is read instead. PDF: each page is read by
+  position and size. Markers read `[fn N]`, notes `[Footnote N]`, and PDF
+  notes sit under `[Footnotes on this page]`.
+- Fail-safe: a reading that throws or holds less text than the old one falls
+  back to the old one (`dtTextWeight`). Documents uploaded before this
+  carry no markers; re-upload them.
+
+## List of Authorities (v5.81–v5.82)
+- Replaces the Citation Checker on the tools bar. `toolDefs.citations` and
+  the worker.js branch stay so History can replay old checks.
+- **Own worker**: `api/authoritiesWorker.js`, routed by `tool_name ===
+  "authorities"` in `api/tools.js`, `api/cron-resume.js` and the frontend
+  re-fire in `tools.js`. It imports nothing from `worker.js` (frozen).
+- Pure half in `api/lib/authorities.js`: prompts, text rebuild (strips the
+  upload chunker's 150-character repeat), merge, verification rules, and the
+  three orders. `api/__tests__/authorities.test.js` holds Tom's rules.
+- Stages, each resumable from `tool_jobs.extracts[0]` (one JSON string):
+  extract → merge → verify. A **lease** in that state plus a conditional
+  update on `updated_at` claims the job, so a cron rescue or double fire
+  cannot run it twice; the lease outlives `maxDuration` so a crash frees it.
+- Rules the code enforces, whatever the model says: report citations only
+  from the skeletons' own text (`applyMerge`); a verdict must name a passage
+  that was supplied (`applyVerify`); the year is the report year, not the
+  decision year (`reportYear`); jurisdictions in Tom's order
+  (`compareJurisdictions`); the decision itself is never a verification
+  source (`isSameDecision`, matched on report citation, not party names).
+- The result is the alphabetical list as text followed by the other two
+  orders base64-encoded in an HTML comment (`VIEW_MARKER`).
+  `public/js/authorities_view.js` strips it before rendering and adds the
+  Order buttons; `appendMsgTo` in `core.js` calls it for `toolName ===
+  "authorities"`, so History replays work the same way.
+
 ## Related earlier work
 - Push A, the legislation library (`legislation`, `legislation_chunks`), is
   the pattern Push B follows — see the `leg*` functions in `library.js` and

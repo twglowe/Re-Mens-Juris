@@ -2387,7 +2387,9 @@ async function draftUploadInPlace(input,boxKey){
   if(!isPdf&&!isDocx){showToast('Please select a PDF or Word (.docx) document');input.value='';return;}
   showToast('Uploading '+file.name+'…');
   try{
-    var pages=isDocx?await extractDocxText(file):await extractPdfText(file);
+    /* v5.80 Push 1: a matter upload, so read footnotes and paragraph numbers
+       as core.js does. */
+    var pages=isDocx?await extractDocxText(file,{layout:true}):await extractPdfText(file,{layout:true});
     var text=pages.map(function(p){return p.text;}).join('\n\n');
     if(!text||text.trim().length<50){showToast('No readable text in '+file.name+(isPdf?'. Try OCR at ilovepdf.com first.':'. The document may be empty or corrupted.'));input.value='';return;}
     var docType='Other';

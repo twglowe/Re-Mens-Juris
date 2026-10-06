@@ -2024,7 +2024,8 @@ async function uploadFiles(files){
     if(!isPdf&&!isDocx){errEl.textContent=file.name+': unsupported file type. Please use .pdf or .docx.';errEl.classList.add('on');continue;}
     prog.textContent='Extracting text: '+file.name+'…';prog.classList.add('on');
     try{
-      var pages=isDocx?await extractDocxText(file):await extractPdfText(file);
+      /* v5.80 Push 1: layout reading keeps footnotes and paragraph numbers. */
+      var pages=isDocx?await extractDocxText(file,{layout:true}):await extractPdfText(file,{layout:true});
       var fullText=pages.map(function(p){return p.text;}).join('\n\n');
       if(!fullText||fullText.trim().length<50){errEl.textContent='No readable text in '+file.name+'. '+(isPdf?'Try OCR at ilovepdf.com first.':'The document may be empty or corrupted.');errEl.classList.add('on');continue;}
       /* v5.4: derive doc_date — for PDFs try the embedded metadata first
@@ -2277,11 +2278,19 @@ function clearUploadRetryUI(){
   var errEl=document.getElementById('uploadErr');
   if(errEl){errEl.classList.remove('on');errEl.innerHTML='';}
 }
-/* v3.2: Extract text per page for page-aware chunking */
-async function extractPdfText(file){
+/* v3.2: Extract text per page for page-aware chunking.
+   v5.80 Push 1: opts.layout reads each page by position and font size
+   (dtPdfPageText in doc_text.js) so footnote markers read [fn N], the notes
+   read [Footnote N] at the foot of the page, and lines keep their breaks.
+   Only matter uploads pass it. The library paths — whose case law splitter
+   reads page footers from this text — are unchanged. A page whose layout
+   reading throws, or holds less text than the plain reading, falls back to
+   the plain reading for that page alone. */
+async function extractPdfText(file,opts){
   var pdfjsLib=window['pdfjs-dist/build/pdf']||window.pdfjsLib;
   if(!pdfjsLib)throw new Error('PDF library not loaded. Refresh and try again.');
   pdfjsLib.GlobalWorkerOptions.workerSrc='/js/pdf.worker.min.js';
+  var useLayout=!!(opts&&opts.layout)&&typeof dtPdfPageText==='function'&&typeof dtTextWeight==='function'&&typeof dtBodySize==='function';
   var buf=await file.arrayBuffer();
   var pdf=await pdfjsLib.getDocument({data:buf}).promise;
   var pages=[];
@@ -2291,7 +2300,25 @@ async function extractPdfText(file){
      usable mapping (fragments present, characters empty). The two look
      identical to the user and need different advice. Additive — every
      caller reads .text and is unaffected. */
-  for(var i=1;i<=pdf.numPages;i++){var page=await pdf.getPage(i);var tc=await page.getTextContent();var pageText=tc.items.map(function(item){return item.str;}).join(' ');pages.push({page:i,text:pageText,items:tc.items.length});}
+  var allTc=[];
+  for(var i=1;i<=pdf.numPages;i++){var page=await pdf.getPage(i);allTc.push(await page.getTextContent());}
+  /* The body size is measured once over the whole document: a page that is
+     mostly a footnote quotation would otherwise mistake the note size for
+     the body. */
+  var bodySize=0;
+  if(useLayout){try{bodySize=dtBodySize(allTc.map(function(t){return t.items;}));}catch(e){bodySize=0;}}
+  for(i=1;i<=pdf.numPages;i++){
+    var tc=allTc[i-1];
+    var pageText=tc.items.map(function(item){return item.str;}).join(' ');
+    if(useLayout){
+      try{
+        var laid=dtPdfPageText(tc.items,bodySize);
+        if(dtTextWeight(laid)>=dtTextWeight(pageText))pageText=laid;
+        else console.warn('v5.80 layout reading of page '+i+' held less text; plain reading kept');
+      }catch(e){console.warn('v5.80 layout reading of page '+i+' failed; plain reading kept:',e&&e.message);}
+    }
+    pages.push({page:i,text:pageText,items:tc.items.length});
+  }
   return pages;
 }
 
@@ -2340,14 +2367,40 @@ function parsePdfDate(s){
 }
 /* v4.5: Extract raw text from a .docx file via mammoth.js. Returns the same
    [{page,text},...] shape as extractPdfText so callers can treat both uniformly.
-   .docx has no true page concept, so we return a single "page 1" block. */
-async function extractDocxText(file){
+   .docx has no true page concept, so we return a single "page 1" block.
+   v5.80 Push 1: extractRawText drops footnotes, their markers, and Word's
+   automatic paragraph numbers (tested on mammoth 1.6.0). With opts.layout
+   the document is read from its own XML instead (dtDocxToPages in
+   doc_text.js): "23. It is submitted…[fn 4]" with "[Footnote 4] …" on the
+   line below. Only matter uploads pass it. mammoth still runs, as the
+   yardstick: if the XML reading fails, or holds less of the body text than
+   mammoth found, mammoth's text is used exactly as before. */
+async function extractDocxText(file,opts){
   if(!window.mammoth||!window.mammoth.extractRawText){
     throw new Error('Word library not loaded. Refresh and try again.');
   }
   var buf=await file.arrayBuffer();
   var result=await window.mammoth.extractRawText({arrayBuffer:buf});
   var text=(result&&result.value)||'';
+  if(opts&&opts.layout&&window.JSZip&&typeof dtDocxToPages==='function'&&typeof dtTextWeight==='function'){
+    try{
+      var zip=await window.JSZip.loadAsync(buf);
+      var part=async function(p){var f=zip.file(p);return f?await f.async('string'):'';};
+      var laid=dtDocxToPages({
+        document:await part('word/document.xml'),
+        numbering:await part('word/numbering.xml'),
+        styles:await part('word/styles.xml'),
+        footnotes:await part('word/footnotes.xml'),
+        endnotes:await part('word/endnotes.xml')
+      });
+      /* Compare body text only: drop the note lines and the paragraph
+         numbers, which mammoth never had. */
+      var body=laid[0].text.split('\n').filter(function(l){return !/^\[(?:Footnote|Endnote) \d+\]/.test(l);})
+        .map(function(l){return l.replace(/^\s*(?:\(?[0-9a-zA-Z]{1,6}[.)]\s?)+/,'');}).join('\n');
+      if(dtTextWeight(body)>=0.97*dtTextWeight(text))return laid;
+      console.warn('v5.80 Word XML reading held less text than mammoth; mammoth kept');
+    }catch(e){console.warn('v5.80 Word XML reading failed; mammoth kept:',e&&e.message);}
+  }
   return [{page:1,text:text}];
 }
 

@@ -1,6 +1,10 @@
 /* EX LIBRIS JURIS v5.19 — cron-resume.js
    Vercel Cron job. Fires every 2 minutes (configured in vercel.json).
 
+   v5.81 (06 Oct 2026) — Push 2: a stale job with tool_name 'authorities'
+   (List of Authorities) is resumed at /api/authoritiesWorker. One line in
+   the routing below; the fire-and-stamp logic is unchanged.
+
    v5.19 CHANGES (21 Jun 2026) — Step 3 (cron-resume hardening):
    The rescue cron used to stamp updated_at after firing the worker WITHOUT
    checking whether the fire landed. A bounced fire (e.g. a 401 from Vercel
@@ -227,7 +231,10 @@ export default async function handler(req, res) {
        (tool_name starts with 'followup:') go to /api/analyseWorker;
        launch jobs continue to /api/worker as before. */
     var isFollowup = typeof job.tool_name === "string" && job.tool_name.indexOf("followup:") === 0;
-    var workerPath = isFollowup ? "/api/analyseWorker" : "/api/worker";
+    /* v5.81: List of Authorities jobs run in their own worker. A fire that
+       finds the job held by a live invocation is refused by that worker's
+       lease, so a rescue here can never run it twice. */
+    var workerPath = isFollowup ? "/api/analyseWorker" : (job.tool_name === "authorities" ? "/api/authoritiesWorker" : "/api/worker");
     var url = baseUrl + workerPath + "?jobId=" + encodeURIComponent(job.id);
 
     var shouldStamp = true;   /* default: stamp, preserving the v4.3a cooldown */

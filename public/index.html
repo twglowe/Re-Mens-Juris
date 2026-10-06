@@ -938,7 +938,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
           <button class="tool-btn" onclick="openTool('chronology')">📅 Chronology</button>
           <button class="tool-btn" onclick="openTool('persons')">👥 Dramatis Personae</button>
           <button class="tool-btn" onclick="openTool('issues')">⚖ Issue Tracker</button>
-          <button class="tool-btn" onclick="openTool('citations')">📚 Citations</button>
+          <!-- v5.82 Push 3: the Citation Checker is hidden, not removed — its
+               tool definition stays so History can replay old checks. -->
+          <button class="tool-btn" onclick="openTool('authorities')">📜 List of Authorities</button>
           <button class="tool-btn" onclick="openTool('briefing')">📋 Briefing Note</button>
         </div>
         <div class="progress-bar-wrap" id="progressWrap">
@@ -1553,8 +1555,9 @@ textarea#chatInput{min-height:70px;max-height:200px;font-size:1.05rem}
 </div>
 <script src="/js/case_law_split.js?v=5.72"></script>
 <script src="/js/doc_text.js?v=5.80"></script>
-<script src="/js/core.js?v=5.80"></script>
-<script src="/js/tools.js?v=5.54"></script>
+<script src="/js/authorities_view.js?v=5.82"></script>
+<script src="/js/core.js?v=5.82"></script>
+<script src="/js/tools.js?v=5.82"></script>
 <script src="/js/library.js?v=5.74"></script>
 <script src="/js/drafting.js?v=5.80"></script>
 <script src="/js/diagram.js?v=5.16c"></script>

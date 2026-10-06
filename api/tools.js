@@ -1,6 +1,14 @@
-/* EX LIBRIS JURIS v5.17 — tools.js (API)
+/* EX LIBRIS JURIS v5.81 — tools.js (API)
    Thin job dispatcher: creates a tool_jobs row, fires worker, returns jobId.
    NO Claude API calls happen here. All processing is in worker.js.
+
+   v5.81 CHANGES (06 Oct 2026) — Push 2 (List of Authorities):
+   1. New tool 'authorities'. Its job runs in api/authoritiesWorker.js, not
+      worker.js (frozen), so the fire below is routed by tool name.
+   2. New parameter authoritySkeletons: the names of the skeleton arguments
+      to review. Whitelisted here like every other field (see CLAUDE.md:
+      a field not named in both places is silently dropped). Required for
+      this tool; ignored by every other.
 
    v5.17 CHANGES (07 May 2026) — Push C (server-side draft persistence):
    1. When tool === 'draft', create a drafts row in the drafts table BEFORE
@@ -61,7 +69,7 @@ async function getUser(supabase, req) {
   }
 }
 
-const SERVER_VERSION = "v5.17";
+const SERVER_VERSION = "v5.81";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " tools handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -79,15 +87,23 @@ export default async function handler(req, res) {
           caseTypeId, docTypeId, subcatId, libraryContext, caseLawContext,
           matterToolHistory, learnFromComparable,
           excludeDocNames, excludeDocTypes, includeDocNames,
-          subElement, focusDocNames } = req.body;
+          subElement, focusDocNames, authoritySkeletons } = req.body;
 
   if (!tool || !matterId) return res.status(400).json({ error: "tool and matterId required" });
 
-  const validTools = ["proposition", "inconsistency", "chronology", "persons", "issues", "citations", "briefing", "draft", "issueBriefing"];
+  const validTools = ["proposition", "inconsistency", "chronology", "persons", "issues", "citations", "briefing", "draft", "issueBriefing", "authorities"];
   if (!validTools.includes(tool)) return res.status(400).json({ error: "Unknown tool: " + tool });
 
   if (tool === "proposition" && !instructions) {
     return res.status(400).json({ error: "Please state the proposition to test" });
+  }
+
+  /* v5.81: the List of Authorities needs at least one skeleton. */
+  const skeletonList = Array.isArray(authoritySkeletons)
+    ? authoritySkeletons.filter(function(n) { return typeof n === "string" && n.trim(); })
+    : [];
+  if (tool === "authorities" && skeletonList.length === 0) {
+    return res.status(400).json({ error: "Choose at least one skeleton argument" });
   }
 
   /* v5.17 Push C: for draft jobs, create the drafts row FIRST so the worker
@@ -177,6 +193,8 @@ export default async function handler(req, res) {
        tools and for draft jobs started before v5.17 deploys. The worker
        falls back to old behaviour when this is null/missing. */
     draftRowId: draftRowId,
+    /* v5.81: List of Authorities — the skeleton arguments to review. */
+    authoritySkeletons: skeletonList,
   };
 
   /* Create job row */
@@ -212,7 +230,9 @@ export default async function handler(req, res) {
   /* Fire the worker — fire-and-forget.
      v4.2e: No AbortController, no await. The frontend polling loop handles
      retries if the worker doesn't start. */
-  const workerUrl = `https://${req.headers.host}/api/worker?jobId=${job.id}`;
+  /* v5.81: the List of Authorities has its own worker (worker.js is frozen). */
+  const workerPath = tool === "authorities" ? "/api/authoritiesWorker" : "/api/worker";
+  const workerUrl = `https://${req.headers.host}${workerPath}?jobId=${job.id}`;
   fetch(workerUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

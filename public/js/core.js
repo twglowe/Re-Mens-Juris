@@ -3143,6 +3143,11 @@ function appendMsgTo(area,role,content,variant,question,costStr,toolName,history
   var w=document.createElement('div');w.className='msg msg-'+role+(variant?' msg-'+(variant==='prop'?'tool':variant):'');
   var time=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
   var bubble=document.createElement('div');bubble.className='msg-bubble';
+  /* v5.82 Push 3: a List of Authorities result carries its other two orders
+     in a trailing comment. Render and export without it; the switcher is
+     added once the message is built. */
+  var rawContent=content;
+  if(toolName==='authorities'&&typeof authPrepare==='function')content=authPrepare(content);
   if(role==='assistant'){bubble.innerHTML=variant==='prop'?renderProp(content):renderMdWithSourceLinks(content);}
   else{bubble.textContent=content;}
   var meta=document.createElement('div');meta.className='msg-meta';
@@ -3167,6 +3172,7 @@ function appendMsgTo(area,role,content,variant,question,costStr,toolName,history
      Backward-compatible — nothing else reads dataset.historyId today. */
   if(historyId)w.dataset.historyId=historyId;
   if(toolName&&historyId){var histBar=renderToolHistoryBar(toolName,historyId);if(histBar.children.length)w.appendChild(histBar);}
+  if(toolName==='authorities'&&role==='assistant'&&typeof authDecorate==='function'){try{authDecorate(w,bubble,rawContent,question||(currentMatter&&currentMatter.name));}catch(e){console.warn('v5.82 authorities view:',e&&e.message);}}
   area.appendChild(w);area.scrollTop=area.scrollHeight;
 }
 

@@ -75,8 +75,63 @@
    3. No change to follow-up flow, polling, progress display, history.
 */
 
+/* ── v5.82 Push 3: LIST OF AUTHORITIES launch form ──────────────────────────
+   Which documents are skeletons is read from their names (doc_type is not
+   to be trusted — see CLAUDE.md). They are grouped by document date, since
+   skeletons for one hearing are filed together: the latest group starts
+   ticked, any other document can be ticked from "Other documents". The
+   chosen names go up as authoritySkeletons. */
+function authIsSkeletonName(name){
+  return /skeleton|submission|argument|opening|closing|reply|rejoinder|response|written\s+case/i.test(String(name||''));
+}
+function authDocDay(d){
+  var raw=d.doc_date||d.created_at;
+  if(!raw)return '';
+  var dt=new Date(raw);
+  return isNaN(dt.getTime())?'':dt.toISOString().slice(0,10);
+}
+function authFormHtml(){
+  var skels=documents.filter(function(d){return authIsSkeletonName(d.name)||d.doc_type==='Skeleton Argument';});
+  var others=documents.filter(function(d){return skels.indexOf(d)===-1;}).slice().sort(function(a,b){return a.name.localeCompare(b.name);});
+  var groups={};var days=[];
+  skels.forEach(function(d){var k=authDocDay(d);if(!groups[k]){groups[k]=[];days.push(k);}groups[k].push(d);});
+  days.sort().reverse();
+  var html='<p class="tool-desc">Lists every case and textbook cited in the chosen skeleton arguments \u2014 in the text and in footnotes \u2014 with the report citations given, where each is cited, and the proposition it is cited for, checked against other judgments and textbooks that cite it. Choose the skeletons for one hearing.</p>';
+  html+='<div class="focus-label">Skeleton arguments <span style="font-weight:400;text-transform:none;letter-spacing:0">(grouped by document date \u2014 the latest group is ticked)</span></div>';
+  if(!skels.length){
+    html+='<div style="font-size:.84rem;color:var(--text-faint);padding:.3rem 0 .5rem">No document in this matter is named as a skeleton or submissions. Tick the documents to review under Other documents.</div>';
+  }
+  html+='<div class="anchor-list" id="authSkeletonList" style="max-height:220px">';
+  days.forEach(function(day,gi){
+    var label=day?new Date(day+'T00:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}):'No date';
+    html+='<div style="font-size:.72rem;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.04em;margin:'+(gi?'.45rem':'.1rem')+' 0 .15rem">'+esc(label)+'</div>';
+    groups[day].sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(d){
+      html+='<label class="anchor-item"><input type="checkbox" '+(gi===0?'checked ':'')+'value="'+esc(d.name)+'"> '+esc(d.name)+'</label>';
+    });
+  });
+  html+='</div>';
+  if(others.length){
+    html+='<details style="margin-top:.6rem;border:1px solid var(--border);border-radius:6px;padding:.4rem .55rem;background:var(--surface)">'
+      +'<summary style="cursor:pointer;font-size:.84rem;color:var(--text-mid);user-select:none">Other documents \u2026 <span style="color:var(--text-faint);font-weight:400">(tick any to include)</span></summary>'
+      +'<div class="anchor-list" id="authOtherList" style="margin-top:.5rem;max-height:160px">'
+      +others.map(function(d){return '<label class="anchor-item"><input type="checkbox" value="'+esc(d.name)+'"> '+esc(d.name)+' <span style="color:var(--text-faint);font-size:.72rem">['+esc(d.doc_type||'')+']</span></label>';}).join('')
+      +'</div></details>';
+  }
+  html+='<p style="font-size:.8rem;color:var(--text-faint);margin-top:.5rem">Footnotes are read only from documents uploaded since 6 October 2026. Re-upload an older skeleton first if its citations sit in footnotes.</p>';
+  return html;
+}
+function authChosenSkeletons(){
+  var names=[];
+  document.querySelectorAll('#authSkeletonList input:checked, #authOtherList input:checked').forEach(function(cb){if(names.indexOf(cb.value)===-1)names.push(cb.value);});
+  return names;
+}
+
 /* ── TOOL DEFINITIONS ────────────────────────────────────────────────────── */
 var toolDefs={
+  /* v5.82 Push 3: List of Authorities. Replaces the Citation Checker on the
+     tools bar; the 'citations' entry below stays so History can replay old
+     checks. */
+  authorities:{title:'\uD83D\uDCDC List of Authorities',body:function(){return authFormHtml();}},
   inconsistency:{title:'🔍 Inconsistency Tracker',body:function(){return '<p class="tool-desc">Select anchor documents (your baseline factual position). The system finds all contradictions in the remaining documents.</p><div class="focus-label">Anchor Documents <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to compare all)</span></div><div class="anchor-list" id="anchorList">'+documents.map(function(d){return '<label class="anchor-item"><input type="checkbox" value="'+esc(d.name)+'"> '+esc(d.name)+' <span style="color:var(--text-faint);font-size:.72rem">['+d.doc_type+']</span></label>';}).join('')+'</div><div class="focus-label" style="margin-top:.85rem">Additional Instructions <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><textarea id="toolInstructions" placeholder="e.g. Focus on the dates of payments"></textarea>';}},
   proposition:{title:'🎯 Proposition Evidence Finder',body:function(){return '<p class="tool-desc">State a proposition or factual assertion. The system finds all evidence supporting or contradicting it and grades each reference by strength.</p><div class="focus-label">Proposition or Statement</div><textarea id="toolInstructions" placeholder="e.g. The defendant had knowledge of the transactions before 1 January 2023" style="min-height:80px"></textarea>';}},
   chronology:{title:'📅 Chronology Builder',body:function(){var anchorOpts=(typeof matterHistory!=='undefined'&&matterHistory?matterHistory:[]).filter(function(h){return h.tool_name==='issues';}).map(function(h){return '<option value="'+esc(h.id)+'">Issue Tracker — '+esc(h.question.slice(0,60))+(h.question.length>60?'…':'')+' ('+new Date(h.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'})+')</option>';}).join('');return '<p class="tool-desc">Extracts all dates and events from every document and assembles a complete chronology with page and paragraph references.</p>'
@@ -458,6 +513,9 @@ function captureToolFormState(toolName){
     s.citationTargets=[];
     document.querySelectorAll('#citationTargetList input:checked').forEach(function(cb){s.citationTargets.push(cb.value);});
   }
+  if(toolName==='authorities'){
+    s.authSkeletons=authChosenSkeletons();
+  }
   if(toolName==='briefing'){
     s.briefingFocusDocList=[];
     document.querySelectorAll('#briefingFocusDocList input:checked').forEach(function(cb){s.briefingFocusDocList.push(cb.value);});
@@ -508,6 +566,14 @@ function restoreToolFormState(toolName){
       var cSet={};s.citationTargets.forEach(function(v){cSet[v]=true;});
       document.querySelectorAll('#citationTargetList input').forEach(function(cb){cb.checked=!!cSet[cb.value];});
     }
+  }
+  if(toolName==='authorities'&&Array.isArray(s.authSkeletons)){
+    /* The list defaults to the latest group ticked; restore = the saved
+       selection exactly, and open Other documents if any of those were. */
+    var aSet2={};s.authSkeletons.forEach(function(v){aSet2[v]=true;});
+    document.querySelectorAll('#authSkeletonList input, #authOtherList input').forEach(function(cb){cb.checked=!!aSet2[cb.value];});
+    var oth=document.getElementById('authOtherList');
+    if(oth&&oth.querySelector('input:checked')){var op=oth.parentElement;if(op&&op.tagName==='DETAILS')op.open=true;}
   }
   if(toolName==='briefing'&&Array.isArray(s.briefingFocusDocList)&&s.briefingFocusDocList.length){
     var bSet={};s.briefingFocusDocList.forEach(function(v){bSet[v]=true;});
@@ -651,6 +717,16 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
   if(pendingTool==='briefing'){
     document.querySelectorAll('#briefingFocusDocList input:checked').forEach(function(cb){briefingFocusDocNames.push(cb.value);});
   }
+  /* v5.82 Push 3: the List of Authorities needs at least one skeleton. */
+  var authoritySkeletons=[];
+  if(pendingTool==='authorities'){
+    authoritySkeletons=authChosenSkeletons();
+    if(!authoritySkeletons.length){
+      showToast('Tick at least one skeleton argument to review');
+      rtUnlock(v55LockedTool);
+      return;
+    }
+  }
   /* v3.4: Collect document exclusions from filter */
   var excludeDocNames=getExcludedDocNames();
   var excludeDocTypes=getExcludedDocTypes();
@@ -703,6 +779,8 @@ document.getElementById('toolRunBtn').addEventListener('click',async function(){
       if(issuesSubElement)body.subElement=issuesSubElement;
       if(issuesFocusDocNames.length>0)body.focusDocNames=issuesFocusDocNames;
     }
+    /* v5.82 Push 3: the skeletons to review. */
+    if(toolName==='authorities')body.authoritySkeletons=authoritySkeletons;
     /* v3.6: Citation source and target parameters */
     if(toolName==='citations'){
       var citSrc=document.getElementById('citationSourceSelect');
@@ -1045,7 +1123,8 @@ function startPollingJob(jobId,toolName,toolLabel,instructions,msgsArea,progress
           console.log('v4.2k re-fire worker:',j.status,statusChanged?'(status changed)':'(cooldown elapsed)');
           lastFireStatus=j.status;
           lastFireTime=nowMs;
-          fetch('/api/worker?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Worker re-fire:',e.message);});
+          /* v5.82: a List of Authorities job belongs to its own worker. */
+          fetch((toolName==='authorities'?'/api/authoritiesWorker':'/api/worker')+'?jobId='+jobId,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('token')}}).catch(function(e){console.log('Worker re-fire:',e.message);});
         }
       }
       if(j.status==='failed'){

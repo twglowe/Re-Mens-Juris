@@ -1,6 +1,11 @@
-/* EX LIBRIS JURIS v3.6 — export.js
+/* EX LIBRIS JURIS v5.83 — export.js
    Generates .docx files using pure JS ZIP creation.
-   No npm packages, no shell commands — works on Vercel serverless. */
+   No npm packages, no shell commands — works on Vercel serverless.
+
+   v5.83 (06 Oct 2026): page size is US Letter, not A4. Tom's courts use
+   Letter; every Word download (tool outputs and drafts) comes through
+   here, so this is the one place it is set. The front-sheet spacer is
+   recomputed for the shorter page. */
 
 export const config = { maxDuration: 30 };
 
@@ -159,11 +164,12 @@ function frontSheetXml(h) {
       if (p2r) { paras.push('<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="120"/></w:pPr>' + run(p2r, { u: 1 }) + '</w:p>'); count++; }
     }
   }
-  /* Usable body height on A4 with 1in margins ~13958 twips. The title
-     must sit no higher than a third from the bottom, i.e. start around
-     9300 twips down. Each heading paragraph is roughly 340 twips. */
+  /* v5.83: usable body height on US Letter with 1in margins is 12960
+     twips (was ~13958 on A4). The title must sit no higher than a third
+     from the bottom, i.e. start around 8640 twips down. Each heading
+     paragraph is roughly 340 twips. */
   var used = count * 340 + 720;
-  var spacer = Math.max(240, 9300 - used);
+  var spacer = Math.max(240, 8640 - used);
   paras.push('<w:p><w:pPr><w:spacing w:before="' + spacer + '"/></w:pPr></w:p>');
   if (docTitle) {
     paras.push('<w:p><w:pPr><w:jc w:val="center"/><w:ind w:left="1440" w:right="1440"/>'
@@ -199,7 +205,8 @@ function buildDocxFiles(bodyXml) {
     + '<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
     + 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
     + '<w:body>' + bodyXml
-    + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
+    /* v5.83: US Letter, 8.5in x 11in (twips). A4 was 11906 x 16838. */
+    + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
     + '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>'
     + '</w:sectPr></w:body></w:document>';
 
@@ -316,7 +323,7 @@ function buildZip(files) {
   return Buffer.concat([...localHeaders, ...centralHeaders, eocd]);
 }
 
-const SERVER_VERSION = "v5.28";
+const SERVER_VERSION = "v5.83";
 export default async function handler(req, res) {
   console.log(SERVER_VERSION + " export handler: " + (req.method || "?") + " " + (req.url || ""));
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });

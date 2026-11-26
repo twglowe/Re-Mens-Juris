@@ -394,6 +394,24 @@ scan". It was not.
   Order buttons; `appendMsgTo` in `core.js` calls it for `toolName ===
   "authorities"`, so History replays work the same way.
 
+## Bundle Links (v5.84, Push 1 of 4)
+- Adds links from bundle references in a skeleton PDF ([B/2/45], body and
+  footnotes) to the right page of bundle PDFs in the same case folder on
+  Tom's computer. Browser only: no upload, no tables, no model calls. Spec:
+  `claude/SPEC_Bundle_Links.md` in the Project.
+- `public/js/bundle_links_helpers.js`, pure helpers loaded before `core.js`,
+  tested by `api/__tests__/bundle_links_helpers.test.js`. Push 1 is the
+  helpers only; the tab (`bundle_links.js`) comes in Push 2.
+- A bundle page may carry several numbers (its own page, an exhibit page,
+  an earlier bundle ref). Tom taps the bundle stamp once; `blFindStamp`
+  reads only that position and form. `blCheckSequence` flags anything out of
+  sequence, and `blResolveRef` never links to a page still flagged.
+- Pagination is continuous or per tab depending on the bundle; per tab is
+  detected from restarts at 1. A two-part reference is a page, except in an
+  authorities bundle (label ending AB: AB, DAB, PAB, AAB), where it is a tab.
+- Links are `GoToR` with a path **relative to the skeleton**, never a full
+  path, so the folder can be zipped and sent. Acrobat is the target reader.
+
 ## Related earlier work
 - Push A, the legislation library (`legislation`, `legislation_chunks`), is
   the pattern Push B follows — see the `leg*` functions in `library.js` and

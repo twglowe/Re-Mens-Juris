@@ -394,7 +394,7 @@ scan". It was not.
   Order buttons; `appendMsgTo` in `core.js` calls it for `toolName ===
   "authorities"`, so History replays work the same way.
 
-## Bundle Links (v5.84–v5.85, Push 1 of 4)
+## Bundle Links (v5.84–v5.86, Push 1 of 4)
 - Adds links from bundle references in a skeleton PDF ([B/2/45], body and
   footnotes) to the right page of bundle PDFs in the same case folder on
   Tom's computer. Browser only: no upload, no tables, no model calls. Spec:
@@ -434,6 +434,13 @@ scan". It was not.
     to [A/TAB/PAGE] … are to Bundle A …"; `blFilesForName` finds the files.
     Two versions of one bundle in a folder (23 and 26 Nov) both match, and
     Tom chooses.
+  - **Never join pdf.js runs with a space** (v5.86). Word and Quartz PDFs
+    split numbers into pieces ("15" + "3"); a space between every piece
+    sent [C/42/153] to page 15, and 40 of 246 links in the first linked
+    file went to the wrong page. `blJoinRuns` adds a space only where the
+    page shows a gap or a new line; `blSpanRunsAt` maps back to the pieces;
+    `blMergeRects` draws one box per line. Checked by comparing every
+    reference against an independent `pdftotext` reading: 246 of 246 agree.
 
 ## Related earlier work
 - Push A, the legislation library (`legislation`, `legislation_chunks`), is

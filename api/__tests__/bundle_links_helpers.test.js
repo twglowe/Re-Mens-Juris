@@ -14,6 +14,7 @@ const {
   blStampForm, blReadStamp, blFindStamp,
   blCheckSequence, blResolveRef, blLinkRect, blSpanRuns, blRelativePath,
   blTabStartsFromOutline, blLabelsFromKey, blFilesForName,
+  blJoinRuns, blSpanRunsAt, blMergeRects,
 } = bl;
 
 const pick = (refs) => refs.map((r) => ({ label: r.label, tab: r.tab, page: r.page }));
@@ -379,5 +380,46 @@ describe("lessons from a real case folder", () => {
 
   it("reads a range broken by a line end", () => {
     expect(blParseRefs("[B/4/3907- 3937]")[0]).toMatchObject({ label: "B", tab: 4, page: 3907, pageEnd: 3937 });
+  });
+});
+
+/* v5.86 — pdf.js splits numbers into pieces. Joined with a space between
+   every piece, [C/42/153-154] read as page 15 and 40 of 246 links in the
+   first linked file went to the wrong page (Tom, 26 Nov 2026). */
+describe("joining the pieces of a page", () => {
+  const run = (str, x, w, y = 700, h = 11) => ({ str, x, y, w, h });
+
+  it("does not put a space inside a split number", () => {
+    const runs = [run("[C/", 100, 15), run("42", 115, 10), run("/", 125, 3), run("15", 128, 10), run("3", 138, 5), run("].", 143, 6)];
+    const { text } = blJoinRuns(runs);
+    expect(text).toBe("[C/42/153].");
+    expect(blParseRefs(text)[0]).toMatchObject({ label: "C", tab: 42, page: 153 });
+  });
+
+  it("keeps the space the page shows between words", () => {
+    const { text } = blJoinRuns([run("letter of", 100, 40), run("18 November", 145, 50)]);
+    expect(text).toBe("letter of 18 November");
+  });
+
+  it("puts a space at a line end, so a range broken over two lines still reads", () => {
+    const runs = [run("[C/42/153-", 400, 50, 700), run("154].", 100, 20, 686)];
+    const { text } = blJoinRuns(runs);
+    expect(blParseRefs(text)[0]).toMatchObject({ page: 153, pageEnd: 154 });
+  });
+
+  it("maps a reference back to exactly the pieces it came from", () => {
+    const runs = [run("see [B/4/390", 100, 55), run("7]", 155, 8)];
+    const J = blJoinRuns(runs);
+    const [ref] = blParseRefs(J.text);
+    expect(ref.page).toBe(3907);
+    expect(blSpanRunsAt(runs, J.starts, ref.start, ref.end)).toEqual([
+      { run: 0, start: 5, end: 12 }, { run: 1, start: 0, end: 1 },
+    ]);
+  });
+
+  it("draws one box per line of a reference", () => {
+    expect(blMergeRects([[100, 690, 110, 702], [110, 690, 125, 702], [100, 676, 120, 688]])).toEqual([
+      [100, 690, 125, 702], [100, 676, 120, 688],
+    ]);
   });
 });

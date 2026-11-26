@@ -1,4 +1,4 @@
-/* ══ v5.84 Bundle Links Push 1: PURE HELPERS ══════════════════════════════════
+/* ══ v5.84–v5.85 Bundle Links Push 1: PURE HELPERS ══════════════════════════════════
    Bundle Links adds a link to every bundle reference in a skeleton PDF,
    pointing at the right page of the right bundle PDF in the same case
    folder. Nothing is uploaded; everything runs in the browser.
@@ -189,15 +189,22 @@ function blRefFromParts(main, rangeEnd) {
    not read as the bundle stamp. */
 function blStampForm(str) {
   var t = String(str || "").trim();
-  var m;
+  /* v5.84: an authorities bundle stamped "[46]" (Visionary v NBC, 26 Nov
+     2026). The wrapper is part of the form, so a paragraph number "(7)" or
+     a bare "7" on the same page is not read as that stamp. */
+  var wrap = "";
+  var w = t.match(/^([\[\(\{])\s*(.*?)\s*([\]\)\}])$/);
+  if (w && "[(\{".indexOf(w[1]) === "])}".indexOf(w[3])) { wrap = w[1] + w[3]; t = w[2]; }
+  var m, f = null;
   if ((m = t.match(/^([A-Z]{1,4}\d{0,2}|Core\d{0,2})\s*([\/\-\s])\s*(\d{1,4})\s*\2\s*(\d{1,5})$/i)))
-    return { parts: "LTP", sep: m[2] === " " ? " " : m[2], label: blNormLabel(m[1]) };
-  if ((m = t.match(/^([A-Z]{1,4}\d{0,2}|Core\d{0,2})\s*([\/\-\s])\s*(\d{1,5})$/i)))
-    return { parts: "LP", sep: m[2] === " " ? " " : m[2], label: blNormLabel(m[1]) };
-  if ((m = t.match(/^([A-Z]{1,4})(\d{1,5})$/)))
-    return { parts: "LP", sep: "", label: blNormLabel(m[1]) };
-  if (/^\d{1,5}$/.test(t)) return { parts: "P", sep: "", label: "" };
-  return null;
+    f = { parts: "LTP", sep: m[2] === " " ? " " : m[2], label: blNormLabel(m[1]) };
+  else if ((m = t.match(/^([A-Z]{1,4}\d{0,2}|Core\d{0,2})\s*([\/\-\s])\s*(\d{1,5})$/i)))
+    f = { parts: "LP", sep: m[2] === " " ? " " : m[2], label: blNormLabel(m[1]) };
+  else if ((m = t.match(/^([A-Z]{1,4})(\d{1,5})$/)))
+    f = { parts: "LP", sep: "", label: blNormLabel(m[1]) };
+  else if (/^\d{1,5}$/.test(t)) f = { parts: "P", sep: "", label: "" };
+  if (f) f.wrap = wrap;
+  return f;
 }
 
 /* Read a stamp string against a recorded form. Returns {tab, page} or null
@@ -206,6 +213,7 @@ function blReadStamp(str, form) {
   if (!form) return null;
   var f = blStampForm(str);
   if (!f || f.parts !== form.parts) return null;
+  if ((f.wrap || "") !== (form.wrap || "")) return null;
   if (form.label && f.label !== form.label) return null;
   var nums = String(str).match(/\d+/g) || [];
   /* A label like B1 carries a digit of its own; take the numbers after it. */
@@ -267,7 +275,7 @@ function blFindStamp(items, pageW, pageH, calib) {
    normal start of a tab in a per-tab bundle. The mode is taken from the
    readings: if the stamps carry a tab, or the numbers restart at 1 more
    than once, the bundle is treated as per-tab. */
-function blCheckSequence(readings, opts) {
+function blCheckSequenceOnce(readings, opts) {
   opts = opts || {};
   var n = readings.length;
   var out = [];
@@ -275,7 +283,10 @@ function blCheckSequence(readings, opts) {
   var hasTab = readings.some(function (r) { return r && r.tab !== null && r.tab !== undefined; });
   var ones = 0;
   readings.forEach(function (r) { if (r && r.page === 1) ones++; });
-  var mode = opts.mode || ((ones >= 2 || Object.keys(tabStarts).length > 0) ? "per-tab" : "continuous");
+  /* Tab starts (from bookmarks) say where tabs begin, not how pages are
+     numbered: every Visionary v NBC bundle has tab bookmarks and continuous
+     numbering. Only restarts at 1 make a bundle per-tab. */
+  var mode = opts.mode || (ones >= 2 ? "per-tab" : "continuous");
   var perTab = mode === "per-tab";
 
   /* Tab for each page: from the stamp when it carries one, else from
@@ -288,7 +299,7 @@ function blCheckSequence(readings, opts) {
     else if (tabStarts[i] !== undefined) curTab = tabStarts[i];
     else if (perTab && !hasTab && r && r.page === 1 && i > 0 && curTab !== null) curTab = curTab + 1;
     else if (perTab && !hasTab && curTab === null) curTab = 1;
-    out.push({ idx: i, tab: hasTab || perTab ? curTab : null, page: r ? r.page : null, status: r ? "read" : "none" });
+    out.push({ idx: i, tab: (hasTab || perTab || curTab !== null) ? curTab : null, page: r ? r.page : null, status: r ? "read" : "none" });
   }
 
   /* Walk forward checking each stamp against the expected number. In a
@@ -360,6 +371,63 @@ function blCheckSequence(readings, opts) {
   var summary = { read: 0, inferred: 0, break: 0, none: 0, mode: mode };
   out.forEach(function (e) { summary[e.status]++; });
   return { pages: out, summary: summary };
+}
+
+/* v5.84: a stray number in the stamp's corner. Bundle B in Visionary v NBC
+   has exhibit pages whose own page numbers ("2", "3") sit where the bundle
+   stamp should be; read as stamps, each one breaks the sequence and the
+   pages after it, and a stray "3" makes B/1/3 ambiguous. A reading is a
+   misread when its offset (stamp minus PDF position) agrees with neither
+   the pages before it nor the pages after it. Misreads are set aside and
+   the gap re-inferred from the pages either side; a misread that cannot be
+   re-inferred stays a break for Tom. A genuine jump in numbering agrees
+   with one side, so it is never set aside. */
+var BL_MISREAD_WINDOW = 40;
+var BL_MISREAD_MIN = 5;
+
+function blCheckSequence(readings, opts) {
+  var first = blCheckSequenceOnce(readings, opts);
+  if (!first.summary.break) return first;
+  var pages = first.pages;
+  var n = pages.length;
+  var modal = function (lo, hi, tab) {
+    var counts = {}, total = 0;
+    for (var k = Math.max(0, lo); k <= Math.min(n - 1, hi); k++) {
+      var r = readings[k];
+      if (!r || pages[k].tab !== tab) continue;
+      var off = r.page - k;
+      counts[off] = (counts[off] || 0) + 1;
+      total++;
+    }
+    if (total < BL_MISREAD_MIN) return null;
+    var best = null;
+    for (var o in counts) if (best === null || counts[o] > counts[best]) best = o;
+    return counts[best] * 2 > total ? parseInt(best, 10) : null;
+  };
+  var suspects = [];
+  for (var i = 0; i < n; i++) {
+    /* Every reading is tested, not only breaks: after a stray "2", a stray
+       "3" on the next page looks in sequence. */
+    if (!readings[i]) continue;
+    var own = readings[i].page - i;
+    var left = modal(i - BL_MISREAD_WINDOW, i - 1, pages[i].tab);
+    var right = modal(i + 1, i + BL_MISREAD_WINDOW, pages[i].tab);
+    if (left === null && right === null) continue;
+    if (own !== left && own !== right) suspects.push(i);
+  }
+  if (!suspects.length) return first;
+  var again = readings.slice();
+  suspects.forEach(function (k) { again[k] = null; });
+  var second = blCheckSequenceOnce(again, opts);
+  suspects.forEach(function (k) {
+    var e = second.pages[k];
+    e.misread = readings[k].page;
+    if (e.status !== "inferred") { e.status = "break"; e.page = readings[k].page; }
+  });
+  var summary = { read: 0, inferred: 0, break: 0, none: 0, mode: second.summary.mode };
+  second.pages.forEach(function (e) { summary[e.status]++; });
+  second.summary = summary;
+  return second;
 }
 
 /* ── Finding the target page ─────────────────────────────────────────────
@@ -459,6 +527,65 @@ function blSpanRuns(runs, start, end, joiner) {
   return out;
 }
 
+/* ── Tabs from bookmarks ──────────────────────────────────────────────────
+   Bundles from a bundling service carry a bookmark per tab, titled
+   "01 - 2025.12.15 - Originating Summons" or "Tab 4 - Gulf Investment …".
+   `outline` is [{title, pageIndex}] (pageIndex zero-based, resolved by the
+   caller from pdf.js). Returns {pageIndex: tab}. A title with no leading
+   tab number is skipped; if fewer than half the bookmarks carry one, none
+   are used, since the numbers are then probably something else. */
+function blTabStartsFromOutline(outline) {
+  var out = {};
+  var list = (outline || []).filter(function (o) { return o && o.pageIndex !== null && o.pageIndex !== undefined; });
+  var hits = 0;
+  list.forEach(function (o) {
+    var t = String(o.title || "").replace(/\u0000/g, "").trim();
+    var m = t.match(/^(?:Tab\s*)?(\d{1,3})\s*(?:[-–—.:)]|\s)/i);
+    if (!m) return;
+    hits++;
+    out[o.pageIndex] = parseInt(m[1], 10);
+  });
+  return hits >= Math.ceil(list.length / 2) && hits > 0 ? out : {};
+}
+
+/* ── The skeleton's own key to its bundles ───────────────────────────────
+   Skeletons usually say which label means which bundle: "References in
+   square brackets to [A/TAB/PAGE], [B/TAB/PAGE] and [C/TAB/PAGE] are to
+   Bundle A, Bundle B and the Correspondence Bundle respectively. References
+   to [AB/TAB/PAGE] are to the Plaintiff's Authorities Bundle."
+   Returns [{label, name}]. Where the labels and names do not pair up one to
+   one, nothing is returned for that sentence; Tom assigns by hand. */
+function blLabelsFromKey(text) {
+  var s = String(text || "").replace(/\s+/g, " ").replace(/[’‘]/g, "'");
+  var out = [];
+  var re = /((?:\[\s*[A-Za-z]{1,4}\d{0,2}\s*\/\s*TAB\s*\/\s*PAGE\s*\]\s*(?:,|and|&)?\s*)+)\s*(?:are|is)\s+(?:references\s+)?to\s+([^.]+?)(?:,?\s+respectively)?\s*\./gi;
+  var m;
+  while ((m = re.exec(s))) {
+    var labels = (m[1].match(/\[\s*([A-Za-z]{1,4}\d{0,2})\s*\//g) || []).map(function (x) { return blNormLabel(x.replace(/[\[\/\s]/g, "")); });
+    var names = m[2].split(/\s*,\s*(?:and\s+)?|\s+and\s+|\s*&\s*/).map(function (n) {
+      return n.replace(/^(?:the|a)\s+/i, "").trim();
+    }).filter(Boolean);
+    if (labels.length !== names.length) continue;
+    labels.forEach(function (l, i) { out.push({ label: l, name: names[i] }); });
+  }
+  return out;
+}
+
+/* Which files a bundle name from the key could be. "Bundle A" must not
+   match "Bundle AB"; curly and straight apostrophes are the same. Returns
+   the matching file paths; more than one (two versions of the
+   Correspondence Bundle in one folder) is for Tom to choose between. */
+function blFilesForName(name, files) {
+  var norm = function (x) { return String(x || "").replace(/[’‘]/g, "'").replace(/\s+/g, " ").toLowerCase(); };
+  var n = norm(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!n) return [];
+  var re = new RegExp("(^|[^a-z0-9])" + n + "($|[^a-z0-9])");
+  return (files || []).filter(function (f) {
+    var base = norm(String(f).replace(/^.*[\\/]/, "").replace(/\.pdf$/i, ""));
+    return re.test(base);
+  });
+}
+
 /* ── Relative paths ──────────────────────────────────────────────────────
    Links must name the bundle relative to the skeleton, never by a full path
    from Tom's machine, so the case folder can be zipped and sent. Paths are
@@ -485,6 +612,7 @@ if (typeof module !== "undefined" && module.exports) {
     blParseRefs, blRefFromParts,
     blStampForm, blReadStamp, blStampCandidates, blFindStamp,
     blCheckSequence, blResolveRef,
+    blTabStartsFromOutline, blLabelsFromKey, blFilesForName,
     blLinkRect, blSpanRuns, blRelativePath,
   };
 }

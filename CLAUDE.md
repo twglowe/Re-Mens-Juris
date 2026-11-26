@@ -394,7 +394,7 @@ scan". It was not.
   Order buttons; `appendMsgTo` in `core.js` calls it for `toolName ===
   "authorities"`, so History replays work the same way.
 
-## Bundle Links (v5.84, Push 1 of 4)
+## Bundle Links (v5.84–v5.85, Push 1 of 4)
 - Adds links from bundle references in a skeleton PDF ([B/2/45], body and
   footnotes) to the right page of bundle PDFs in the same case folder on
   Tom's computer. Browser only: no upload, no tables, no model calls. Spec:
@@ -411,6 +411,29 @@ scan". It was not.
   authorities bundle (label ending AB: AB, DAB, PAB, AAB), where it is a tab.
 - Links are `GoToR` with a path **relative to the skeleton**, never a full
   path, so the folder can be zipped and sent. Acrobat is the target reader.
+- **Tested on a real folder** (v5.85, Visionary v NBC, 26 Nov 2026: four
+  bundles, 4,356 pages, 246 references in the skeleton — all 246 resolved,
+  and every tab in the skeleton agreed with the bundle's bookmarks). What it
+  taught, now in the helpers and tests:
+  - **Rotated pages.** Landscape pages carry `/Rotate 90` or `270`; read raw,
+    a bottom-right stamp lands at the left edge and is missed. Push 2 must
+    map each text item through `viewport.transform` before calling
+    `blFindStamp`.
+  - **Bracketed stamps.** The authorities bundle was stamped `[46]`.
+    `blStampForm` records the wrapper, so `(7)` or a bare `7` on the same
+    page is not read as that stamp.
+  - **Stray numbers in the stamp's corner.** Exhibit pages in Bundle B had
+    their own 2…9 where the stamp sits. `blCheckSequence` sets aside a
+    reading whose offset agrees with neither the 40 pages before nor the 40
+    after, and re-infers the gap; the page keeps `misread` so the review
+    shows it amber. A genuine jump agrees with one side and stays a break.
+  - **Bookmarks give tabs.** Every bundle had a bookmark per tab ("01 - …",
+    "Tab 4 - …"); `blTabStartsFromOutline` reads them. Tab starts never make
+    a bundle per-tab — only restarts at 1 do.
+  - **The skeleton names its bundles.** `blLabelsFromKey` reads "References
+    to [A/TAB/PAGE] … are to Bundle A …"; `blFilesForName` finds the files.
+    Two versions of one bundle in a folder (23 and 26 Nov) both match, and
+    Tom chooses.
 
 ## Related earlier work
 - Push A, the legislation library (`legislation`, `legislation_chunks`), is

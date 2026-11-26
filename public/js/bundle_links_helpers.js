@@ -1,4 +1,4 @@
-/* ══ v5.84–v5.85 Bundle Links Push 1: PURE HELPERS ══════════════════════════════════
+/* ══ v5.84–v5.86 Bundle Links Push 1: PURE HELPERS ══════════════════════════════════
    Bundle Links adds a link to every bundle reference in a skeleton PDF,
    pointing at the right page of the right bundle PDF in the same case
    folder. Nothing is uploaded; everything runs in the browser.
@@ -586,6 +586,66 @@ function blFilesForName(name, files) {
   });
 }
 
+/* v5.86: joining the text runs of a skeleton page. pdf.js hands back text
+   in pieces, and a PDF from Word or Quartz often splits a number: "153" as
+   "15" + "3", "A/8/75" as "A/8/7" + "5". Joined with a space between every
+   piece, [C/42/153] read as page 15 (Visionary v NBC, 26 Nov 2026). A space
+   goes in only where the page shows one: a gap between the pieces, or a new
+   line. `runs` are {str, x, y, w, h} in PDF units (x along the line, y the
+   baseline, h the font size). Returns {text, starts}, where starts[i] is
+   where run i begins in text, for blSpanRunsAt. */
+function blJoinRuns(runs) {
+  var text = "";
+  var starts = [];
+  for (var i = 0; i < runs.length; i++) {
+    var r = runs[i];
+    if (i > 0) {
+      var p = runs[i - 1];
+      var h = Math.max(r.h || 0, p.h || 0, 1);
+      var sameLine = Math.abs((r.y || 0) - (p.y || 0)) < h * 0.5;
+      var gap = (r.x || 0) - ((p.x || 0) + (p.w || 0));
+      var joined = sameLine && gap < h * 0.15 && gap > -h;
+      if (!joined && !/\s$/.test(text) && !/^\s/.test(r.str)) text += " ";
+    }
+    starts.push(text.length);
+    text += String(r.str || "");
+  }
+  return { text: text, starts: starts };
+}
+
+/* The runs a reference spans, given the starts from blJoinRuns. Returns
+   [{run, start, end}] with offsets inside each run. */
+function blSpanRunsAt(runs, starts, start, end) {
+  var out = [];
+  for (var i = 0; i < runs.length; i++) {
+    var rs = starts[i], re = rs + String(runs[i].str || "").length;
+    var s = Math.max(start, rs), e = Math.min(end, re);
+    if (s < e) out.push({ run: i, start: s - rs, end: e - rs });
+    if (rs > end) break;
+  }
+  return out;
+}
+
+/* One box per line of a reference. A reference made of several runs would
+   otherwise show as a row of small blue boxes. Rects are [x1, y1, x2, y2];
+   rects whose vertical extents overlap by more than half are one line. */
+function blMergeRects(rects) {
+  var out = [];
+  (rects || []).forEach(function (r) {
+    for (var i = 0; i < out.length; i++) {
+      var o = out[i];
+      var overlap = Math.min(o[3], r[3]) - Math.max(o[1], r[1]);
+      var hgt = Math.min(o[3] - o[1], r[3] - r[1]);
+      if (overlap > hgt * 0.5) {
+        out[i] = [Math.min(o[0], r[0]), Math.min(o[1], r[1]), Math.max(o[2], r[2]), Math.max(o[3], r[3])];
+        return;
+      }
+    }
+    out.push(r.slice());
+  });
+  return out;
+}
+
 /* ── Relative paths ──────────────────────────────────────────────────────
    Links must name the bundle relative to the skeleton, never by a full path
    from Tom's machine, so the case folder can be zipped and sent. Paths are
@@ -613,6 +673,6 @@ if (typeof module !== "undefined" && module.exports) {
     blStampForm, blReadStamp, blStampCandidates, blFindStamp,
     blCheckSequence, blResolveRef,
     blTabStartsFromOutline, blLabelsFromKey, blFilesForName,
-    blLinkRect, blSpanRuns, blRelativePath,
+    blLinkRect, blSpanRuns, blRelativePath, blJoinRuns, blSpanRunsAt, blMergeRects,
   };
 }

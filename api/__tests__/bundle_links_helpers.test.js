@@ -13,6 +13,7 @@ const {
   blIsAuthoritiesLabel, blGuessLabel, blParseRefs,
   blStampForm, blReadStamp, blFindStamp,
   blCheckSequence, blResolveRef, blLinkRect, blSpanRuns, blRelativePath,
+  blTabStartsFromOutline, blLabelsFromKey, blFilesForName,
 } = bl;
 
 const pick = (refs) => refs.map((r) => ({ label: r.label, tab: r.tab, page: r.page }));
@@ -284,5 +285,99 @@ describe("placing the link and naming the file", () => {
     expect(blRelativePath("Skeleton.pdf", "Bundles/Bundle B.pdf")).toBe("Bundles/Bundle B.pdf");
     expect(blRelativePath("Skeletons/Sk.pdf", "Bundles/Bundle B.pdf")).toBe("../Bundles/Bundle B.pdf");
     expect(blRelativePath("Sk.pdf", "Bundle B.pdf")).not.toMatch(/^\//);
+  });
+});
+
+/* v5.84 — found by running the helpers over a real case folder (Visionary v
+   NBC, 26 Nov 2026). No document text is held here: only the shapes of the
+   stamps, bookmarks and key that the real bundles showed. */
+describe("lessons from a real case folder", () => {
+  const rd = (arr) => arr.map((x) => (x === null ? null : { tab: null, page: x }));
+  const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+
+  it("reads an authorities bundle stamped in square brackets, and nothing else", () => {
+    const form = blStampForm("[46]");
+    expect(form).toMatchObject({ parts: "P", wrap: "[]" });
+    expect(blReadStamp("[47]", form)).toEqual({ tab: null, page: 47 });
+    expect(blReadStamp("47", form)).toBe(null);
+    expect(blReadStamp("(7)", form)).toBe(null);
+  });
+
+  it("takes tab starts from both bookmark styles", () => {
+    expect(blTabStartsFromOutline([
+      { title: "01 - 2025.12.15 - Originating Summons", pageIndex: 1 },
+      { title: "02 - 2025.12.15 - First Affirmation", pageIndex: 13 },
+    ])).toEqual({ 1: 1, 13: 2 });
+    expect(blTabStartsFromOutline([
+      { title: "Tab 1 - Partnership Act - sections 24 and 25\u0000", pageIndex: 1 },
+      { title: "Tab 2 - Bevan v Webb [1901] Ch 59", pageIndex: 7 },
+    ])).toEqual({ 1: 1, 7: 2 });
+    expect(blTabStartsFromOutline([{ title: "Index", pageIndex: 0 }, { title: "Pleadings", pageIndex: 3 }])).toEqual({});
+  });
+
+  it("keeps a bundle continuous when it has tab bookmarks but numbering runs on", () => {
+    const { summary, pages } = blCheckSequence(rd(range(1, 6)), { tabStarts: { 0: 1, 3: 2 } });
+    expect(summary.mode).toBe("continuous");
+    expect(pages.map((p) => p.tab)).toEqual([1, 1, 1, 2, 2, 2]);
+  });
+
+  it("cross-checks the skeleton's tab against the bookmarks", () => {
+    const res = blCheckSequence(rd(range(1, 6)), { tabStarts: { 0: 1, 3: 2 } });
+    const maps = [{ label: "A", file: "A.pdf", pages: res.pages, mode: res.summary.mode }];
+    expect(blResolveRef({ label: "A", tab: 2, page: 5 }, maps)).toMatchObject({ pageIndex: 4, status: "matched" });
+    expect(blResolveRef({ label: "A", tab: 1, page: 5 }, maps).warning).toBe("tab differs");
+  });
+
+  it("sets aside exhibit page numbers sitting where the stamp should be", () => {
+    /* Bundle B: pages 3899–3906 carried their own 2…9 in the stamp's corner. */
+    const seq = range(1, 3898).concat(range(2, 9)).concat(range(3907, 3950));
+    const { pages, summary } = blCheckSequence(rd(seq));
+    expect(summary.break).toBe(0);
+    expect(pages[3898]).toMatchObject({ page: 3899, status: "inferred", misread: 2 });
+    expect(pages[3905]).toMatchObject({ page: 3906, status: "inferred", misread: 9 });
+    const maps = [{ label: "B", file: "B.pdf", pages, mode: summary.mode }];
+    expect(blResolveRef({ label: "B", tab: null, page: 3, }, maps)).toMatchObject({ pageIndex: 2, status: "matched" });
+  });
+
+  it("sets aside a single stray number", () => {
+    const seq = range(1, 875).concat([2, 3]).concat(range(878, 920));
+    const { pages, summary } = blCheckSequence(rd(seq));
+    expect(summary.break).toBe(0);
+    expect(pages[875]).toMatchObject({ page: 876, misread: 2 });
+  });
+
+  it("does not paper over a genuine jump in the numbering", () => {
+    const seq = range(1, 100).concat(range(106, 160));
+    const { pages, summary } = blCheckSequence(rd(seq));
+    expect(summary.break).toBe(1);
+    expect(pages[100]).toMatchObject({ page: 106, status: "break" });
+    expect(pages[100].misread).toBeUndefined();
+  });
+
+  it("reads the skeleton's key to its bundles", () => {
+    const key = "References in square brackets to [A/TAB/PAGE], [B/TAB/PAGE] and [C/TAB/PAGE] are to Bundle A, Bundle B and the Correspondence Bundle respectively. References to [AB/TAB/PAGE] are to the Plaintiff’s Authorities Bundle.";
+    expect(blLabelsFromKey(key)).toEqual([
+      { label: "A", name: "Bundle A" },
+      { label: "B", name: "Bundle B" },
+      { label: "C", name: "Correspondence Bundle" },
+      { label: "AB", name: "Plaintiff's Authorities Bundle" },
+    ]);
+    expect(blLabelsFromKey("[A/TAB/PAGE] and [B/TAB/PAGE] are to Bundle A.")).toEqual([]);
+  });
+
+  it("finds the files a bundle name means, and offers both versions when there are two", () => {
+    const files = [
+      "2026.11.23 - Bundle A.pdf", "2026.11.23 - Bundle AB.pdf",
+      "2026.11.23 - Correspondence Bundle.pdf",
+      "2026.11.26 - Correspondence Bundle (FSD 364 of 2025).pdf",
+      "2026.11.26 - Plaintiff's Authorities Bundle (FSD 364 of 2025).pdf",
+    ];
+    expect(blFilesForName("Bundle A", files)).toEqual(["2026.11.23 - Bundle A.pdf"]);
+    expect(blFilesForName("Correspondence Bundle", files)).toHaveLength(2);
+    expect(blFilesForName("Plaintiff’s Authorities Bundle", files)).toHaveLength(1);
+  });
+
+  it("reads a range broken by a line end", () => {
+    expect(blParseRefs("[B/4/3907- 3937]")[0]).toMatchObject({ label: "B", tab: 4, page: 3907, pageEnd: 3937 });
   });
 });
